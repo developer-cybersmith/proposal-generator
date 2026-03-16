@@ -37,3 +37,6 @@ Thumbs.db
 
 # Test artifacts
 testsprite_tests/tmp/
+
+# Old AWS workflow (not needed for Railway)
+.github/

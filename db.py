@@ -132,9 +132,9 @@ def get_db() -> Generator[Session, None, None]:
 def test_connection() -> bool:
     """Test database connection"""
     try:
+        from sqlalchemy import text
         db = SessionLocal()
-        # Simple query to test connection
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db.close()
         return True
     except Exception:

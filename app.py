@@ -33,7 +33,7 @@ app.add_middleware(
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET_KEY", "supersecret"),
-    https_only=False,  # Set to True for production with HTTPS
+    https_only=os.getenv("RAILWAY_ENVIRONMENT", "") != "",
     same_site="lax",
     session_cookie="reportgen_session"
 )

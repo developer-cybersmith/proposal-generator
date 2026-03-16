@@ -1,0 +1,39 @@
+# Virtual environments
+.venv/
+venv/
+venv_local/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment files (contain secrets)
+.env
+Automation/backend/.env
+
+# Database files
+Automation/backend/data.db
+*.db
+
+# Uploaded/generated files
+uploads/
+Automation/backend/uploads/
+Automation/backend/generated_reports/
+
+# Logs
+nohup.out
+cloudflared.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test artifacts
+testsprite_tests/tmp/

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Report Formats - VAPT Report Generator</title>
+    <script src="/static/js/csrf.js"></script>
+    <script src="/static/js/session-timeout.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1a1a2e;
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #16213e;
+            border-radius: 8px;
+        }
+        h1 {
+            color: #8a2be2;
+            text-align: center;
+        }
+        h2 {
+            color: #8a2be2;
+            margin-top: 30px;
+        }
+        .report-section {
+            margin-bottom: 30px;
+            padding: 15px;
+            background-color: rgba(0,0,0,0.15);
+            border-left: 4px solid #6923d0;
+            border-radius: 4px;
+        }
+        .report-section ul {
+            margin-left: 20px;
+        }
+        .report-section li {
+            margin-bottom: 5px;
+        }
+        .tag {
+            display: inline-block;
+            background: #6923d0;
+            color: white;
+            border-radius: 3px;
+            padding: 2px 8px;
+            font-size: 0.9em;
+            margin-right: 8px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #6923d0;
+        }
+        .logout-btn {
+            background: #ff4444;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        .logout-btn:hover {
+            background: #cc3333;
+        }
+        .nav-btn {
+            background: #6923d0;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: bold;
+            transition: background 0.3s;
+            margin-left: 10px;
+        }
+        .nav-btn:hover {
+            background: #5a1fb8;
+        }
+        a.back-link {
+            color: #8a2be2;
+            text-decoration: underline;
+            font-size: 1em;
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 style="margin:0;color:#8a2be2;">Report Generator</h1>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <a href="/report_formats.html" class="nav-btn">Home</a>
+                <button onclick="openEmployeeDashboard()" style="background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block;">
+                    📊 Complete Dashboard & Analytics
+                </button>
+                <a href="/logout" class="logout-btn">Logout</a>
+            </div>
+        </div>
+        <p style="text-align:center; color:#ccc;">Below are the available report types and their structure/formatting details.</p>
+
+
+        <div class="report-section">
+            <h2 style="display: flex; align-items: center; justify-content: space-between;">
+                Initial IP(Type 1)
+                <button onclick="window.location.href='/Automation/test.html'" style="background-color: #00b050; color: white; border: none; padding: 6px 14px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-left: 10px;">Open Generator</button>
+            </h2>
+            <ul>
+                <li>Summary of findings (IP-based vulnerabilities)</li>
+                <li>Table displaying IP addresses and the number of vulnerabilities severity wise</li>
+                <li>Risk assessment analysis table (per IP)</li>
+                <li>Detailed vulnerability tables (per IP, per finding)</li>
+                <li>IPs having no vulnerabilities are displayed in a separate table</li>
+                <li>Proof of Concept (steps, screenshots)</li>
+                <li>Remediation recommendations</li>
+                <li>Charts: Vulnerability distribution by severity for the entire assessment</li>
+                <li>Charts: Vulnerability distribution by severity for each IP</li>
+            </ul>
+        </div>
+
+        <div class="report-section">
+            <h2 style="display: flex; align-items: center; justify-content: space-between;">
+                Initial Report (IP - Type 2)
+                <button onclick="window.location.href='/Automation/test2.html'" style="background-color: #00b050; color: white; border: none; padding: 6px 14px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-left: 10px;">Open Generator</button>
+            </h2>
+            <ul>
+                <li>Summary of findings (Vulnerabilities found in the IP addresses)</li>
+                <li>Table displaying IP addresses and the number of vulnerabilities severity wise</li>
+                <li>Detailed vulnerability tables (per finding, IP addresses are grouped together)</li>
+                <li>Vulnerability across multiple IPs is displayed in a single table</li>
+                <li>IPs having no vulnerabilities are displayed in a separate table</li>
+                <li>Proof of Concept (steps, screenshots)</li>
+                <li>Remediation recommendations</li>
+                <li>Charts: Vulnerability distribution by severity for the entire assessment</li>
+            </ul>
+        </div>
+
+        <div class="report-section">
+            <h2 style="display: flex; align-items: center; justify-content: space-between;">
+                Cert-IN Report (Web)
+                <button onclick="openCertINGenerator()" style="background-color: #6923d0; color: white; border: none; padding: 6px 14px; border-radius: 4px; font-weight: bold; cursor: pointer;">Generate Report</button>
+            </h2>
+            <ul>
+                <li>Format as per Cert-IN guidelines for web applications</li>
+                <li>Document control pages (1, 4, 5, 6, 7) with structured data</li>
+                <li>Includes auditing team, activities, tools, and distribution lists</li>
+                <li>Excel template-based input for maximum efficiency</li>
+            </ul>
+            <p style="color:#4CAF50;">✅ Available - Upload Excel template and generate Cert-IN compliant reports</p>
+        </div>
+
+        <div class="report-section">
+            <h2 style="display: flex; align-items: center; justify-content: space-between;">
+                Web Report Generator
+                <button onclick="window.location.href='/type4/'" style="background-color: #00b050; color: white; border: none; padding: 6px 14px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-left: 10px;">Open Generator</button>
+            </h2>
+            <ul>
+                <li>Comprehensive VAPT report generator for web applications</li>
+                <li>Upload Excel files with vulnerabilities and assessment details</li>
+                <li>Support for POC screenshots in ZIP format</li>
+                <li>Custom company logo support</li>
+                <li>Automatic mapping of screenshots to vulnerability steps</li>
+                <li>Excel template with 15 POC columns for detailed documentation</li>
+                <li>Step descriptions and screenshot filenames separated by line breaks</li>
+            </ul>
+            <p style="color:#4CAF50;">✅ Available - Generate comprehensive web VAPT reports with POC screenshots</p>
+        </div>
+
+        <div class="report-section">
+            <h2 style="display: flex; align-items: center; justify-content: space-between;">
+                MitKat Report Generator
+                <button onclick="window.location.href='/mitkat/'" style="background-color: #6923d0; color: white; border: none; padding: 6px 14px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-left: 10px;">Open Generator</button>
+            </h2>
+            <ul>
+                <li>MitKat template-based VAPT report generator</li>
+                <li>Front page with client name and report title</li>
+                <li>Document control page with full metadata</li>
+                <li>Executive summary with vulnerability charts</li>
+                <li>Detailed observations tables (pages 9, 10, 11+)</li>
+                <li>Support for Revalidation Status and Screenshot columns in Excel</li>
+                <li>POC images organized by vulnerability number (VUL-001, VUL-002, etc.)</li>
+            </ul>
+            <p style="color:#4CAF50;">✅ Available - Generate MitKat compliant VAPT reports</p>
+        </div>
+
+    <!-- Cert-IN Report Generator Modal -->
+    <div id="certinModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close" onclick="closeCertINModal()">&times;</span>
+            <h2>Cert-IN Report Generator</h2>
+            <p>Generate Cert-IN compliant reports from Excel templates. Download the template, fill in your data, and upload to generate the report.</p>
+            
+            <div style="margin: 20px 0;">
+                <button onclick="downloadCertINTemplate()" style="background-color: #4CAF50; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin-right: 10px;">
+                    📥 Download Excel Template
+                </button>
+                <button onclick="showCertINInstructions()" style="background-color: #2196F3; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer;">
+                    📋 View Instructions
+                </button>
+            </div>
+            
+            <form id="certinForm" enctype="multipart/form-data">
+                <div style="margin: 20px 0;">
+                    <label for="certinFile" style="display: block; margin-bottom: 5px; font-weight: bold;">Upload Excel File:</label>
+                    <input type="file" id="certinFile" name="file" accept=".xlsx,.xls" required style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                
+                <div style="margin: 20px 0;">
+                    <label for="certinClientName" style="display: block; margin-bottom: 5px; font-weight: bold;">Client Name:</label>
+                    <input type="text" id="certinClientName" name="client_name" required placeholder="Enter client name" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                
+                <div style="margin: 20px 0;">
+                    <button type="submit" style="background-color: #6923d0; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 16px;">
+                        🚀 Generate Cert-IN Report
+                    </button>
+                </div>
+            </form>
+            
+            <div id="certinProgress" style="display: none; margin: 20px 0;">
+                <div style="background-color: #f0f0f0; border-radius: 4px; padding: 10px;">
+                    <div id="certinProgressText">Processing...</div>
+                    <div style="background-color: #6923d0; height: 20px; border-radius: 4px; width: 0%; transition: width 0.3s;" id="certinProgressBar"></div>
+                </div>
+            </div>
+            
+            <div id="certinResult" style="display: none; margin: 20px 0;"></div>
+        </div>
+    </div>
+
+    <script>
+      // Reveal Dashboard top nav only for specific emails
+      (async function() {
+        try {
+          const resp = await fetch('/me');
+          if (!resp.ok) return;
+          const me = await resp.json();
+          const allowed = new Set(['sarvesh.salgaonkar@cybersmithsecure.com','developer@cybersmithsecure.com']);
+          if (me && me.email && allowed.has(me.email.toLowerCase())) {
+            document.getElementById('navDashboard').style.display = 'inline-block';
+          }
+        } catch(e) {
+          // ignore
+        }
+      })();
+
+      // Cert-IN Report Generator Functions
+      function openCertINGenerator() {
+        // Redirect to the new form-based interface
+        window.open('/type3/', '_blank');
+      }
+
+      function openEmployeeDashboard() {
+        // Open employee performance dashboard
+        window.open('/dashboard/', '_blank');
+      }
+      function closeCertINModal() {
+        document.getElementById('certinModal').style.display = 'none';
+        document.getElementById('certinForm').reset();
+        document.getElementById('certinProgress').style.display = 'none';
+        document.getElementById('certinResult').style.display = 'none';
+      }
+
+      function downloadCertINTemplate() {
+        window.open('/type3/download-template/', '_blank');
+      }
+
+      function showCertINInstructions() {
+        alert(`Cert-IN Report Generator Instructions:
+
+1. Download the Excel template using the button above
+2. Fill in all required sheets:
+   - Report_Details: Basic report information
+   - Auditing_Team: Team members and qualifications
+   - Audit_Activities: Timeline and activities
+   - Tools_Software: Tools used in assessment
+   - Document_Control: Version history
+   - Distribution_List: Report distribution
+
+3. Save the Excel file and upload it here
+4. Enter the client name
+5. Click "Generate Cert-IN Report"
+
+The system will generate a Word document with all document control pages (1, 4, 5, 6, 7) populated from your Excel data.`);
+      }
+
+      // Handle Cert-IN form submission
+      document.getElementById('certinForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData();
+        const fileInput = document.getElementById('certinFile');
+        const clientName = document.getElementById('certinClientName').value;
+        
+        if (!fileInput.files[0]) {
+          alert('Please select an Excel file');
+          return;
+        }
+        
+        // First upload the file
+        const uploadFormData = new FormData();
+        uploadFormData.append('file', fileInput.files[0]);
+        
+        try {
+          document.getElementById('certinProgress').style.display = 'block';
+          document.getElementById('certinProgressText').textContent = 'Uploading file...';
+          document.getElementById('certinProgressBar').style.width = '25%';
+          
+          const uploadResponse = await fetch('/type3/upload/', {
+            method: 'POST',
+            body: uploadFormData
+          });
+          
+          if (!uploadResponse.ok) {
+            throw new Error('Upload failed');
+          }
+          
+          const uploadResult = await uploadResponse.json();
+          
+          document.getElementById('certinProgressText').textContent = 'Generating report...';
+          document.getElementById('certinProgressBar').style.width = '50%';
+          
+          // Then generate the report
+          const generateFormData = new FormData();
+          generateFormData.append('file_path', uploadResult.file_path);
+          generateFormData.append('client_name', clientName);
+          
+          const generateResponse = await fetch('/type3/generate-report/', {
+            method: 'POST',
+            body: generateFormData
+          });
+          
+          if (!generateResponse.ok) {
+            const errorData = await generateResponse.json();
+            throw new Error(errorData.detail || 'Report generation failed');
+          }
+          
+          const generateResult = await generateResponse.json();
+          
+          document.getElementById('certinProgressText').textContent = 'Report generated successfully!';
+          document.getElementById('certinProgressBar').style.width = '100%';
+          
+          // Show success message and download link
+          document.getElementById('certinResult').innerHTML = `
+            <div style="background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 4px;">
+              <h3>✅ Report Generated Successfully!</h3>
+              <p><strong>Filename:</strong> ${generateResult.filename}</p>
+              <a href="${generateResult.download_url}" download style="background-color: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 10px;">
+                📥 Download Report
+              </a>
+            </div>
+          `;
+          document.getElementById('certinResult').style.display = 'block';
+          
+        } catch (error) {
+          document.getElementById('certinProgress').style.display = 'none';
+          document.getElementById('certinResult').innerHTML = `
+            <div style="background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 4px;">
+              <h3>❌ Error</h3>
+              <p>${error.message}</p>
+            </div>
+          `;
+          document.getElementById('certinResult').style.display = 'block';
+        }
+      });
+
+      // Close modal when clicking outside
+      window.onclick = function(event) {
+        const modal = document.getElementById('certinModal');
+        if (event.target === modal) {
+          closeCertINModal();
+        }
+      }
+    </script>
+</body>
+</html> 

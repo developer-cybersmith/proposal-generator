@@ -193,6 +193,22 @@
             <p style="color:#4CAF50;">✅ Available - Generate MitKat compliant VAPT reports</p>
         </div>
 
+        <div class="report-section">
+            <h2 style="display: flex; align-items: center; justify-content: space-between;">
+                Nessus CSV to Excel
+                <button onclick="window.location.href='/type5/'" style="background-color: #00b050; color: white; border: none; padding: 6px 14px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-left: 10px;">Open Generator</button>
+            </h2>
+            <ul>
+                <li>Upload a Nessus vulnerability scanner CSV export</li>
+                <li>Auto-detects location from the CSV filename</li>
+                <li>Groups vulnerabilities by name with all affected IPs aggregated</li>
+                <li>Generates Excel with <strong>Summary</strong> sheet (severity counts) and <strong>Vuln</strong> sheet (detailed findings)</li>
+                <li>Sorted by severity: Critical, High, Medium, Low, Informational</li>
+                <li>Color-coded severity headers and cells matching the standard template</li>
+            </ul>
+            <p style="color:#4CAF50;">Available - Convert Nessus CSV scans to formatted Excel reports</p>
+        </div>
+
     <!-- Cert-IN Report Generator Modal -->
     <div id="certinModal" class="modal" style="display: none;">
         <div class="modal-content">

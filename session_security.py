@@ -65,6 +65,7 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
             "/type3/",
             "/type2/",
             "/type4/",
+            "/type5/",
             "/dashboard/"  # allow dashboard and API under it without session/CSRF
         ]
         return any(request.url.path.startswith(path) for path in skip_paths)

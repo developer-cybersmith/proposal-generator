@@ -5,6 +5,7 @@ from Automation.backend.main import app as type1_app
 from Automation.backend.type2 import app as type2_app
 from Automation.backend.type3 import app as type3_app
 from Automation.backend.type4 import app as type4_app
+from Automation.backend.type5 import app as type5_app
 from dashboard import dashboard_app
 from auth import router as auth_router
 from session_security import SessionSecurityMiddleware
@@ -106,6 +107,8 @@ app.mount("/type2", type2_app)
 app.mount("/type3", type3_app)
 # Mount the Type-4 (type4.py) app at /type4, protected by SSO
 app.mount("/type4", type4_app)
+# Mount the Type-5 (Nessus CSV to Excel) app at /type5
+app.mount("/type5", type5_app)
 app.mount("/dashboard", dashboard_app)
 
 # Include MitKat routes from main.py

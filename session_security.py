@@ -10,7 +10,7 @@ import time
 from typing import Optional, Dict, Any
 from fastapi import Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+from starlette.responses import Response, RedirectResponse
 import json
 
 class SessionSecurityMiddleware(BaseHTTPMiddleware):
@@ -30,6 +30,9 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
         if not self._is_session_valid(request):
             if self._is_protected_endpoint(request):
                 # Return JSON (not plain text) so frontends parsing JSON don't break
+                accept = request.headers.get("accept", "")
+                if "text/html" in accept:
+                    return RedirectResponse(url="/login", status_code=302)
                 return Response(
                     content=json.dumps({"detail": "Session expired"}),
                     status_code=401,
@@ -59,14 +62,8 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
             "/auth/test-login",
             "/__test/set-session",
             "/static/",
-            "/report_formats.html",
             "/csrf-token",
             "/csrf-refresh",
-            "/type3/",
-            "/type2/",
-            "/type4/",
-            "/type5/",
-            "/dashboard/"  # allow dashboard and API under it without session/CSRF
         ]
         return any(request.url.path.startswith(path) for path in skip_paths)
     
@@ -74,11 +71,13 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
         """Check if endpoint requires authentication"""
         protected_paths = [
             "/type1/",
-            # '/type2/' intentionally not protected to avoid breaking generator
-            # '/type3/' intentionally not protected to allow generator without login
-            # '/type4/' intentionally not protected to allow generator without login
-            # '/dashboard/' intentionally not protected for public dashboard access
-            "/me"
+            "/type2/",
+            "/type3/",
+            "/type4/",
+            "/type5/",
+            "/dashboard",
+            "/report_formats.html",
+            "/me",
         ]
         return any(request.url.path.startswith(path) for path in protected_paths)
     

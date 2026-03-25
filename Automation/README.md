@@ -85,4 +85,12 @@ If you encounter issues:
 
 ## Example Excel Files
 - `Step_Screenshot_Template.xlsx`: Basic template with step-specific screenshots
-- `Comprehensive_Vulnerability_Template.xlsx`: Comprehensive template with multiple vulnerability examples and screenshots 
+- `Comprehensive_Vulnerability_Template.xlsx`: Comprehensive template with multiple vulnerability examples and screenshots
+
+## AI Layer (OpenAI Excel narratives)
+
+The main app mounts the AI Layer at `/ai-layer/` (see repo root `app.py`). For **OpenAI billing / insufficient_quota**, local `.env` setup, end-to-end testing, and **Railway production variables**, see:
+
+- [`docs/OPENAI_AI_LAYER_PRODUCTION.md`](../docs/OPENAI_AI_LAYER_PRODUCTION.md)
+- Copy `Automation/backend/.env.example` to `Automation/backend/.env` and fill secrets (never commit `.env`).
+- Run `python scripts/verify_openai.py` from the `Report-Generator-IP-main` folder to confirm the API key before a full Excel run.

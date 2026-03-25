@@ -6,6 +6,7 @@ from Automation.backend.type2 import app as type2_app
 from Automation.backend.type3 import app as type3_app
 from Automation.backend.type4 import app as type4_app
 from Automation.backend.type5 import app as type5_app
+from Automation.backend.ai_layer import app as ai_layer_app
 from dashboard import dashboard_app
 from auth import router as auth_router
 from session_security import SessionSecurityMiddleware
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session
 # Load .env file from the correct location
 env_path = os.path.join(os.path.dirname(__file__), "Automation", "backend", ".env")
 load_dotenv(env_path)
+TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 
 app = FastAPI()
 
@@ -34,7 +36,7 @@ app.add_middleware(
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET_KEY", "supersecret"),
-    https_only=os.getenv("RAILWAY_ENVIRONMENT", "") != "",
+    https_only=not TEST_MODE,
     same_site="lax",
     session_cookie="reportgen_session"
 )
@@ -109,6 +111,7 @@ app.mount("/type3", type3_app)
 app.mount("/type4", type4_app)
 # Mount the Type-5 (Nessus CSV to Excel) app at /type5
 app.mount("/type5", type5_app)
+app.mount("/ai-layer", ai_layer_app)
 app.mount("/dashboard", dashboard_app)
 
 # Include MitKat routes from main.py
@@ -140,7 +143,9 @@ async def block_dangerous_paths(request: Request, call_next):
     return await call_next(request)
 
 @app.get("/report_formats.html", response_class=HTMLResponse)
-async def report_formats():
+async def report_formats(request: Request):
+    if not request.session.get("user"):
+        return RedirectResponse("/login", status_code=302)
     with open("Automation/report_formats.html", encoding="utf-8") as f:
         return f.read() 
 

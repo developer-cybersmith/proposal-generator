@@ -209,6 +209,21 @@
             <p style="color:#4CAF50;">Available - Convert Nessus CSV scans to formatted Excel reports</p>
         </div>
 
+        <div class="report-section">
+            <h2 style="display: flex; align-items: center; justify-content: space-between;">
+                AI Layer - Excel Narrative Generator
+                <button onclick="window.location.href='/ai-layer/'" style="background-color: #00b050; color: white; border: none; padding: 6px 14px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-left: 10px;">Open Generator</button>
+            </h2>
+            <ul>
+                <li>Upload an Excel sheet with narrative fields left blank</li>
+                <li>Upload the matching POC screenshots ZIP</li>
+                <li>Generates <strong>Detailed Observation</strong>, <strong>Recommendation</strong>, <strong>Reference</strong>, and <strong>Evidence / Proof of Concept</strong> for each row using AI</li>
+                <li>Returns a completed Excel ready for the existing report generators</li>
+                <li>Supports IP, Web, Cert-IN, and MitKat workflows</li>
+            </ul>
+            <p style="color:#4CAF50;">Available - Generate completed Excel sheets with AI-assisted narrative content</p>
+        </div>
+
     <!-- Cert-IN Report Generator Modal -->
     <div id="certinModal" class="modal" style="display: none;">
         <div class="modal-content">

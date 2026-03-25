@@ -172,25 +172,20 @@ def auth_callback(request: Request, code: Optional[str] = None, error: Optional[
     print("Session set, redirecting to report_formats.html")
     return RedirectResponse("/report_formats.html")
 
-# Test-only endpoint to set a session without Azure roundtrip
-@router.post("/__test/set-session")
-def __test_set_session(request: Request, email: str = Form("developer@cybersmithsecure.com")):
-    if not TEST_MODE:
-        raise HTTPException(status_code=404, detail="Not Found")
-    if not email.lower().endswith(f"@{ALLOWED_EMAIL_DOMAIN}"):
-        raise HTTPException(status_code=400, detail="Invalid domain")
-    # Create secure session for test mode
-    create_secure_session(request, {"name": email.split("@")[0], "email": email})
-    return {"status": "ok"}
+if TEST_MODE:
+    # Test-only endpoint to set a session without Azure roundtrip
+    @router.post("/__test/set-session")
+    def __test_set_session(request: Request, email: str = Form("developer@cybersmithsecure.com")):
+        if not email.lower().endswith(f"@{ALLOWED_EMAIL_DOMAIN}"):
+            raise HTTPException(status_code=400, detail="Invalid domain")
+        create_secure_session(request, {"name": email.split("@")[0], "email": email})
+        return {"status": "ok"}
 
-# Test-only GET endpoint for easier testing
-@router.get("/auth/test-login")
-def test_login(request: Request):
-    if not TEST_MODE:
-        raise HTTPException(status_code=404, detail="Not Found")
-    # Create secure session for test mode
-    create_secure_session(request, {"name": "Test User", "email": "developer@cybersmithsecure.com"})
-    return RedirectResponse("/report_formats.html")
+    # Test-only GET endpoint for easier testing
+    @router.get("/auth/test-login")
+    def test_login(request: Request):
+        create_secure_session(request, {"name": "Test User", "email": "developer@cybersmithsecure.com"})
+        return RedirectResponse("/report_formats.html")
 
 # Compatibility endpoint expected by some test harnesses
 @router.post("/api/auth/azure_sso")

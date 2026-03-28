@@ -4,11 +4,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
 import sys
+import docx
 import pandas as pd
 from docxtpl import DocxTemplate, InlineImage
 from docx import Document
-from docx.shared import Pt, RGBColor, Inches
+from docx.shared import Pt, RGBColor, Inches, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
 from datetime import datetime
@@ -29,6 +31,10 @@ import base64
 import json
 from docx.oxml import OxmlElement
 from matplotlib.patches import Patch
+from pathlib import Path
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 # Try to import PIL for image processing, but don't fail if it's not available
 try:
@@ -47,7 +53,7 @@ from excel_parser import parse_excel_data, format_for_template
 # Increment MAJOR for significant structural changes
 # Increment MINOR for feature additions or improvements
 # Increment PATCH for bug fixes
-VERSION = "1.0.7"  # Updated PATCH version for splitting parsing logic
+VERSION = "1.1.0"  # Feature release: MitKat two-step flow
 
 app = FastAPI()
 from sqlalchemy.orm import Session
@@ -697,7 +703,7 @@ def parse_vulnerabilities_excel(file_path):
         # Try to use standardized parser first
         try:
             parsed_data = parse_excel_data(file_path)
-            print(f"✅ Using standardized Excel parser")
+            print(f"[OK] Using standardized Excel parser")
             print(f"   Metadata: {parsed_data['metadata']}")
             print(f"   Vulnerabilities: {len(parsed_data['vulnerabilities'])}")
             
@@ -743,7 +749,7 @@ def parse_vulnerabilities_excel(file_path):
             return vulnerabilities_by_ip
             
         except Exception as std_parse_error:
-            print(f"⚠️  Standardized parser failed, falling back to legacy parser: {std_parse_error}")
+            print(f"[WARN] Standardized parser failed, falling back to legacy parser: {std_parse_error}")
             traceback.print_exc()
         
         # Fallback to original parsing logic
@@ -2294,6 +2300,1660 @@ async def get_usage_analytics(request: Request, db: Session = Depends(get_db)):
         print(f"Error fetching usage analytics: {e}")
         return []
 
+
+# =========================================================================
+# MITKAT CONVERTER HELPERS (VAPT -> 30-col MitKat Excel)
+# =========================================================================
+
+MITKAT_CONV_COLUMNS = [
+    "Asset/Hostname",
+    "Instant purpose",
+    "VAPT Status",
+    "Critical",
+    "High",
+    "Medium",
+    "Low",
+    "Informational",
+    "Total",
+    "Tester_Name",
+    "Project",
+    "Sr no.",
+    "Observation",
+    "Severity",
+    "Status",
+    "New or Repeat Observation",
+    "CVE/CWE",
+    "CVSS",
+    "CVSS Version Ref",
+    "Affected Asset i.e. IP/URL/Application etc.",
+    "Observation/Vulnerability Title",
+    "Detailed Observation/ Vulnerable Point",
+    "Recommendation",
+    "Reference",
+    "Evidence / Proof of Concept",
+    "Screenshot1",
+    "Screenshot2",
+    "Screenshot3",
+    "Revalidation Status",
+    "Screenshot",
+]
+
+MITKAT_CONV_SEVERITY_ORDER = ["Critical", "High", "Medium", "Low", "Informational"]
+
+MITKAT_CONV_SEVERITY_COLORS = {
+    "Critical": "FF0000",
+    "High": "FF6600",
+    "Medium": "FFC000",
+    "Low": "FFFF00",
+    "Informational": "92D050",
+}
+
+MITKAT_CONV_COLUMN_WIDTHS = {
+    "Asset/Hostname": 25, "Instant purpose": 20, "VAPT Status": 14,
+    "Critical": 10, "High": 10, "Medium": 10, "Low": 10,
+    "Informational": 14, "Total": 10, "Tester_Name": 16, "Project": 22,
+    "Sr no.": 8, "Observation": 45, "Severity": 14, "Status": 10,
+    "New or Repeat Observation": 24, "CVE/CWE": 22, "CVSS": 10,
+    "CVSS Version Ref": 42,
+    "Affected Asset i.e. IP/URL/Application etc.": 38,
+    "Observation/Vulnerability Title": 45,
+    "Detailed Observation/ Vulnerable Point": 65,
+    "Recommendation": 65, "Reference": 35,
+    "Evidence / Proof of Concept": 65,
+    "Screenshot1": 20, "Screenshot2": 20, "Screenshot3": 20,
+    "Revalidation Status": 28, "Screenshot": 20,
+}
+
+MITKAT_CONV_COUNT_COLS = {"Critical", "High", "Medium", "Low", "Informational", "Total", "Sr no."}
+MITKAT_CONV_CENTER_COLS = {
+    "VAPT Status", "Status", "Severity", "New or Repeat Observation",
+    "Critical", "High", "Medium", "Low", "Informational", "Total",
+    "Sr no.", "CVSS", "Screenshot1", "Screenshot2", "Screenshot3", "Screenshot",
+}
+
+
+def mitkat_conv_clean(val):
+    if val is None:
+        return ""
+    if isinstance(val, float) and pd.isna(val):
+        return ""
+    return str(val).strip()
+
+
+def mitkat_conv_parse_cvss(raw):
+    raw = mitkat_conv_clean(raw)
+    if not raw:
+        return "", ""
+    m = re.match(r"\(([0-9.]+)\)\s*(.*)", raw, re.DOTALL)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    if re.match(r"^[0-9]+(\.[0-9]+)?$", raw):
+        return raw, ""
+    return raw, ""
+
+
+def mitkat_conv_extract_cve_cwe(raw):
+    raw = mitkat_conv_clean(raw)
+    matches = re.findall(r"(CVE-\d{4}-\d+|CWE-\d+)", raw)
+    return ", ".join(matches) if matches else raw
+
+
+def mitkat_conv_map_new_repeat(v):
+    return "Repeat" if "follow" in mitkat_conv_clean(v).lower() else "New"
+
+
+def mitkat_conv_extract_hostname(vul_param, poc_raw, org):
+    combined = f"{mitkat_conv_clean(vul_param)}\n{mitkat_conv_clean(poc_raw)}"
+    urls = re.findall(r"https?://[^\s\n\"'<>\\)]+", combined)
+    if urls:
+        m = re.match(r"(https?://[^/\s]+)", urls[0])
+        return m.group(1) if m else urls[0]
+    hosts = re.findall(
+        r"\b([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z]{2,})+)\b",
+        combined,
+    )
+    if hosts:
+        return hosts[0][0]
+    return mitkat_conv_clean(org)
+
+
+def mitkat_conv_find_poc_root(base):
+    queue = [base]
+    while queue:
+        current = queue.pop(0)
+        children = list(current.iterdir()) if current.is_dir() else []
+        if any(re.match(r"^#\d+$", c.name) for c in children if c.is_dir()):
+            return current
+        queue.extend(c for c in children if c.is_dir())
+    return base
+
+
+def mitkat_conv_extract_poc_root(poc_arg):
+    p = Path(poc_arg)
+    if p.is_file() and p.suffix.lower() == ".zip":
+        tmp = Path(tempfile.mkdtemp())
+        with ZipFile(str(p)) as zf:
+            zf.extractall(tmp)
+        return mitkat_conv_find_poc_root(tmp), str(tmp)
+    if p.is_dir():
+        return mitkat_conv_find_poc_root(p), None
+    raise HTTPException(status_code=400, detail=f"Invalid POC path: {poc_arg}")
+
+
+def mitkat_conv_index_poc_folder(poc_root):
+    image_exts = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
+    result = {}
+    if poc_root is None or not poc_root.exists():
+        return result
+    for item in poc_root.iterdir():
+        if not item.is_dir():
+            continue
+        m = re.match(r"^#(\d+)$", item.name)
+        if not m:
+            continue
+        num = int(m.group(1))
+        imgs = sorted(f.name for f in item.iterdir() if f.is_file() and f.suffix.lower() in image_exts)
+        if imgs:
+            result[num] = imgs
+    return result
+
+
+def mitkat_conv_build_poc_lines(raw_poc, n_steps):
+    raw = mitkat_conv_clean(raw_poc)
+    if not raw or n_steps == 0:
+        return raw
+    all_lines = [l.strip() for l in raw.split("\n") if l.strip()]
+    step_lines = [l for l in all_lines if re.match(r"^step\s*\d+", l, re.IGNORECASE)]
+    if len(step_lines) >= n_steps:
+        chosen = step_lines[:n_steps]
+    elif step_lines:
+        other_lines = [l for l in all_lines if l not in step_lines]
+        chosen = (step_lines + other_lines[: n_steps - len(step_lines)])[:n_steps]
+    else:
+        chosen = all_lines[:n_steps]
+    while len(chosen) < n_steps:
+        chosen.append(f"Step {len(chosen)+1}: (see screenshot)")
+    return "\n".join(chosen)
+
+
+def mitkat_conv_read_vapt(path):
+    try:
+        df = pd.read_excel(path, sheet_name="AMCS Route Planner", header=2, dtype=str)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cannot read VAPT file: {e}")
+    if "S.NO." not in df.columns:
+        raise HTTPException(status_code=400, detail="Column 'S.NO.' not found in VAPT tracker")
+    df = df[
+        df["S.NO."].notna()
+        & (~df["S.NO."].astype(str).str.strip().isin(["", "S.NO.", "nan"]))
+    ].copy()
+    df.reset_index(drop=True, inplace=True)
+    return df
+
+
+def mitkat_conv_severity_counts(df):
+    counts = {}
+    for _, row in df.iterrows():
+        org = mitkat_conv_clean(row.get("Name of Auditee organization", ""))
+        if org not in counts:
+            counts[org] = {s: 0 for s in MITKAT_CONV_SEVERITY_ORDER}
+            counts[org]["Total"] = 0
+        sev = mitkat_conv_clean(row.get("Severity of Issue", "")).capitalize()
+        if sev == "Info":
+            sev = "Informational"
+        if sev in counts[org]:
+            counts[org][sev] += 1
+        counts[org]["Total"] += 1
+    return counts
+
+
+def mitkat_conv_transform(df, poc_index):
+    sc = mitkat_conv_severity_counts(df)
+    rows = []
+    audit_col = next((c for c in df.columns if "first audit" in c.lower() or "follow" in c.lower()), None)
+
+    for _, row in df.iterrows():
+        org = mitkat_conv_clean(row.get("Name of Auditee organization", ""))
+        infra = mitkat_conv_clean(row.get("Audited infrastructure details", ""))
+        sr_raw = mitkat_conv_clean(row.get("S.NO.", ""))
+        try:
+            sr_int = int(float(sr_raw))
+        except (ValueError, TypeError):
+            sr_int = 0
+
+        title = mitkat_conv_clean(row.get("Name of Vulnerability / Security Issues as per CVE/CWE/Mitre DB Only", ""))
+        cvss_score, cvss_vector = mitkat_conv_parse_cvss(row.get("CVSS", ""))
+        audit_type = mitkat_conv_clean(row.get(audit_col, "")) if audit_col else ""
+        cve_cwe = mitkat_conv_extract_cve_cwe(mitkat_conv_clean(row.get("CVE/CWE Reference Number", "")))
+
+        sev = mitkat_conv_clean(row.get("Severity of Issue", "")).capitalize()
+        if sev == "Info":
+            sev = "Informational"
+
+        poc_raw = mitkat_conv_clean(row.get("POC", ""))
+        vul_param = mitkat_conv_clean(row.get("Vulnerable Parameter", ""))
+
+        if infra and infra.lower() not in ("nan", ""):
+            asset_hostname = infra
+        else:
+            asset_hostname = mitkat_conv_extract_hostname(vul_param, poc_raw, org)
+
+        org_sc = sc.get(org, {s: 0 for s in MITKAT_CONV_SEVERITY_ORDER})
+
+        step_imgs = poc_index.get(sr_int, [])
+        n_steps = len(step_imgs) if step_imgs else None
+
+        if n_steps and n_steps > 0:
+            poc_cell = mitkat_conv_build_poc_lines(poc_raw, n_steps)
+        else:
+            step_only = [l.strip() for l in poc_raw.split("\n") if re.match(r"^step\s*\d+", l.strip(), re.IGNORECASE)]
+            poc_cell = "\n".join(step_only) if step_only else poc_raw
+
+        def ss(n):
+            if n_steps and n_steps >= n:
+                return step_imgs[n - 1]
+            if n_steps and n_steps > 0:
+                return ""
+            return f"step-{n}.png"
+
+        rows.append({
+            "Asset/Hostname": asset_hostname,
+            "Instant purpose": mitkat_conv_clean(row.get("Type of Audit", "")),
+            "VAPT Status": "Completed",
+            "Critical": org_sc.get("Critical", 0),
+            "High": org_sc.get("High", 0),
+            "Medium": org_sc.get("Medium", 0),
+            "Low": org_sc.get("Low", 0),
+            "Informational": org_sc.get("Informational", 0),
+            "Total": org_sc.get("Total", 0),
+            "Tester_Name": "",
+            "Project": org,
+            "Sr no.": sr_int if sr_int else sr_raw,
+            "Observation": title,
+            "Severity": sev,
+            "Status": "Open",
+            "New or Repeat Observation": mitkat_conv_map_new_repeat(audit_type),
+            "CVE/CWE": cve_cwe,
+            "CVSS": cvss_score,
+            "CVSS Version Ref": cvss_vector,
+            "Affected Asset i.e. IP/URL/Application etc.": mitkat_conv_extract_hostname(vul_param, poc_raw, org),
+            "Observation/Vulnerability Title": title,
+            "Detailed Observation/ Vulnerable Point": mitkat_conv_clean(row.get("Description", "")),
+            "Recommendation": mitkat_conv_clean(row.get("Recommendation", "")),
+            "Reference": "",
+            "Evidence / Proof of Concept": poc_cell,
+            "Screenshot1": ss(1),
+            "Screenshot2": ss(2),
+            "Screenshot3": ss(3),
+            "Revalidation Status": mitkat_conv_clean(row.get("Tester Comments", "")),
+            "Screenshot": "",
+        })
+
+    return pd.DataFrame(rows, columns=MITKAT_CONV_COLUMNS)
+
+
+def mitkat_conv_write_excel(out_df, output_path):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+
+    thin = Side(style="thin", color="BBBBBB")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    ws.row_dimensions[1].height = 42
+    h_font = Font(name="Arial", bold=True, size=10, color="FFFFFF")
+    h_fill = PatternFill("solid", fgColor="1F3864")
+    h_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    for ci, col in enumerate(MITKAT_CONV_COLUMNS, 1):
+        cell = ws.cell(row=1, column=ci, value=col)
+        cell.font = h_font
+        cell.fill = h_fill
+        cell.alignment = h_align
+        cell.border = border
+        ws.column_dimensions[get_column_letter(ci)].width = MITKAT_CONV_COLUMN_WIDTHS.get(col, 20)
+
+    b_font = Font(name="Arial", size=9)
+
+    for ri, (_, row) in enumerate(out_df.iterrows(), 2):
+        sev = mitkat_conv_clean(row.get("Severity", ""))
+        sev_fill = PatternFill("solid", fgColor=MITKAT_CONV_SEVERITY_COLORS[sev]) if sev in MITKAT_CONV_SEVERITY_COLORS else None
+        ws.row_dimensions[ri].height = 75
+
+        for ci, col in enumerate(MITKAT_CONV_COLUMNS, 1):
+            val = row[col]
+            if col in MITKAT_CONV_COUNT_COLS:
+                try:
+                    val = int(val)
+                except (ValueError, TypeError):
+                    pass
+            cell = ws.cell(row=ri, column=ci, value=val)
+            cell.font = b_font
+            cell.border = border
+            if col in MITKAT_CONV_CENTER_COLS:
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            else:
+                cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+            if col == "Severity" and sev_fill:
+                cell.fill = sev_fill
+                cell.font = Font(name="Arial", size=9, bold=True)
+
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(MITKAT_CONV_COLUMNS))}1"
+    wb.save(output_path)
+
+
+
+# =========================================================================
+# INLINED MITKAT PRODUCTION REPORT HELPERS
+# =========================================================================
+
+FONT_NAME   = "Arial"
+FONT_SIZE   = 10
+
+# A4 page with 2.54cm (1") margins → content width ≈ 6.26" = 9014 DXA
+# We use 9000 DXA for safety
+CONTENT_W   = 9000   # total table width in DXA (twips)
+LABEL_W     = 2160   # label column (~1.5 in)
+VALUE_W     = CONTENT_W - LABEL_W  # value column (~4.75 in)
+IMG_MAX_W   = Inches(4.4)   # max screenshot width inside value cell
+
+# Dark navy header used across all tables (matches RXIL blue)
+DARK_BLUE   = "1F3864"
+LIGHT_GREY  = "F2F2F2"
+
+SEVERITY_FILL = {
+    "Critical":      "800000",
+    "High":          "FF0000",
+    "Medium":        "FFC000",
+    "Low":           "92D050",
+    "Informational": "00B0F0",
+    "Info":          "00B0F0",
+}
+SEVERITY_TEXT = {
+    "Critical":      RGBColor(0xFF, 0xFF, 0xFF),
+    "High":          RGBColor(0xFF, 0xFF, 0xFF),
+    "Medium":        RGBColor(0x00, 0x00, 0x00),
+    "Low":           RGBColor(0x00, 0x00, 0x00),
+    "Informational": RGBColor(0xFF, 0xFF, 0xFF),
+    "Info":          RGBColor(0xFF, 0xFF, 0xFF),
+}
+
+DEFAULT_INTRO = (
+    "With a view to safeguard critical information, the client engaged MitKat "
+    "Advisory for identifying vulnerabilities and assessing the overall security "
+    "posture of their organization. This involves systematically scanning for "
+    "weaknesses and exploiting them to gain access, providing actionable insights "
+    "for remediation and comprehensive, multi-faceted simulations that mimic "
+    "adversary behaviour, providing a holistic view of security readiness."
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  LOW-LEVEL XML HELPERS  (the key to fixing alignment)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _tblW(tbl, width_dxa: int):
+    """Set total preferred table width."""
+    tblPr = tbl.tblPr
+    for old in tblPr.findall(qn("w:tblW")):
+        tblPr.remove(old)
+    el = OxmlElement("w:tblW")
+    el.set(qn("w:w"),    str(width_dxa))
+    el.set(qn("w:type"), "dxa")
+    tblPr.append(el)
+
+
+def _tblGrid(tbl, col_widths: list):
+    """Set column grid widths (critical for column sizing)."""
+    for old in tbl.findall(qn("w:tblGrid")):
+        tbl.remove(old)
+    grid = OxmlElement("w:tblGrid")
+    for w in col_widths:
+        gc = OxmlElement("w:gridCol")
+        gc.set(qn("w:w"), str(w))
+        grid.append(gc)
+    tblPr = tbl.tblPr
+    tbl.insert(list(tbl).index(tblPr) + 1, grid)
+
+
+def _tcW(cell, width_dxa: int):
+    """Set exact cell width."""
+    tc   = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    for old in tcPr.findall(qn("w:tcW")):
+        tcPr.remove(old)
+    el = OxmlElement("w:tcW")
+    el.set(qn("w:w"),    str(width_dxa))
+    el.set(qn("w:type"), "dxa")
+    tcPr.append(el)
+
+
+def set_table_col_widths(table, col_widths: list):
+    """
+    THE critical fix: set both tblW, tblGrid, AND each cell width.
+    Without this python-docx tables render with broken column widths.
+    """
+    tbl = table._tbl
+    _tblW(tbl, sum(col_widths))
+    _tblGrid(tbl, col_widths)
+    for row in table.rows:
+        for idx, cell in enumerate(row.cells):
+            if idx < len(col_widths):
+                _tcW(cell, col_widths[idx])
+
+
+def shade_cell(cell, hex_color: str):
+    """Fill a cell background with a solid color."""
+    tc   = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    for old in tcPr.findall(qn("w:shd")):
+        tcPr.remove(old)
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"),   "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"),  hex_color.lstrip("#"))
+    tcPr.append(shd)
+
+
+def set_cell_margins(cell, top=80, bottom=80, left=120, right=120):
+    """Set internal cell padding."""
+    tc   = cell._tc
+    tcPr = tc.get_or_add_tcPr()
+    for old in tcPr.findall(qn("w:tcMar")):
+        tcPr.remove(old)
+    tcMar = OxmlElement("w:tcMar")
+    for side, val in (("top", top), ("bottom", bottom),
+                      ("left", left), ("right", right)):
+        el = OxmlElement(f"w:{side}")
+        el.set(qn("w:w"),    str(val))
+        el.set(qn("w:type"), "dxa")
+        tcMar.append(el)
+    tcPr.append(tcMar)
+
+
+def no_space_para(para):
+    """Remove paragraph spacing (before/after)."""
+    pPr = para._p.get_or_add_pPr()
+    spacing = OxmlElement("w:spacing")
+    spacing.set(qn("w:before"), "0")
+    spacing.set(qn("w:after"),  "0")
+    pPr.append(spacing)
+
+
+def set_row_height(row, height_twips: int, exact=False):
+    """Set a table row to a fixed or at-least height."""
+    tr   = row._tr
+    trPr = tr.get_or_add_trPr()
+    for old in trPr.findall(qn("w:trHeight")):
+        trPr.remove(old)
+    el = OxmlElement("w:trHeight")
+    el.set(qn("w:val"),       str(height_twips))
+    el.set(qn("w:hRule"),     "exact" if exact else "atLeast")
+    trPr.append(el)
+
+
+def keep_row_together(row):
+    """Prevent a table row from splitting across pages."""
+    tr   = row._tr
+    trPr = tr.get_or_add_trPr()
+    cant = OxmlElement("w:cantSplit")
+    trPr.append(cant)
+
+
+def set_table_border(table, color="CCCCCC", size=4):
+    """Apply uniform thin border to all sides of a table."""
+    tbl  = table._tbl
+    tblPr = tbl.tblPr
+    for old in tblPr.findall(qn("w:tblBorders")):
+        tblPr.remove(old)
+    borders = OxmlElement("w:tblBorders")
+    for side in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        el = OxmlElement(f"w:{side}")
+        el.set(qn("w:val"),   "single")
+        el.set(qn("w:sz"),    str(size))
+        el.set(qn("w:space"), "0")
+        el.set(qn("w:color"), color)
+        borders.append(el)
+    tblPr.append(borders)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  PARAGRAPH / TEXT HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run(para, text: str, bold=False, italic=False,
+         size=FONT_SIZE, color: RGBColor = None,
+         underline=False, font=FONT_NAME):
+    """Add a formatted run to a paragraph."""
+    run            = para.add_run(str(text))
+    run.font.name  = font
+    run.font.size  = Pt(size)
+    run.font.bold  = bold
+    run.font.italic = italic
+    run.font.underline = underline
+    if color:
+        run.font.color.rgb = color
+    return run
+
+
+def cell_write(cell, text: str, bold=False, size=FONT_SIZE,
+               color: RGBColor = None, align=WD_ALIGN_PARAGRAPH.LEFT,
+               italic=False, underline=False, clear=True, indent_pt=0):
+    """Write text into a cell's first paragraph."""
+    if clear:
+        for p in cell.paragraphs:
+            p.clear()
+        para = cell.paragraphs[0]
+    else:
+        para = cell.add_paragraph()
+    para.alignment = align
+    no_space_para(para)
+    if indent_pt:
+        para.paragraph_format.left_indent = Pt(indent_pt)
+    _run(para, text, bold=bold, size=size, color=color,
+         italic=italic, underline=underline)
+    return para
+
+
+def cell_para(cell, clear=False) -> "Paragraph":
+    """Add (or get) an empty paragraph in a cell."""
+    if clear:
+        for p in cell.paragraphs:
+            p.clear()
+        return cell.paragraphs[0]
+    return cell.add_paragraph()
+
+
+def heading(doc, text: str, level=1,
+            color=RGBColor(0x1F, 0x3D, 0x6A), size=13, bold=True):
+    """Add a section heading paragraph."""
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(12)
+    p.paragraph_format.space_after  = Pt(4)
+    no_space_para(p)
+    run = _run(p, text, bold=bold, size=size, color=color)
+    return p
+
+
+def body_para(doc, text: str, size=10, indent=False):
+    """Add a body text paragraph."""
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(2)
+    p.paragraph_format.space_after  = Pt(2)
+    if indent:
+        p.paragraph_format.left_indent = Inches(0.2)
+    _run(p, text, size=size)
+    return p
+
+
+def spacer(doc, lines=1):
+    """Add blank paragraph(s) for spacing."""
+    for _ in range(lines):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after  = Pt(0)
+
+
+def page_break(doc):
+    """Insert a page break."""
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after  = Pt(0)
+    run = p.add_run()
+    run.add_break(docx.enum.text.WD_BREAK.PAGE)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  DATA HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _c(val) -> str:
+    if val is None: return ""
+    if isinstance(val, float) and pd.isna(val): return ""
+    s = str(val).strip()
+    return "" if s.lower() == "nan" else s
+
+
+def normalise_severity(sev: str) -> str:
+    s = sev.strip().capitalize()
+    return "Informational" if s in ("Info", "Informational") else s
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  POC ZIP INDEXER
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _find_poc_root(base: Path) -> Path:
+    """Walk to find the directory that directly contains #N sub-dirs."""
+    queue = [base]
+    while queue:
+        cur = queue.pop(0)
+        if cur.is_dir():
+            kids = list(cur.iterdir())
+            if any(re.match(r"^#\d+$", k.name) for k in kids if k.is_dir()):
+                return cur
+            queue.extend(k for k in kids if k.is_dir())
+    return base
+
+
+def index_poc(poc_arg: str) -> dict:
+    """
+    Returns { vuln_num(int): {step_num(int): full_path_str} }
+    Accepts a .zip file path or an already-extracted directory.
+    """
+    if not poc_arg or not os.path.exists(poc_arg):
+        return {}
+    p = Path(poc_arg)
+    if p.is_file() and p.suffix.lower() == ".zip":
+        tmp = Path(tempfile.mkdtemp())
+        with ZipFile(str(p)) as zf:
+            zf.extractall(tmp)
+        root = _find_poc_root(tmp)
+    else:
+        root = _find_poc_root(p)
+
+    IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
+    result = {}
+    for item in root.iterdir():
+        if not item.is_dir():
+            continue
+        m = re.match(r"^#(\d+)$", item.name)
+        if not m:
+            continue
+        num   = int(m.group(1))
+        steps = {}
+        for f in item.iterdir():
+            if f.is_file() and f.suffix.lower() in IMAGE_EXTS:
+                sm = re.search(r"step[_\-\s]?(\d+)", f.name.lower())
+                sn = int(sm.group(1)) if sm else 1
+                steps[sn] = str(f)
+        if steps:
+            result[num] = steps
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  EXCEL READER
+# ─────────────────────────────────────────────────────────────────────────────
+
+def read_excel_vulns(excel_path: str) -> list:
+    """
+    Read the 30-column Mitkat Cert-In Excel (v4 from our converter).
+    Returns a list of vulnerability dicts.
+    """
+    df = pd.read_excel(excel_path, dtype=str)
+    df.columns = [str(c).strip() for c in df.columns]
+    vulns = []
+
+    # Column name aliases (case-insensitive substring matching)
+    def fc(names):
+        for name in names:
+            for col in df.columns:
+                if name.lower() in col.lower():
+                    return col
+        return None
+
+    sr_col     = fc(["Sr no", "Sr.no", "Serial"])
+    obs_col    = fc(["Observation/Vulnerability", "Observation"])
+    asset_col  = fc(["Affected Asset", "IP/URL"])
+    cve_col    = fc(["CVE/CWE", "CVE", "CWE"])
+    sev_col    = fc(["Severity"])
+    cvss_col   = fc(["CVSS"])
+    detail_col = fc(["Detailed Observation", "Detailed"])
+    rec_col    = fc(["Recommendation"])
+    ref_col    = fc(["Reference"])
+    poc_col    = fc(["Evidence", "Proof of Concept", "Steps", "PoC"])
+    reval_col  = fc(["Revalidation Status"])
+    ss1_col    = fc(["Screenshot1"])
+    ss2_col    = fc(["Screenshot2"])
+    ss3_col    = fc(["Screenshot3"])
+    repeat_col = fc(["New or Repeat"])
+    status_col = fc(["Status"])
+    purpose_col= fc(["Instant purpose", "purpose"])
+    hostname_col = fc(["Asset/Hostname"])
+
+    for idx, row in df.iterrows():
+        sr_val = _c(row.get(sr_col, "")) if sr_col else ""
+        if not sr_val:
+            continue
+
+        title = _c(row.get(obs_col, "")) if obs_col else ""
+        if not title or title.startswith("#"):
+            # If observation col has #N, try Observation/Vulnerability Title col explicitly
+            for col in df.columns:
+                if "observation/vulnerability" in col.lower():
+                    t = _c(row.get(col, ""))
+                    if t and not t.startswith("#"):
+                        title = t
+                        break
+
+        poc_raw  = _c(row.get(poc_col, "")) if poc_col else ""
+        poc_lines = [l.strip() for l in poc_raw.split("\n") if l.strip()]
+
+        vulns.append({
+            "sr_no":       sr_val,
+            "title":       title or "N/A",
+            "asset":       _c(row.get(asset_col, "")) if asset_col else "",
+            "cve_cwe":     _c(row.get(cve_col, ""))  if cve_col  else "",
+            "severity":    normalise_severity(_c(row.get(sev_col, "Medium")) if sev_col else "Medium"),
+            "cvss":        _c(row.get(cvss_col, ""))  if cvss_col  else "",
+            "detailed":    _c(row.get(detail_col, "")) if detail_col else "",
+            "recommendation": _c(row.get(rec_col, "")) if rec_col else "",
+            "reference":   _c(row.get(ref_col, ""))   if ref_col   else "",
+            "poc_lines":   poc_lines,
+            "reval_status":_c(row.get(reval_col, "")) if reval_col else "",
+            "ss1":         _c(row.get(ss1_col, ""))   if ss1_col   else "",
+            "ss2":         _c(row.get(ss2_col, ""))   if ss2_col   else "",
+            "ss3":         _c(row.get(ss3_col, ""))   if ss3_col   else "",
+            "new_repeat":  _c(row.get(repeat_col, "New")) if repeat_col else "New",
+            "status":      _c(row.get(status_col, "Completed")) if status_col else "Completed",
+            "purpose":     _c(row.get(purpose_col, "Web Application")) if purpose_col else "Web Application",
+            "hostname":    _c(row.get(hostname_col, "")) if hostname_col else "",
+        })
+    return vulns
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SECTION BUILDERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_header_row(table, headers: list, col_widths: list,
+                     fill=DARK_BLUE, text_color=RGBColor(255, 255, 255)):
+    """Style the header row of a table."""
+    row = table.rows[0]
+    for i, (cell, hdr, w) in enumerate(zip(row.cells, headers, col_widths)):
+        _tcW(cell, w)
+        shade_cell(cell, fill)
+        set_cell_margins(cell)
+        para = cell.paragraphs[0]
+        para.clear()
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        no_space_para(para)
+        _run(para, hdr, bold=True, size=FONT_SIZE, color=text_color)
+
+
+def build_doc_control(doc, cfg: dict):
+    """Document Control section (matches RXIL layout)."""
+    heading(doc, "Document Control")
+
+    # Top info strip (release date, type of audit, etc.)
+    top_data = [
+        ("Report Release Date",  cfg.get("report_release_date", "")),
+        ("Type of Audit",        cfg.get("type_of_audit", "")),
+        ("Type of Audit Report", cfg.get("type_of_audit_report", "")),
+        ("Period",               cfg.get("period", "")),
+    ]
+    t = doc.add_table(rows=len(top_data), cols=2)
+    t.style = "Table Grid"
+    set_table_col_widths(t, [2880, 6120])
+    set_table_border(t)
+    for r_idx, (label, value) in enumerate(top_data):
+        row = t.rows[r_idx]
+        for c in row.cells:
+            set_cell_margins(c)
+        shade_cell(row.cells[0], LIGHT_GREY)
+        cell_write(row.cells[0], label, bold=True, size=FONT_SIZE, clear=True)
+        cell_write(row.cells[1], value,             size=FONT_SIZE, clear=True)
+
+    spacer(doc)
+
+    # Document Preparation table
+    doc_data = [
+        ("Document Title",    cfg.get("document_title", "")),
+        ("Document ID",       cfg.get("document_id", "")),
+        ("Document Version",  cfg.get("document_version", "1.0")),
+        ("Prepared by",       cfg.get("prepared_by", "")),
+        ("Reviewed by",       cfg.get("reviewed_by", "")),
+        ("Approved by",       cfg.get("approved_by", "")),
+        ("Released by",       cfg.get("released_by", "")),
+        ("Release date",      cfg.get("release_date", "")),
+    ]
+    t2 = doc.add_table(rows=1 + len(doc_data), cols=2)
+    t2.style = "Table Grid"
+    set_table_col_widths(t2, [2880, 6120])
+    set_table_border(t2)
+    # Header
+    shade_cell(t2.rows[0].cells[0], DARK_BLUE)
+    shade_cell(t2.rows[0].cells[1], DARK_BLUE)
+    for cell in t2.rows[0].cells:
+        set_cell_margins(cell)
+    cell_write(t2.rows[0].cells[0], "Document Preparation",
+               bold=True, color=RGBColor(255,255,255), size=FONT_SIZE, align=WD_ALIGN_PARAGRAPH.CENTER)
+    t2.rows[0].cells[1].paragraphs[0].clear()
+    # Data rows
+    for r_idx, (label, value) in enumerate(doc_data, 1):
+        row = t2.rows[r_idx]
+        for c in row.cells:
+            set_cell_margins(c)
+        shade_cell(row.cells[0], LIGHT_GREY)
+        cell_write(row.cells[0], label, bold=True, size=FONT_SIZE, clear=True)
+        cell_write(row.cells[1], value,             size=FONT_SIZE, clear=True)
+
+    spacer(doc)
+
+    # Change History
+    chg = cfg.get("document_change_history", [])
+    t3 = doc.add_table(rows=2 + max(len(chg), 1), cols=3)
+    t3.style = "Table Grid"
+    set_table_col_widths(t3, [1500, 2500, 5000])
+    set_table_border(t3)
+    shade_cell(t3.rows[0].cells[0], DARK_BLUE)
+    shade_cell(t3.rows[0].cells[1], DARK_BLUE)
+    shade_cell(t3.rows[0].cells[2], DARK_BLUE)
+    for c in t3.rows[0].cells:
+        set_cell_margins(c)
+    cell_write(t3.rows[0].cells[0], "Document Change History",
+               bold=True, color=RGBColor(255,255,255), size=FONT_SIZE)
+    t3.rows[0].cells[0].merge(t3.rows[0].cells[1]).merge(t3.rows[0].cells[2])
+    # Sub-header
+    for c in t3.rows[1].cells:
+        set_cell_margins(c)
+        shade_cell(c, LIGHT_GREY)
+    cell_write(t3.rows[1].cells[0], "Version", bold=True, size=FONT_SIZE)
+    cell_write(t3.rows[1].cells[1], "Date",    bold=True, size=FONT_SIZE)
+    cell_write(t3.rows[1].cells[2], "Remarks / Reason of change", bold=True, size=FONT_SIZE)
+    for r_idx, entry in enumerate(chg, 2):
+        if r_idx >= len(t3.rows):
+            t3.add_row()
+        row = t3.rows[r_idx]
+        for c in row.cells:
+            set_cell_margins(c)
+        cell_write(row.cells[0], _c(entry.get("version", "")), size=FONT_SIZE, clear=True)
+        cell_write(row.cells[1], _c(entry.get("date", "")),    size=FONT_SIZE, clear=True)
+        cell_write(row.cells[2], _c(entry.get("remarks", "")), size=FONT_SIZE, clear=True)
+
+    spacer(doc)
+
+    # Distribution List
+    dist = cfg.get("distribution_list", [])
+    t4 = doc.add_table(rows=2 + max(len(dist), 1), cols=4)
+    t4.style = "Table Grid"
+    set_table_col_widths(t4, [1800, 2500, 2000, 2700])
+    set_table_border(t4)
+    shade_cell(t4.rows[0].cells[0], DARK_BLUE)
+    cell_write(t4.rows[0].cells[0], "Document Distribution List",
+               bold=True, color=RGBColor(255,255,255), size=FONT_SIZE)
+    for c in t4.rows[0].cells:
+        set_cell_margins(c)
+        shade_cell(c, DARK_BLUE)
+    t4.rows[0].cells[0].merge(t4.rows[0].cells[1]).merge(
+        t4.rows[0].cells[2]).merge(t4.rows[0].cells[3])
+    # Sub-header
+    sub_headers = ["Name", "Organization", "Designation", "Email Id"]
+    for idx, (cell, hdr) in enumerate(zip(t4.rows[1].cells, sub_headers)):
+        set_cell_margins(cell)
+        shade_cell(cell, LIGHT_GREY)
+        cell_write(cell, hdr, bold=True, size=FONT_SIZE)
+    for r_idx, entry in enumerate(dist, 2):
+        if r_idx >= len(t4.rows):
+            t4.add_row()
+        row = t4.rows[r_idx]
+        for c in row.cells:
+            set_cell_margins(c)
+        cell_write(row.cells[0], _c(entry.get("name", "")),         size=FONT_SIZE, clear=True)
+        cell_write(row.cells[1], _c(entry.get("organization", "")), size=FONT_SIZE, clear=True)
+        cell_write(row.cells[2], _c(entry.get("designation", "")),  size=FONT_SIZE, clear=True)
+        cell_write(row.cells[3], _c(entry.get("email", "")),        size=FONT_SIZE, clear=True)
+
+
+def build_intro(doc, cfg: dict):
+    heading(doc, "Introduction")
+    body_para(doc, cfg.get("introduction", DEFAULT_INTRO))
+
+
+def build_scope(doc, cfg: dict):
+    heading(doc, "Engagement Scope")
+    body_para(doc, "Below details of assets (whichever is / are applicable based on the "
+              "type of audit) covered in the scope be included in this section along with "
+              "other relevant details:")
+    spacer(doc)
+
+    scope = cfg.get("engagement_scope", [])
+    headers = ["S. No.", "Asset Description", "Criticality of Asset",
+               "URL", "Location", "Hash Value\n(if applicable)",
+               "Version\n(if applicable)", "Other details"]
+    widths  = [480, 1400, 1200, 1440, 960, 960, 960, 1600]
+    t = doc.add_table(rows=1 + max(len(scope), 1), cols=len(headers))
+    t.style = "Table Grid"
+    set_table_col_widths(t, widths)
+    set_table_border(t)
+    build_header_row(t, headers, widths)
+    for r_idx, entry in enumerate(scope, 1):
+        if r_idx >= len(t.rows):
+            t.add_row()
+        row = t.rows[r_idx]
+        for c in row.cells:
+            set_cell_margins(c)
+        vals = [
+            _c(entry.get("sr_no", r_idx)),
+            _c(entry.get("asset_description", "")),
+            _c(entry.get("criticality", "")),
+            _c(entry.get("url", "")),
+            _c(entry.get("location", "")),
+            _c(entry.get("hash_value", "NA")),
+            _c(entry.get("version", "NA")),
+            _c(entry.get("other_details", "NA")),
+        ]
+        for ci, (cell, val) in enumerate(zip(row.cells, vals)):
+            cell_write(cell, val, size=FONT_SIZE, clear=True,
+                       align=WD_ALIGN_PARAGRAPH.CENTER if ci == 0 else WD_ALIGN_PARAGRAPH.LEFT)
+
+
+def build_team(doc, cfg: dict):
+    heading(doc, "Details of the Auditing team")
+    team = cfg.get("auditing_team", [])
+    headers = ["S.\nNo.", "Name", "Designation", "Email Id",
+               "Professional Qualifications / Certifications",
+               "Whether listed in CERT-In website\n(Yes/No)"]
+    widths  = [400, 1400, 1400, 2000, 2000, 1800]
+    t = doc.add_table(rows=1 + max(len(team), 1), cols=len(headers))
+    t.style = "Table Grid"
+    set_table_col_widths(t, widths)
+    set_table_border(t)
+    build_header_row(t, headers, widths)
+    for r_idx, entry in enumerate(team, 1):
+        if r_idx >= len(t.rows):
+            t.add_row()
+        row = t.rows[r_idx]
+        for c in row.cells:
+            set_cell_margins(c)
+        vals = [
+            _c(entry.get("sr_no", r_idx)),
+            _c(entry.get("name", "")),
+            _c(entry.get("designation", "")),
+            _c(entry.get("email", "")),
+            _c(entry.get("qualifications", "")),
+            _c(entry.get("certin_listed", "No")),
+        ]
+        for ci, (cell, val) in enumerate(zip(row.cells, vals)):
+            cell_write(cell, val, size=FONT_SIZE, clear=True,
+                       align=WD_ALIGN_PARAGRAPH.CENTER if ci == 0 else WD_ALIGN_PARAGRAPH.LEFT)
+
+
+def build_tools(doc, cfg: dict):
+    heading(doc, "Tools / Software used")
+    tools = cfg.get("tools_software", [])
+    headers = ["S. No.", "Name of Tool / Software used",
+               "Version of the tool / Software used", "Open Source / Licensed"]
+    widths  = [600, 2800, 2800, 2800]
+    t = doc.add_table(rows=1 + max(len(tools), 1), cols=len(headers))
+    t.style = "Table Grid"
+    set_table_col_widths(t, widths)
+    set_table_border(t)
+    build_header_row(t, headers, widths)
+    for r_idx, entry in enumerate(tools, 1):
+        if r_idx >= len(t.rows):
+            t.add_row()
+        row = t.rows[r_idx]
+        for c in row.cells:
+            set_cell_margins(c)
+        vals = [
+            _c(entry.get("sr_no", r_idx)),
+            _c(entry.get("name", "")),
+            _c(entry.get("version", "")),
+            _c(entry.get("type", "")),
+        ]
+        for ci, (cell, val) in enumerate(zip(row.cells, vals)):
+            cell_write(cell, val, size=FONT_SIZE, clear=True,
+                       align=WD_ALIGN_PARAGRAPH.CENTER if ci == 0 else WD_ALIGN_PARAGRAPH.LEFT)
+
+
+def build_exec_summary(doc, cfg: dict, vulns: list):
+    """Executive Summary section."""
+    heading(doc, "Executive Summary")
+    summary = cfg.get("executive_summary", "")
+    if not summary:
+        # Auto-generate from vulnerability data
+        sev_counts = {}
+        for v in vulns:
+            s = v["severity"]
+            sev_counts[s] = sev_counts.get(s, 0) + 1
+        parts = []
+        for s in ["Critical", "High", "Medium", "Low", "Informational"]:
+            if sev_counts.get(s, 0):
+                parts.append(f"{sev_counts[s]} {s}")
+        summary = (
+            f"A security assessment was conducted on the target application(s). "
+            f"The assessment identified a total of {len(vulns)} vulnerability/vulnerabilities "
+            + (f"({', '.join(parts)}) " if parts else "")
+            + "that could potentially be exploited to gain unauthorized access, "
+            "exfiltrate sensitive data, or disrupt services. "
+            "Immediate remediation is recommended for all critical and high severity findings."
+        )
+    body_para(doc, summary)
+
+
+def build_test_case_table(doc):
+    """Standard Test Case table (always the same)."""
+    headers = ["Sr. No.", "Test Case", "Status"]
+    widths  = [700, 6000, 2300]
+    t = doc.add_table(rows=3, cols=3)
+    t.style = "Table Grid"
+    set_table_col_widths(t, widths)
+    set_table_border(t)
+    build_header_row(t, headers, widths)
+    data = [
+        ("1", "Vulnerability Assessment",  "Completed"),
+        ("2", "Service Disruption Analysis","Completed"),
+    ]
+    for r_idx, (no, tc, status) in enumerate(data, 1):
+        row = t.rows[r_idx]
+        for c in row.cells:
+            set_cell_margins(c)
+        cell_write(row.cells[0], no,     size=FONT_SIZE, align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+        cell_write(row.cells[1], tc,     size=FONT_SIZE, clear=True)
+        cell_write(row.cells[2], status, size=FONT_SIZE, align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+
+
+def build_overall_findings_table(doc, vulns: list):
+    """
+    Overall Findings table per unique asset/hostname.
+    Matches RXIL format exactly.
+    """
+    # Group by asset
+    assets = {}
+    for v in vulns:
+        key = v.get("hostname") or v.get("asset") or "Unknown"
+        if key not in assets:
+            assets[key] = []
+        assets[key].append(v)
+
+    # Compute overall totals
+    overall = {s: 0 for s in ["Critical","High","Medium","Low","Informational"]}
+    for v in vulns:
+        s = v["severity"]
+        if s in overall:
+            overall[s] += 1
+
+    headers = ["Sr. No.", "Hostname/Address", "Instant\npurpose",
+               "VAPT\nStatus", "Critical", "High", "Medium", "Low",
+               "Informational", "Total"]
+    widths  = [500, 2000, 1000, 800, 700, 700, 700, 700, 1000, 600]
+
+    for sr_idx, (asset_key, asset_vulns) in enumerate(assets.items(), 1):
+        purpose = asset_vulns[0].get("purpose", "Web Application")
+        status  = asset_vulns[0].get("status", "Completed")
+
+        # Per-asset severity counts
+        a_sev = {s: 0 for s in ["Critical","High","Medium","Low","Informational"]}
+        for v in asset_vulns:
+            if v["severity"] in a_sev:
+                a_sev[v["severity"]] += 1
+        a_total = sum(a_sev.values())
+
+        t = doc.add_table(rows=3, cols=len(headers))
+        t.style = "Table Grid"
+        set_table_col_widths(t, widths)
+        set_table_border(t)
+
+        # Header row
+        build_header_row(t, headers, widths)
+
+        # Data row
+        row1 = t.rows[1]
+        for c in row1.cells:
+            set_cell_margins(c)
+        vals = [str(sr_idx), asset_key, purpose, status,
+                str(a_sev["Critical"]), str(a_sev["High"]),
+                str(a_sev["Medium"]),   str(a_sev["Low"]),
+                str(a_sev["Informational"]), str(a_total)]
+        sev_cols = {4: "Critical", 5: "High", 6: "Medium", 7: "Low",
+                    8: "Informational", 9: None}
+        for ci, (cell, val) in enumerate(zip(row1.cells, vals)):
+            cell_write(cell, val, size=FONT_SIZE, align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+            if ci in sev_cols and ci <= 8:
+                sev = sev_cols[ci]
+                shade_cell(cell, SEVERITY_FILL.get(sev, "FFFFFF"))
+                # Re-write with white text for dark backgrounds
+                tc = SEVERITY_TEXT.get(sev, RGBColor(0,0,0))
+                cell_write(cell, val, size=FONT_SIZE, bold=True, color=tc,
+                           align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+            elif ci == 9:  # Total col
+                shade_cell(cell, "7030A0")
+                cell_write(cell, val, size=FONT_SIZE, bold=True,
+                           color=RGBColor(255,255,255),
+                           align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+
+        # Overall Findings row
+        row2 = t.rows[2]
+        for c in row2.cells:
+            set_cell_margins(c)
+        # Merge first 4 cells for "Overall Findings"
+        row2.cells[0].merge(row2.cells[1]).merge(row2.cells[2]).merge(row2.cells[3])
+        shade_cell(row2.cells[0], DARK_BLUE)
+        cell_write(row2.cells[0], "Overall Findings", bold=True,
+                   color=RGBColor(255,255,255), size=FONT_SIZE,
+                   align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+        ov_vals = [str(overall["Critical"]), str(overall["High"]),
+                   str(overall["Medium"]),   str(overall["Low"]),
+                   str(overall["Informational"]), str(sum(overall.values()))]
+        ov_cols  = list(range(4, 10))
+        ov_sevs  = ["Critical","High","Medium","Low","Informational",None]
+        for ci, (col_idx, val, sev) in enumerate(zip(ov_cols, ov_vals, ov_sevs)):
+            cell = row2.cells[col_idx]
+            _tcW(cell, widths[col_idx])
+            set_cell_margins(cell)
+            if sev:
+                shade_cell(cell, SEVERITY_FILL.get(sev, "FFFFFF"))
+                tc = SEVERITY_TEXT.get(sev, RGBColor(0,0,0))
+                cell_write(cell, val, bold=True, color=tc, size=FONT_SIZE,
+                           align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+            else:  # Total
+                shade_cell(cell, "7030A0")
+                cell_write(cell, val, bold=True, color=RGBColor(255,255,255),
+                           size=FONT_SIZE, align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+
+        spacer(doc)
+
+
+def build_vuln_list_table(doc, vulns: list):
+    """
+    Observations/Vulnerabilities listing table.
+    Matches RXIL format.
+    """
+    headers = ["Sr.\nNo.", "Affected Asset i.e.\nIP/URL/Application etc.",
+               "Observation / Vulnerability Title",
+               "CVE/CWE", "Severity", "New or Repeat\nObservation"]
+    widths  = [450, 2100, 2800, 1000, 800, 1850]
+
+    t = doc.add_table(rows=1 + len(vulns), cols=len(headers))
+    t.style = "Table Grid"
+    set_table_col_widths(t, widths)
+    set_table_border(t)
+    build_header_row(t, headers, widths)
+
+    for r_idx, v in enumerate(vulns, 1):
+        row = t.rows[r_idx]
+        for c in row.cells:
+            set_cell_margins(c)
+        sev  = v["severity"]
+        vals = [v["sr_no"], v["asset"], v["title"],
+                v["cve_cwe"], sev, v["new_repeat"]]
+        for ci, (cell, val) in enumerate(zip(row.cells, vals)):
+            if ci == 4:   # Severity column — color coded
+                fill = SEVERITY_FILL.get(sev, "FFFFFF")
+                tc   = SEVERITY_TEXT.get(sev, RGBColor(0,0,0))
+                shade_cell(cell, fill)
+                cell_write(cell, val, bold=True, size=FONT_SIZE, color=tc,
+                           align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+            else:
+                cell_write(cell, val, size=FONT_SIZE, clear=True,
+                           align=(WD_ALIGN_PARAGRAPH.CENTER
+                                  if ci in (0, 5) else WD_ALIGN_PARAGRAPH.LEFT))
+
+
+def _add_image_to_cell(cell, img_path: str, max_width=IMG_MAX_W):
+    """
+    Add a screenshot image to a table cell paragraph.
+    Scales image to fit within max_width, centered.
+    """
+    if not img_path or not os.path.exists(img_path):
+        return False
+    try:
+        from PIL import Image as PILImage
+        with PILImage.open(img_path) as im:
+            orig_w, orig_h = im.size
+        aspect = orig_h / orig_w
+        use_w  = min(max_width, Inches(4.4))
+        use_h  = int(use_w * aspect)
+    except Exception:
+        use_w  = max_width
+        use_h  = None
+
+    p = cell.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    no_space_para(p)
+    p.paragraph_format.space_before = Pt(4)
+    p.paragraph_format.space_after  = Pt(4)
+    run = p.add_run()
+    try:
+        if use_h:
+            run.add_picture(img_path, width=use_w, height=use_h)
+        else:
+            run.add_picture(img_path, width=use_w)
+        return True
+    except Exception as e:
+        # Image failed — add a note instead
+        err_run = p.add_run(f"[Image: {os.path.basename(img_path)}]")
+        err_run.font.italic = True
+        err_run.font.size   = Pt(9)
+        return False
+
+
+def build_detailed_observations(doc, vulns: list, poc_map: dict):
+    """
+    Detailed Observations — one 2-column table per vulnerability.
+    LEFT column = field label (narrow)
+    RIGHT column = field value (wide)
+    Screenshots embedded inline after their step text.
+    Matches RXIL reference exactly.
+    """
+    for idx, v in enumerate(vulns, 1):
+        sev      = v["severity"]
+        sev_fill = SEVERITY_FILL.get(sev, "FFFFFF")
+        sev_tc   = SEVERITY_TEXT.get(sev, RGBColor(0, 0, 0))
+
+        # Get poc images for this vulnerability
+        try:
+            sr_int = int(v["sr_no"])
+        except (ValueError, TypeError):
+            sr_int = 0
+        step_imgs = poc_map.get(sr_int, {})  # {step_num: path}
+
+        # ── Build the detail table ─────────────────────────────────────────
+        # Rows: [Affected Asset, Vuln Title, Detailed Obs, CVE/CWE,
+        #        Severity, Current Status, Recommendation, Reference,
+        #        New/Repeat, POC+Steps, Revalidation Status]
+        t = doc.add_table(rows=11, cols=2)
+        t.style = "Table Grid"
+        set_table_col_widths(t, [LABEL_W, VALUE_W])
+        set_table_border(t, color="AAAAAA", size=4)
+
+        # Helper to set a label|value row
+        def lv_row(r_idx, label, value, label_bold=True,
+                   val_bold=False, val_color=None, shade_label=LIGHT_GREY,
+                   shade_val=None, val_align=WD_ALIGN_PARAGRAPH.LEFT):
+            row   = t.rows[r_idx]
+            lc    = row.cells[0]
+            vc    = row.cells[1]
+            _tcW(lc, LABEL_W)
+            _tcW(vc, VALUE_W)
+            set_cell_margins(lc)
+            set_cell_margins(vc)
+            if shade_label:
+                shade_cell(lc, shade_label)
+            if shade_val:
+                shade_cell(vc, shade_val)
+            # Label cell
+            lc.paragraphs[0].clear()
+            lc.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
+            no_space_para(lc.paragraphs[0])
+            _run(lc.paragraphs[0], label, bold=label_bold, size=FONT_SIZE)
+            # Value cell
+            vc.paragraphs[0].clear()
+            vc.paragraphs[0].alignment = val_align
+            no_space_para(vc.paragraphs[0])
+            _run(vc.paragraphs[0], value, bold=val_bold, size=FONT_SIZE,
+                 color=val_color)
+
+        lv_row(0,  "Affected Asset i.e.\nIP/URL/Application etc.", v["asset"])
+        lv_row(1,  "Observation /\nVulnerability title", v["title"])
+        lv_row(2,  "Detailed observation /\nVulnerable point", v["detailed"])
+        lv_row(3,  "CVE/CWE", v["cve_cwe"])
+        lv_row(4,  "Severity", sev.upper(),
+               val_bold=True, val_color=sev_tc, shade_val=sev_fill)
+        lv_row(5,  "Current status", v.get("status", "Open"))
+
+        # Recommendation row — format as numbered list
+        row6   = t.rows[6]
+        lc6    = row6.cells[0]
+        vc6    = row6.cells[1]
+        _tcW(lc6, LABEL_W); _tcW(vc6, VALUE_W)
+        set_cell_margins(lc6); set_cell_margins(vc6)
+        shade_cell(lc6, LIGHT_GREY)
+        lc6.paragraphs[0].clear()
+        no_space_para(lc6.paragraphs[0])
+        _run(lc6.paragraphs[0], "Recommendation", bold=True, size=FONT_SIZE)
+        vc6.paragraphs[0].clear()
+        rec_text = v["recommendation"]
+        # Split on numbered items if possible
+        rec_lines = [l.strip() for l in rec_text.split("\n") if l.strip()]
+        if rec_lines:
+            no_space_para(vc6.paragraphs[0])
+            _run(vc6.paragraphs[0], rec_lines[0], size=FONT_SIZE)
+            for line in rec_lines[1:]:
+                p = vc6.add_paragraph()
+                no_space_para(p)
+                p.paragraph_format.space_before = Pt(2)
+                _run(p, line, size=FONT_SIZE)
+        else:
+            _run(vc6.paragraphs[0], rec_text, size=FONT_SIZE)
+
+        # Reference row
+        row7   = t.rows[7]
+        lc7    = row7.cells[0]
+        vc7    = row7.cells[1]
+        _tcW(lc7, LABEL_W); _tcW(vc7, VALUE_W)
+        set_cell_margins(lc7); set_cell_margins(vc7)
+        shade_cell(lc7, LIGHT_GREY)
+        lc7.paragraphs[0].clear()
+        no_space_para(lc7.paragraphs[0])
+        _run(lc7.paragraphs[0], "Reference", bold=True, size=FONT_SIZE)
+        vc7.paragraphs[0].clear()
+        no_space_para(vc7.paragraphs[0])
+        ref_text = v.get("reference", "")
+        ref_run  = _run(vc7.paragraphs[0], ref_text, size=FONT_SIZE,
+                        color=RGBColor(0, 0, 0xFF) if ref_text else None,
+                        underline=bool(ref_text))
+
+        lv_row(8, "New or Repeat\nobservation", v["new_repeat"])
+
+        # POC row — step text + screenshots
+        row9   = t.rows[9]
+        lc9    = row9.cells[0]
+        vc9    = row9.cells[1]
+        _tcW(lc9, LABEL_W); _tcW(vc9, VALUE_W)
+        set_cell_margins(lc9); set_cell_margins(vc9)
+        shade_cell(lc9, LIGHT_GREY)
+        lc9.paragraphs[0].clear()
+        no_space_para(lc9.paragraphs[0])
+        _run(lc9.paragraphs[0], "References to evidences /\nProof of Concept",
+             bold=True, size=FONT_SIZE)
+        # Value cell — steps + images
+        vc9.paragraphs[0].clear()
+        vc9.paragraphs[0].clear()
+        first_para = True
+        for step_idx, step_line in enumerate(v["poc_lines"], 1):
+            if first_para:
+                p = vc9.paragraphs[0]
+                first_para = False
+            else:
+                p = vc9.add_paragraph()
+            no_space_para(p)
+            p.paragraph_format.space_before = Pt(3)
+            _run(p, step_line, size=FONT_SIZE)
+            # Add screenshot if available
+            img_path = step_imgs.get(step_idx)
+            if img_path and os.path.exists(img_path):
+                _add_image_to_cell(vc9, img_path)
+        if not v["poc_lines"]:
+            vc9.paragraphs[0].clear()
+            no_space_para(vc9.paragraphs[0])
+            _run(vc9.paragraphs[0], "(No steps provided)", size=FONT_SIZE, italic=True)
+
+        # Revalidation Status row
+        row10  = t.rows[10]
+        lc10   = row10.cells[0]
+        vc10   = row10.cells[1]
+        _tcW(lc10, LABEL_W); _tcW(vc10, VALUE_W)
+        set_cell_margins(lc10); set_cell_margins(vc10)
+        shade_cell(lc10, LIGHT_GREY)
+        lc10.paragraphs[0].clear()
+        no_space_para(lc10.paragraphs[0])
+        _run(lc10.paragraphs[0], "Revalidation\nStatus", bold=True, size=FONT_SIZE)
+        vc10.paragraphs[0].clear()
+        no_space_para(vc10.paragraphs[0])
+        reval_color = RGBColor(0, 128, 0) if v["reval_status"] else None
+        _run(vc10.paragraphs[0], v["reval_status"] or "—",
+             size=FONT_SIZE, color=reval_color, bold=bool(v["reval_status"]))
+
+        # Add revalidation screenshot (from 'Screenshot' col, if any) — extra row
+        reval_ss = v.get("ss1", "")  # revalidation screenshot
+        # Check if the screenshot col (ad) has a separate revalidation image
+        # Actually the 'Screenshot' (col AD) is for revalidation
+        reval_shot_col_val = ""  # We'd need to pass this explicitly if needed
+
+        # Spacer between vulnerabilities
+        spacer(doc)
+
+        # Page break between vulnerabilities (not after the last one)
+        if idx < len(vulns):
+            doc.add_page_break()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  COMPLETE DOCUMENT BUILDER
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_document_from_scratch(vulns: list, poc_map: dict, cfg: dict) -> Document:
+    """
+    Build the complete VAPT report document from scratch.
+    Matches the RXIL reference report structure and quality.
+    """
+    doc = Document()
+
+    # Set page margins (A4, 1 inch all sides)
+    from docx.oxml.ns import qn as qn2
+    section = doc.sections[0]
+    section.page_width   = Cm(21)
+    section.page_height  = Cm(29.7)
+    section.left_margin   = Inches(1)
+    section.right_margin  = Inches(1)
+    section.top_margin    = Inches(1)
+    section.bottom_margin = Inches(1)
+
+    # ── COVER PAGE ────────────────────────────────────────────────────────────
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(p, "\n\n\n")  # top spacing
+
+    p2 = doc.add_paragraph()
+    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(p2, cfg.get("client_name", "CLIENT").upper(),
+         bold=True, size=28, color=RGBColor(0x1F, 0x3D, 0x6A))
+
+    p3 = doc.add_paragraph()
+    p3.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(p3, "\n" + cfg.get("report_title", "VAPT FINAL REPORT"),
+         bold=True, size=18, color=RGBColor(0x1F, 0x3D, 0x6A))
+
+    p4 = doc.add_paragraph()
+    p4.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(p4, "\nTO\n", bold=True, size=14)
+
+    p5 = doc.add_paragraph()
+    p5.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(p5, cfg.get("report_to", ""), bold=True, size=14,
+         color=RGBColor(0x1F, 0x3D, 0x6A))
+
+    p6 = doc.add_paragraph()
+    p6.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(p6, "\n\n" + cfg.get("report_release_date", ""), size=12)
+
+    p7 = doc.add_paragraph()
+    p7.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(p7, "\nMitKat Advisory Services Pvt. Ltd.", bold=True, size=14,
+         color=RGBColor(0x1F, 0x3D, 0x6A))
+
+    doc.add_page_break()
+
+    # ── DISCLAIMER ────────────────────────────────────────────────────────────
+    heading(doc, "© Copyright 2025 MitKat Advisory Services Private Limited", size=11)
+    heading(doc, "Disclaimer", size=11)
+    body_para(doc, "All information contained in this document is confidential and "
+              "proprietary to MitKat and Reproduction, disclosure or use of any "
+              "information contained in this document by photographic, electronic or "
+              "any other means, in whole or part, for any reason other than for the "
+              "purpose of operations is strictly prohibited without written consent.")
+
+    heading(doc, "Limitations on Disclosure and Use", size=11)
+    body_para(doc, "This document contains sensitive and confidential information "
+              "concerning vulnerabilities of target applications. MitKat recommends "
+              "that special precautions be taken to protect the confidentiality of the "
+              "information contained in this report.")
+    body_para(doc, "While the VAPT Team is confident that the major security "
+              "vulnerabilities of the target applications have been identified, there "
+              "can be no assurance that an assessment of this nature will identify all "
+              "possible security exposures. Additionally, the findings and "
+              "recommendations presented in this document are based on the technologies "
+              "and known threats as of the date of this report. As technologies and "
+              "risks change over time, the vulnerabilities and the recommendations "
+              "associated with the target applications may also change.")
+    doc.add_page_break()
+
+    # ── DOCUMENT CONTROL ──────────────────────────────────────────────────────
+    build_doc_control(doc, cfg)
+    doc.add_page_break()
+
+    # ── INTRODUCTION ──────────────────────────────────────────────────────────
+    build_intro(doc, cfg)
+    spacer(doc)
+
+    # ── ENGAGEMENT SCOPE ──────────────────────────────────────────────────────
+    build_scope(doc, cfg)
+    spacer(doc)
+
+    # ── AUDITING TEAM ─────────────────────────────────────────────────────────
+    build_team(doc, cfg)
+    spacer(doc)
+
+    # ── TOOLS ─────────────────────────────────────────────────────────────────
+    build_tools(doc, cfg)
+    doc.add_page_break()
+
+    # ── EXECUTIVE SUMMARY ─────────────────────────────────────────────────────
+    build_exec_summary(doc, cfg, vulns)
+    doc.add_page_break()
+
+    # ── OBSERVATIONS (overview) ───────────────────────────────────────────────
+    heading(doc, "Observations", size=14, color=RGBColor(0x6A, 0x44, 0x9A))
+    p_tc = doc.add_paragraph()
+    _run(p_tc, "Test Case", bold=True, size=11)
+    build_test_case_table(doc)
+    spacer(doc)
+
+    build_overall_findings_table(doc, vulns)
+    spacer(doc)
+    build_vuln_list_table(doc, vulns)
+    doc.add_page_break()
+
+    # ── RISK LEVEL DESCRIPTION ────────────────────────────────────────────────
+    heading(doc, "Risk Level & Description", size=13)
+    body_para(doc, "The below vulnerability ranging risk pattern indicates the ratings "
+              "of the vulnerability according to their respective CVSS3.1 Score.")
+
+    # Severity legend table
+    sev_data = [
+        ("Critical", "9.0 – 10.0", "800000"),
+        ("High",     "7.0 – 8.9",  "FF0000"),
+        ("Medium",   "4.0 – 6.9",  "FFC000"),
+        ("Low",      "0.1 – 3.9",  "92D050"),
+        ("Informational", "0.0",   "00B0F0"),
+    ]
+    t_legend = doc.add_table(rows=1 + len(sev_data), cols=3)
+    t_legend.style = "Table Grid"
+    set_table_col_widths(t_legend, [2000, 2000, 5000])
+    set_table_border(t_legend)
+    build_header_row(t_legend, ["Severity", "CVSS Score Range", "Description"], [2000, 2000, 5000])
+    descriptions = {
+        "Critical":      "Vulnerabilities that can be exploited remotely with no authentication and lead to complete system compromise.",
+        "High":          "Vulnerabilities with significant impact that can lead to data exfiltration, privilege escalation, or service disruption.",
+        "Medium":        "Vulnerabilities requiring some conditions to exploit, with moderate impact on confidentiality or integrity.",
+        "Low":           "Vulnerabilities with minimal impact, often requiring local access or complex conditions to exploit.",
+        "Informational": "Findings that do not directly pose a risk but provide information useful for security hardening.",
+    }
+    for r_idx, (sev, score, fill) in enumerate(sev_data, 1):
+        row = t_legend.rows[r_idx]
+        for c in row.cells:
+            set_cell_margins(c)
+        shade_cell(row.cells[0], fill)
+        tc = SEVERITY_TEXT.get(sev, RGBColor(0,0,0))
+        cell_write(row.cells[0], sev, bold=True, color=tc, size=FONT_SIZE,
+                   align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+        cell_write(row.cells[1], score, size=FONT_SIZE, align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+        cell_write(row.cells[2], descriptions[sev], size=FONT_SIZE, clear=True)
+
+    doc.add_page_break()
+
+    # ── DETAILED OBSERVATIONS ─────────────────────────────────────────────────
+    heading(doc, "Detailed Observations", size=14, color=RGBColor(0x6A, 0x44, 0x9A))
+    spacer(doc)
+    build_detailed_observations(doc, vulns, poc_map)
+
+    # ── END OF REPORT ─────────────────────────────────────────────────────────
+    spacer(doc)
+    p_end = doc.add_paragraph()
+    p_end.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(p_end, "End of Report", bold=True, size=12,
+         color=RGBColor(0x1F, 0x3D, 0x6A))
+
+    return doc
+
+
+def generate_report_with_template(vulns: list, poc_map: dict, cfg: dict,
+                                   template_path: str, output_path: str):
+    """
+    Use an existing docxtpl template for the boilerplate pages,
+    then append the dynamic vulnerability sections.
+    """
+    try:
+        from docxtpl import DocxTemplate
+        tpl = DocxTemplate(template_path)
+        context = {
+            "CLIENT_NAME":            cfg.get("client_name", ""),
+            "REPORT_TITLE":           cfg.get("report_title", ""),
+            "REPORT_TO":              cfg.get("report_to", ""),
+            "REPORT_RELEASE_DATE":    cfg.get("report_release_date", ""),
+            "TYPE_OF_AUDIT":          cfg.get("type_of_audit", ""),
+            "TYPE_OF_AUDIT_REPORT":   cfg.get("type_of_audit_report", ""),
+            "PERIOD":                 cfg.get("period", ""),
+            "DOCUMENT_TITLE":         cfg.get("document_title", ""),
+            "DOCUMENT_ID":            cfg.get("document_id", ""),
+            "DOCUMENT_VERSION":       cfg.get("document_version", "1.0"),
+            "PREPARED_BY":            cfg.get("prepared_by", ""),
+            "REVIEWED_BY":            cfg.get("reviewed_by", ""),
+            "APPROVED_BY":            cfg.get("approved_by", ""),
+            "RELEASED_BY":            cfg.get("released_by", ""),
+            "RELEASE_DATE":           cfg.get("release_date", ""),
+            "DOCUMENT_CHANGE_HISTORY": cfg.get("document_change_history", []),
+            "DISTRIBUTION_LIST":      cfg.get("distribution_list", []),
+            "ENGAGEMENT_SCOPE":       cfg.get("engagement_scope", []),
+            "AUDITING_TEAM":          cfg.get("auditing_team", []),
+            "TOOLS_SOFTWARE":         cfg.get("tools_software", []),
+            "INTRODUCTION":           cfg.get("introduction", DEFAULT_INTRO),
+        }
+        tpl.render(context)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+            tpl.save(tmp.name)
+            tmp_path = tmp.name
+
+        doc = Document(tmp_path)
+        os.unlink(tmp_path)
+    except Exception as e:
+        print(f"[WARNING] Template rendering failed ({e}), building from scratch.")
+        doc = Document()
+        section = doc.sections[0]
+        section.left_margin  = Inches(1)
+        section.right_margin = Inches(1)
+        section.top_margin   = Inches(1)
+        section.bottom_margin= Inches(1)
+
+    # Append dynamic sections
+    doc.add_page_break()
+
+    heading(doc, "Observations", size=14, color=RGBColor(0x6A, 0x44, 0x9A))
+    p_tc = doc.add_paragraph()
+    _run(p_tc, "Test Case", bold=True, size=11)
+    build_test_case_table(doc)
+    spacer(doc)
+    build_overall_findings_table(doc, vulns)
+    spacer(doc)
+    build_vuln_list_table(doc, vulns)
+    doc.add_page_break()
+
+    heading(doc, "Risk Level & Description", size=13)
+    body_para(doc, "The vulnerability ranging risk pattern below indicates the ratings "
+              "according to their respective CVSS3.1 Scores.")
+    doc.add_page_break()
+
+    heading(doc, "Detailed Observations", size=14, color=RGBColor(0x6A, 0x44, 0x9A))
+    spacer(doc)
+    build_detailed_observations(doc, vulns, poc_map)
+
+    p_end = doc.add_paragraph()
+    p_end.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run(p_end, "End of Report", bold=True, size=12,
+         color=RGBColor(0x1F, 0x3D, 0x6A))
+
+    doc.save(output_path)
+    print(f"[OK] Report saved: {output_path}")
+    return output_path
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  MAIN
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# Prefixed aliases used by MitKat integration
+mitkat_rpt_normalise_severity = normalise_severity
+mitkat_rpt_index_poc = index_poc
+mitkat_rpt_read_excel_vulns = read_excel_vulns
+mitkat_rpt_build_document_from_scratch = build_document_from_scratch
+mitkat_rpt_generate_report_with_template = generate_report_with_template
+MITKAT_REPORT_GENERATOR_EMBEDDED = True
+
+
 # ============================================================================
 # MITKAT REPORT GENERATOR (New Report Type)
 # ============================================================================
@@ -2307,144 +3967,164 @@ def parse_mitkat_vulnerabilities_excel(file_path):
     - Revalidation Status, Screenshot (new columns)
     """
     print(f"Parsing MitKat vulnerability data from: {file_path}")
+
+    def _to_legacy_shape(vuln):
+        steps_with_screenshots = []
+        for step_text in vuln.get("poc_lines", []):
+            steps_with_screenshots.append({"text": step_text, "screenshot": ""})
+        return {
+            "sr_no": str(vuln.get("sr_no", "")),
+            "observation": vuln.get("title", ""),
+            "affected_asset": vuln.get("asset", ""),
+            "cve_cwe": vuln.get("cve_cwe", ""),
+            "severity": vuln.get("severity", "Medium"),
+            "cvss": vuln.get("cvss", ""),
+            "detailed_observation": vuln.get("detailed", ""),
+            "recommendation": vuln.get("recommendation", ""),
+            "reference": vuln.get("reference", ""),
+            "steps_with_screenshots": steps_with_screenshots,
+            "revalidation_status": vuln.get("reval_status", ""),
+            "screenshot": vuln.get("ss1", ""),
+            "new_or_repeat": vuln.get("new_repeat", "New"),
+            "purpose": vuln.get("purpose", "Web Application") or "Web Application",
+            "status": vuln.get("status", "Completed"),
+        }
+
     vulnerabilities = []
-    
     try:
-        # Try standardized parser first
+        # Primary path for MitKat 30-column Excel generated by converter
+        try:
+            rpt_vulns = mitkat_rpt_read_excel_vulns(file_path)
+            if rpt_vulns:
+                vulnerabilities = [_to_legacy_shape(v) for v in rpt_vulns]
+                print(f"[OK] Parsed {len(vulnerabilities)} vulnerabilities (30-column parser)")
+                return vulnerabilities
+        except Exception as rpt_error:
+            print(f"[WARN] 30-column parser failed: {rpt_error}")
+
+        # Secondary path: standardized parser for non-MitKat templates
         try:
             parsed_data = parse_excel_data(file_path)
-            print(f"✅ Using standardized Excel parser for MitKat")
-            
-            for idx, vuln in enumerate(parsed_data['vulnerabilities'], 1):
-                # Extract revalidation status and screenshot from raw data
-                df = parsed_data.get('raw_df')
-                revalidation_status = ''
-                screenshot_path = ''
-                
+            print("[OK] Using standardized Excel parser for MitKat")
+
+            for idx, vuln in enumerate(parsed_data.get("vulnerabilities", []), 1):
+                df = parsed_data.get("raw_df")
+                revalidation_status = ""
+                screenshot_path = ""
+                purpose = ""
+
                 if df is not None and idx <= len(df):
                     row = df.iloc[idx - 1]
-                    # Find revalidation status column (case-insensitive)
                     for col in df.columns:
-                        if 'revalidation' in col.lower() and 'status' in col.lower():
-                            revalidation_status = str(row.get(col, '')).strip()
-                            break
-                    # Find screenshot column (case-insensitive, but not the step screenshots)
-                    for col in df.columns:
-                        if col.lower() == 'screenshot' and 'step' not in col.lower():
-                            screenshot_path = str(row.get(col, '')).strip()
-                            break
-                
-                # Convert steps to steps_with_screenshots format
+                        col_l = col.lower()
+                        if "revalidation" in col_l and "status" in col_l:
+                            revalidation_status = str(row.get(col, "")).strip()
+                        if col_l == "screenshot" and "step" not in col_l:
+                            screenshot_path = str(row.get(col, "")).strip()
+                        if "purpose" in col_l:
+                            purpose = str(row.get(col, "")).strip()
+
                 steps_with_screenshots = []
-                if vuln.get('steps'):
-                    for step in vuln['steps']:
-                        steps_with_screenshots.append({
-                            'text': step['content'],
-                            'screenshot': step.get('screenshot', '')
-                        })
-                
-                # Extract purpose from Excel if available
-                purpose = ''
-                if df is not None and idx <= len(df):
-                    row = df.iloc[idx - 1]
-                    # Find purpose column (case-insensitive)
-                    for col in df.columns:
-                        if 'purpose' in col.lower():
-                            purpose = str(row.get(col, '')).strip()
-                            break
-                
-                vulnerability = {
-                    'sr_no': str(vuln.get('sr_no', idx)),
-                    'observation': vuln.get('observation', ''),
-                    'affected_asset': vuln.get('affected_asset', '') or vuln.get('ip_url_app', ''),
-                    'cve_cwe': vuln.get('cve_cwe', ''),
-                    'severity': vuln.get('severity', 'Medium'),
-                    'cvss': vuln.get('cvss', ''),
-                    'detailed_observation': vuln.get('detailed_observation', '') or vuln.get('observation_summary', ''),
-                    'recommendation': vuln.get('recommendation', ''),
-                    'reference': vuln.get('reference', ''),
-                    'steps_with_screenshots': steps_with_screenshots,
-                    'revalidation_status': revalidation_status,
-                    'screenshot': screenshot_path,
-                    'new_or_repeat': vuln.get('new_or_re', 'New Observation'),
-                    'purpose': purpose or 'Web Application',  # Default to 'Web Application' if not found
-                    'status': 'Completed'  # Default status
-                }
-                vulnerabilities.append(vulnerability)
-            
-            print(f"✅ Parsed {len(vulnerabilities)} vulnerabilities for MitKat report")
-            return vulnerabilities
-            
+                for step in vuln.get("steps", []):
+                    steps_with_screenshots.append(
+                        {"text": step.get("content", ""), "screenshot": step.get("screenshot", "")}
+                    )
+
+                vulnerabilities.append(
+                    {
+                        "sr_no": str(vuln.get("sr_no", idx)),
+                        "observation": vuln.get("observation", ""),
+                        "affected_asset": vuln.get("affected_asset", "") or vuln.get("ip_url_app", ""),
+                        "cve_cwe": vuln.get("cve_cwe", ""),
+                        "severity": vuln.get("severity", "Medium"),
+                        "cvss": vuln.get("cvss", ""),
+                        "detailed_observation": vuln.get("detailed_observation", "") or vuln.get("observation_summary", ""),
+                        "recommendation": vuln.get("recommendation", ""),
+                        "reference": vuln.get("reference", ""),
+                        "steps_with_screenshots": steps_with_screenshots,
+                        "revalidation_status": revalidation_status,
+                        "screenshot": screenshot_path,
+                        "new_or_repeat": vuln.get("new_or_re", "New Observation"),
+                        "purpose": purpose or "Web Application",
+                        "status": "Completed",
+                    }
+                )
+
+            if vulnerabilities:
+                print(f"[OK] Parsed {len(vulnerabilities)} vulnerabilities (standardized parser)")
+                return vulnerabilities
         except Exception as std_error:
-            print(f"⚠️ Standardized parser failed: {std_error}, falling back to legacy parser")
-            traceback.print_exc()
-        
-        # Fallback to legacy parsing
+            print(f"[WARN] Standardized parser failed: {std_error}, falling back to legacy parser")
+
+        # Final fallback path: permissive legacy parser with explicit 30-col aliases
         df = pd.read_excel(file_path)
         df.columns = df.columns.str.strip()
-        
+
+        def find_col(possible_names):
+            for name in possible_names:
+                for col in df.columns:
+                    if name.lower() in col.lower():
+                        return col
+            return None
+
         for idx, row in df.iterrows():
             try:
-                # Find columns (case-insensitive)
-                def find_col(possible_names):
-                    for name in possible_names:
-                        for col in df.columns:
-                            if name.lower() in col.lower():
-                                return col
-                    return None
-                
-                sr_no = str(row.get(find_col(['Sr No', 'Sr.No', 'Serial No']) or 'Sr No', idx + 1)).strip()
-                observation = str(row.get(find_col(['Observation', 'Vulnerability Title', 'Title']) or 'Observation', '')).strip()
-                affected_asset = str(row.get(find_col(['Affected Asset', 'IP', 'URL', 'Application']) or 'Affected Asset', '')).strip()
-                cve_cwe = str(row.get(find_col(['CVE/CWE', 'CVE', 'CWE']) or 'CVE/CWE', '')).strip()
-                severity = str(row.get(find_col(['Severity', 'Risk']) or 'Severity', 'Medium')).strip()
-                cvss = str(row.get(find_col(['CVSS', 'CVSS Score']) or 'CVSS', '')).strip()
-                detailed_obs = str(row.get(find_col(['Detailed Observation', 'Description', 'Details']) or 'Detailed Observation', '')).strip()
-                recommendation = str(row.get(find_col(['Recommendation', 'Remediation']) or 'Recommendation', '')).strip()
-                reference = str(row.get(find_col(['Reference', 'References']) or 'Reference', '')).strip()
-                revalidation_status = str(row.get(find_col(['Revalidation Status']) or 'Revalidation Status', '')).strip()
-                screenshot = str(row.get(find_col(['Screenshot']) or 'Screenshot', '')).strip()
-                purpose = str(row.get(find_col(['Purpose', 'purpose']) or 'Purpose', 'Web Application')).strip()
-                if not purpose or purpose.lower() in ['nan', 'none', '']:
-                    purpose = 'Web Application'
-                
-                # Parse steps
+                sr_no = str(row.get(find_col(["Sr no.", "Sr No", "Sr.No", "Serial No"]) or "Sr no.", idx + 1)).strip()
+                observation = str(
+                    row.get(
+                        find_col(["Observation", "Observation/Vulnerability Title", "Vulnerability Title", "Title"])
+                        or "Observation",
+                        "",
+                    )
+                ).strip()
+                affected_asset = str(
+                    row.get(find_col(["Affected Asset i.e. IP/URL/Application etc.", "Affected Asset", "IP", "URL", "Application"]) or "Affected Asset", "")
+                ).strip()
+                cve_cwe = str(row.get(find_col(["CVE/CWE", "CVE", "CWE"]) or "CVE/CWE", "")).strip()
+                severity = str(row.get(find_col(["Severity", "Risk"]) or "Severity", "Medium")).strip()
+                cvss = str(row.get(find_col(["CVSS", "CVSS Score"]) or "CVSS", "")).strip()
+                detailed_obs = str(
+                    row.get(find_col(["Detailed Observation/ Vulnerable Point", "Detailed Observation", "Description", "Details"]) or "Detailed Observation", "")
+                ).strip()
+                recommendation = str(row.get(find_col(["Recommendation", "Remediation"]) or "Recommendation", "")).strip()
+                reference = str(row.get(find_col(["Reference", "References"]) or "Reference", "")).strip()
+                revalidation_status = str(row.get(find_col(["Revalidation Status"]) or "Revalidation Status", "")).strip()
+                screenshot = str(row.get(find_col(["Screenshot"]) or "Screenshot", "")).strip()
+                purpose = str(row.get(find_col(["Instant purpose", "Purpose", "purpose"]) or "Instant purpose", "Web Application")).strip()
+                if not purpose or purpose.lower() in ["nan", "none", ""]:
+                    purpose = "Web Application"
+
                 steps_with_screenshots = []
-                steps_text = str(row.get(find_col(['Steps', 'Evidence', 'PoC']) or 'Steps', '')).strip()
-                if steps_text and steps_text.lower() not in ['nan', 'none', '']:
-                    step_lines = [line.strip() for line in steps_text.split('\n') if line.strip()]
-                    for i, step_line in enumerate(step_lines, 1):
-                        steps_with_screenshots.append({
-                            'text': step_line,
-                            'screenshot': ''
-                        })
-                
-                vulnerability = {
-                    'sr_no': sr_no,
-                    'observation': observation,
-                    'affected_asset': affected_asset,
-                    'cve_cwe': cve_cwe,
-                    'severity': severity,
-                    'cvss': cvss,
-                    'detailed_observation': detailed_obs,
-                    'recommendation': recommendation,
-                    'reference': reference,
-                    'steps_with_screenshots': steps_with_screenshots,
-                    'revalidation_status': revalidation_status,
-                    'screenshot': screenshot,
-                    'new_or_repeat': 'New Observation',
-                    'purpose': purpose,
-                    'status': 'Completed'
-                }
-                vulnerabilities.append(vulnerability)
-                
-            except Exception as e:
-                print(f"Error processing row {idx}: {e}")
+                steps_text = str(row.get(find_col(["Evidence / Proof of Concept", "Steps", "Evidence", "PoC"]) or "Evidence / Proof of Concept", "")).strip()
+                if steps_text and steps_text.lower() not in ["nan", "none", ""]:
+                    for step_line in [line.strip() for line in steps_text.split("\n") if line.strip()]:
+                        steps_with_screenshots.append({"text": step_line, "screenshot": ""})
+
+                vulnerabilities.append(
+                    {
+                        "sr_no": sr_no,
+                        "observation": observation,
+                        "affected_asset": affected_asset,
+                        "cve_cwe": cve_cwe,
+                        "severity": severity,
+                        "cvss": cvss,
+                        "detailed_observation": detailed_obs,
+                        "recommendation": recommendation,
+                        "reference": reference,
+                        "steps_with_screenshots": steps_with_screenshots,
+                        "revalidation_status": revalidation_status,
+                        "screenshot": screenshot,
+                        "new_or_repeat": "New Observation",
+                        "purpose": purpose,
+                        "status": "Completed",
+                    }
+                )
+            except Exception as row_error:
+                print(f"Error processing row {idx}: {row_error}")
                 continue
-        
-        print(f"✅ Parsed {len(vulnerabilities)} vulnerabilities (legacy parser)")
+
+        print(f"[OK] Parsed {len(vulnerabilities)} vulnerabilities (legacy parser)")
         return vulnerabilities
-        
     except Exception as e:
         print(f"Error parsing MitKat Excel: {e}")
         traceback.print_exc()
@@ -2493,7 +4173,7 @@ def index_mitkat_poc_images(poc_zip_dir):
                     image_map[vuln_key][step_num] = img_path
                     print(f"  Mapped {vuln_key}/Step {step_num}: {fname}")
     
-    print(f"✅ Indexed POC images for {len(image_map)} vulnerabilities")
+    print(f"[OK] Indexed POC images for {len(image_map)} vulnerabilities")
     return image_map
 
 def create_mitkat_observations_table(doc, vulnerabilities, poc_image_map):
@@ -2702,117 +4382,70 @@ def create_mitkat_observations_table(doc, vulnerabilities, poc_image_map):
 
 def generate_mitkat_report(vulnerabilities, front_page_data, doc_control_data, template_path, output_path, poc_image_map=None):
     """
-    Generate MitKat report from template and data.
+    Generate MitKat report using inlined production-quality builder.
     """
     try:
-        from docxtpl import DocxTemplate, InlineImage
-        
-        tpl = DocxTemplate(template_path)
-        
-        # Prepare context for template
-        context = {
-            # Front page data
-            'CLIENT_NAME': front_page_data.get('client_name', 'Client'),
-            'REPORT_TITLE': front_page_data.get('report_title', 'VAPT Final Report'),
-            'REPORT_TO': front_page_data.get('report_to', ''),
-            
-            # Document control data
-            'REPORT_RELEASE_DATE': doc_control_data.get('report_release_date', ''),
-            'TYPE_OF_AUDIT': doc_control_data.get('type_of_audit', ''),
-            'TYPE_OF_AUDIT_REPORT': doc_control_data.get('type_of_audit_report', ''),
-            'PERIOD': doc_control_data.get('period', ''),
-            'DOCUMENT_TITLE': doc_control_data.get('document_title', ''),
-            'DOCUMENT_ID': doc_control_data.get('document_id', ''),
-            'DOCUMENT_VERSION': doc_control_data.get('document_version', '1.0'),
-            'PREPARED_BY': doc_control_data.get('prepared_by', ''),
-            'REVIEWED_BY': doc_control_data.get('reviewed_by', ''),
-            'APPROVED_BY': doc_control_data.get('approved_by', ''),
-            'RELEASED_BY': doc_control_data.get('released_by', ''),
-            'RELEASE_DATE': doc_control_data.get('release_date', ''),
-            'DOCUMENT_CHANGE_HISTORY': doc_control_data.get('document_change_history', []),
-            'DISTRIBUTION_LIST': doc_control_data.get('distribution_list', []),
-            'ENGAGEMENT_SCOPE': doc_control_data.get('engagement_scope', []),
-            'AUDITING_TEAM': doc_control_data.get('auditing_team', []),
-            'TOOLS_SOFTWARE': doc_control_data.get('tools_software', []),
-            'INTRODUCTION': doc_control_data.get('introduction', ''),  # Not required, can be empty
-        }
-        
-        tpl.render(context)
-        
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-            tpl.save(tmp.name)
-            tmp_path = tmp.name
-        
-        doc = Document(tmp_path)
-        
-        # Insert overall findings table and charts (for earlier pages)
-        insert_mitkat_overall_findings(doc, vulnerabilities)
-        
-        # Group vulnerabilities by affected_asset (URL/IP)
-        assets_dict = {}
-        for vuln in vulnerabilities:
-            asset = vuln.get('affected_asset', 'Unknown')
-            if asset not in assets_dict:
-                assets_dict[asset] = []
-            assets_dict[asset].append(vuln)
-        
-        # On page 9, after test case table, create tables for each unique asset
-        doc.add_page_break()
-        observations_heading = doc.add_paragraph("Observations")
-        observations_heading.runs[0].font.name = 'Altone Trial'
-        observations_heading.runs[0].font.size = Pt(18)
-        observations_heading.runs[0].font.bold = True
-        observations_heading.runs[0].font.color.rgb = RGBColor(106, 68, 154)
-        observations_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-        # Calculate overall totals across all assets
-        overall_totals = {
-            'Critical': 0,
-            'High': 0,
-            'Medium': 0,
-            'Low': 0,
-            'Informational': 0
-        }
-        for asset_vulns in assets_dict.values():
-            for vuln in asset_vulns:
-                severity = vuln.get('severity', 'Medium')
-                if severity.lower() in ['info', 'informational']:
-                    severity = 'Informational'
-                if severity in overall_totals:
-                    overall_totals[severity] += 1
-        
-        # For each unique asset, create Overall Findings table and Observations table
-        for sr_no, (asset, asset_vulns) in enumerate(assets_dict.items(), 1):
-            # Extract purpose and status from first vulnerability if available
-            purpose = asset_vulns[0].get('purpose', 'Web Application')
-            status = asset_vulns[0].get('status', 'Completed')
-            
-            # Create Overall Findings table (dark blue header)
-            # Always pass overall_totals for the summary row to show totals across all assets
-            create_mitkat_overall_findings_table_per_asset(doc, asset, asset_vulns, sr_no, purpose, status, overall_totals)
-            
-            # Add spacing
-            doc.add_paragraph()
-            
-            # Create Observations/Vulnerabilities table
-            create_mitkat_observations_vulnerabilities_table(doc, asset_vulns)
-            
-            # Add spacing between assets
-            doc.add_paragraph()
-            
-            # Add page break between assets (except last one)
-            if sr_no < len(assets_dict):
-                doc.add_page_break()
-        
-        # After all asset tables, add detailed vulnerability tables (pages 10, 11, etc.)
-        doc.add_page_break()
-        create_mitkat_observations_table(doc, vulnerabilities, poc_image_map)
-        
-        doc.save(output_path)
-        os.remove(tmp_path)
-        
+        cfg = {}
+        cfg.update(doc_control_data or {})
+        cfg.update(front_page_data or {})
+
+        # Convert existing legacy vuln shape to inlined production builder shape
+        rpt_vulns = []
+        for idx, vuln in enumerate(vulnerabilities or [], 1):
+            sr_no = str(vuln.get("sr_no", idx))
+            poc_lines = []
+            for step in vuln.get("steps_with_screenshots", []):
+                text = str(step.get("text", "")).strip()
+                if text:
+                    poc_lines.append(text)
+            if not poc_lines:
+                poc_lines = ["(No steps provided)"]
+
+            rpt_vulns.append(
+                {
+                    "sr_no": sr_no,
+                    "title": vuln.get("observation", ""),
+                    "asset": vuln.get("affected_asset", ""),
+                    "cve_cwe": vuln.get("cve_cwe", ""),
+                    "severity": normalise_severity(str(vuln.get("severity", "Medium"))),
+                    "cvss": vuln.get("cvss", ""),
+                    "detailed": vuln.get("detailed_observation", ""),
+                    "recommendation": vuln.get("recommendation", ""),
+                    "reference": vuln.get("reference", ""),
+                    "poc_lines": poc_lines,
+                    "reval_status": vuln.get("revalidation_status", ""),
+                    "ss1": "",
+                    "ss2": "",
+                    "ss3": "",
+                    "new_repeat": vuln.get("new_or_repeat", "New"),
+                    "status": vuln.get("status", "Completed"),
+                    "purpose": vuln.get("purpose", "Web Application"),
+                    "hostname": vuln.get("affected_asset", ""),
+                }
+            )
+
+        # Normalize POC image map: VUL-001 -> {1:path} into {1:{1:path}}
+        normalized_poc_map = {}
+        if poc_image_map:
+            for key, value in poc_image_map.items():
+                num_match = re.search(r"(\d+)", str(key))
+                if not num_match:
+                    continue
+                normalized_poc_map[int(num_match.group(1))] = value
+
+        if template_path and os.path.exists(template_path):
+            mitkat_rpt_generate_report_with_template(
+                rpt_vulns,
+                normalized_poc_map,
+                cfg,
+                template_path,
+                output_path,
+            )
+        else:
+            doc = mitkat_rpt_build_document_from_scratch(rpt_vulns, normalized_poc_map, cfg)
+            doc.save(output_path)
+
         return output_path
-        
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error generating MitKat report: {str(e)}")
@@ -3062,6 +4695,71 @@ def insert_mitkat_overall_findings(doc, vulnerabilities):
     # This function is kept for compatibility but doesn't generate charts anymore
     pass
 
+@mitkat_router.post("/mitkat/convert-excel/")
+async def convert_vapt_to_mitkat_excel(
+    vapt_file: UploadFile = File(...),
+    poc_zip: UploadFile = File(None),
+):
+    """
+    Step 1 endpoint:
+    Convert any VAPT tracker Excel into MitKat 30-column formatted Excel.
+    """
+    temp_vapt_path = None
+    temp_zip_extract_dir = None
+
+    try:
+        if not vapt_file.filename:
+            raise HTTPException(status_code=400, detail="VAPT Excel file is required")
+
+        temp_vapt_path = os.path.join(
+            tempfile.gettempdir(),
+            f"mitkat_vapt_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{vapt_file.filename}",
+        )
+        with open(temp_vapt_path, "wb") as f:
+            f.write(await vapt_file.read())
+
+        poc_index = {}
+        if poc_zip and poc_zip.filename:
+            temp_zip_extract_dir = tempfile.mkdtemp()
+            temp_zip_path = os.path.join(temp_zip_extract_dir, poc_zip.filename)
+            with open(temp_zip_path, "wb") as f:
+                f.write(await poc_zip.read())
+
+            poc_root, extracted_tmp = mitkat_conv_extract_poc_root(temp_zip_path)
+            poc_index = mitkat_conv_index_poc_folder(poc_root)
+            if extracted_tmp:
+                temp_zip_extract_dir = extracted_tmp
+
+        df = mitkat_conv_read_vapt(temp_vapt_path)
+        out_df = mitkat_conv_transform(df, poc_index)
+
+        output_filename = f"Mitkat_CertIn_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        output_path = os.path.join(UPLOAD_DIR, output_filename)
+        mitkat_conv_write_excel(out_df, output_path)
+
+        return FileResponse(
+            path=output_path,
+            filename="Mitkat_Cert-In_output.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"VAPT to MitKat conversion failed: {str(e)}")
+    finally:
+        try:
+            if temp_vapt_path and os.path.exists(temp_vapt_path):
+                os.remove(temp_vapt_path)
+        except Exception:
+            pass
+        try:
+            if temp_zip_extract_dir and os.path.exists(temp_zip_extract_dir):
+                shutil.rmtree(temp_zip_extract_dir, ignore_errors=True)
+        except Exception:
+            pass
+
 @mitkat_router.post("/mitkat/generate-report/")
 async def generate_mitkat_report_endpoint(
     request: Request,
@@ -3074,6 +4772,8 @@ async def generate_mitkat_report_endpoint(
     """
     Generate MitKat report from uploaded files and form data.
     """
+    vuln_file_path = None
+    tmp_zip_dir = None
     try:
         print(f"Starting MitKat report generation")
         
@@ -3091,7 +4791,7 @@ async def generate_mitkat_report_endpoint(
         
         # Process POC ZIP if provided
         poc_image_map = {}
-        if poc_zip:
+        if poc_zip and poc_zip.filename:
             tmp_zip_dir = tempfile.mkdtemp()
             zip_path = os.path.join(tmp_zip_dir, poc_zip.filename)
             with open(zip_path, 'wb') as f:
@@ -3128,7 +4828,7 @@ async def generate_mitkat_report_endpoint(
         for path in possible_paths:
             if os.path.exists(path):
                 template_path = path
-                print(f"✅ Found MitKat template at: {template_path}")
+                print(f"[OK] Found MitKat template at: {template_path}")
                 break
         
         if not template_path:
@@ -3144,9 +4844,6 @@ async def generate_mitkat_report_endpoint(
         output_path = os.path.join(UPLOAD_DIR, output_filename)
         
         generate_mitkat_report(vulnerabilities, front_data, doc_control, template_path, output_path, poc_image_map)
-        
-        # Cleanup
-        os.remove(vuln_file_path)
         
         # Audit log
         try:
@@ -3175,6 +4872,17 @@ async def generate_mitkat_report_endpoint(
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            if vuln_file_path and os.path.exists(vuln_file_path):
+                os.remove(vuln_file_path)
+        except Exception:
+            pass
+        try:
+            if tmp_zip_dir and os.path.exists(tmp_zip_dir):
+                shutil.rmtree(tmp_zip_dir, ignore_errors=True)
+        except Exception:
+            pass
 
 @mitkat_router.get("/mitkat/", response_class=HTMLResponse)
 async def mitkat_form():
@@ -3215,6 +4923,9 @@ async def mitkat_form():
             .btn-danger:hover { background-color: #c82333; }
             .btn-secondary { background-color: #6c757d; }
             .btn-secondary:hover { background-color: #5a6268; }
+            .step-card { border: 2px solid #e6dcf8; background: #faf7ff; }
+            .step-title { display: inline-block; background: #6923d0; color: #fff; padding: 4px 10px; border-radius: 999px; font-size: 13px; margin-bottom: 8px; }
+            .step-divider { border: 0; height: 1px; background: #d9d9d9; margin: 24px 0; }
         </style>
     </head>
     <body>
@@ -3224,6 +4935,28 @@ async def mitkat_form():
                 <a href="/report_formats.html" class="btn" style="text-decoration:none;display:inline-block;">← Back to Report Formats</a>
             </div>
             
+            <div class="form-section step-card">
+                <div class="step-title">Step 1</div>
+                <h3>Convert your VAPT Tracker Excel to MitKat Format</h3>
+                <div class="form-group">
+                    <label for="convert_vapt_file">Upload your VAPT Tracker Excel (.xlsx) *</label>
+                    <input type="file" id="convert_vapt_file" accept=".xlsx" required>
+                </div>
+                <div class="form-group">
+                    <label for="convert_poc_zip">Upload POC zip (optional) — for screenshot mapping</label>
+                    <input type="file" id="convert_poc_zip" accept=".zip">
+                </div>
+                <div style="margin-top: 10px;">
+                    <button type="button" class="btn btn-success" id="convertMitkatBtn">Convert to MitKat Excel</button>
+                </div>
+                <div class="result" id="convertResult" style="display:none;"></div>
+            </div>
+
+            <hr class="step-divider">
+
+            <div class="step-title">Step 2</div>
+            <h3 style="color:#6923d0;margin-top:8px;">Generate MitKat Report from MitKat Formatted Excel</h3>
+
             <form id="mitkatForm">
                 <!-- Front Page Data -->
                 <div class="form-section">
@@ -3419,8 +5152,8 @@ async def mitkat_form():
                         </ul>
                     </div>
                     <div class="form-group">
-                        <label for="vulnerability_file">Upload Vulnerability Excel File *</label>
-                        <input type="file" id="vulnerability_file" name="vulnerability_file" accept=".xlsx,.xls" required>
+                            <label for="vulnerability_file">Upload MitKat Cert-In Excel (.xlsx) *</label>
+                            <input type="file" id="vulnerability_file" name="vulnerability_file" accept=".xlsx" required>
                     </div>
                     
                     <div class="info-box">
@@ -3473,6 +5206,75 @@ async def mitkat_form():
                     CSRF_TOKEN_READY = true; // Allow form submission even if token fetch fails
                 }
             })();
+
+            document.getElementById('convertMitkatBtn').addEventListener('click', async function() {
+                const resultEl = document.getElementById('convertResult');
+                resultEl.style.display = 'none';
+
+                const vaptFile = document.getElementById('convert_vapt_file').files[0];
+                if (!vaptFile) {
+                    resultEl.innerHTML = '<p>Please choose a VAPT Excel file first.</p>';
+                    resultEl.className = 'result error';
+                    resultEl.style.display = 'block';
+                    return;
+                }
+
+                if (!CSRF_TOKEN_READY) {
+                    await new Promise(resolve => setTimeout(resolve, 400));
+                }
+                try {
+                    const tokenRes = await fetch('/csrf-token', { credentials: 'same-origin' });
+                    if (tokenRes.ok) {
+                        const tokenData = await tokenRes.json().catch(() => ({}));
+                        CSRF_TOKEN = tokenData.csrf_token || tokenData.token || tokenData.csrf || CSRF_TOKEN;
+                    }
+                } catch (_) {}
+
+                const fd = new FormData();
+                fd.append('vapt_file', vaptFile);
+                const pocFile = document.getElementById('convert_poc_zip').files[0];
+                if (pocFile) {
+                    fd.append('poc_zip', pocFile);
+                }
+                if (CSRF_TOKEN) {
+                    fd.append('csrf_token', CSRF_TOKEN);
+                }
+
+                try {
+                    const headers = {};
+                    if (CSRF_TOKEN) {
+                        headers['X-CSRF-Token'] = CSRF_TOKEN;
+                    }
+                    const response = await fetch('/mitkat/convert-excel/', {
+                        method: 'POST',
+                        headers: headers,
+                        body: fd,
+                        credentials: 'same-origin'
+                    });
+                    if (!response.ok) {
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.detail || 'Conversion failed');
+                    }
+
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'Mitkat_Cert-In_output.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+
+                    resultEl.innerHTML = '<h4>Conversion successful</h4><p>MitKat formatted Excel downloaded. Use it in Step 2 below.</p>';
+                    resultEl.className = 'result success';
+                    resultEl.style.display = 'block';
+                } catch (error) {
+                    resultEl.innerHTML = `<h4>Conversion failed</h4><p>${error.message}</p>`;
+                    resultEl.className = 'result error';
+                    resultEl.style.display = 'block';
+                }
+            });
 
             // Functions to add/remove dynamic items
             function addChangeHistory() {

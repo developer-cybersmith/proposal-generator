@@ -5,6 +5,12 @@
 
 class SessionTimeoutManager {
     constructor() {
+        // Align with server SESSION_TIMEOUT (default 45 min). Optional: <body data-session-timeout-ms="2700000">
+        const DEFAULT_SESSION_MS = 45 * 60 * 1000;
+        const fromDom = typeof document !== 'undefined' && document.body && document.body.dataset
+            ? parseInt(document.body.dataset.sessionTimeoutMs || '', 10)
+            : NaN;
+        this.sessionTimeout = (!Number.isNaN(fromDom) && fromDom > 0) ? fromDom : DEFAULT_SESSION_MS;
         this.warningTime = 5 * 60 * 1000; // 5 minutes before timeout
         this.checkInterval = 60 * 1000; // Check every minute
         this.lastActivity = Date.now();
@@ -120,8 +126,8 @@ class SessionTimeoutManager {
         document.body.appendChild(modal);
 
         // Add event listeners
-        document.getElementById('stay-logged-in').addEventListener('click', () => {
-            this.stayLoggedIn();
+        document.getElementById('stay-logged-in').addEventListener('click', async () => {
+            await this.stayLoggedIn();
         });
 
         document.getElementById('logout-now').addEventListener('click', () => {
@@ -166,14 +172,17 @@ class SessionTimeoutManager {
         }
     }
 
-    stayLoggedIn() {
+    async stayLoggedIn() {
         this.hideWarning();
         this.lastActivity = Date.now();
         this.warningShown = false;
         
-        // Optionally refresh CSRF token
+        try {
+            await fetch('/csrf-token', { credentials: 'same-origin' });
+        } catch (_) {}
+        
         if (window.csrfManager) {
-            window.csrfManager.refreshToken();
+            await window.csrfManager.refreshToken();
         }
     }
 

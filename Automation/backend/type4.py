@@ -37,6 +37,9 @@ except ImportError:
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 from excel_parser import parse_excel_data, format_for_template
 
+# Shared Excel converter (any-format -> feature-format)
+from Automation.backend.excel_converter import convert_any_excel_to_format
+
 # Version tracking for code changes
 # Format: MAJOR.MINOR.PATCH
 # Increment MAJOR for significant structural changes
@@ -1290,6 +1293,69 @@ def insert_steps_with_images(doc, vulnerability, image_map):
         else:
             doc.add_paragraph(f"[Screenshot missing: {step['screenshot']}]")
 
+@app.post("/convert-excel/")
+async def web_convert_excel(
+    vapt_file: UploadFile = File(...),
+    poc_zip: UploadFile = File(None),
+):
+    """
+    Step 1 for Type-4 Web reports.
+    Convert any VAPT Excel to the 29-column Web format Excel.
+    """
+    temp_vapt_path = None
+    temp_zip_path = None
+    extract_dir = None
+    output_path = None
+    try:
+        if not vapt_file or not vapt_file.filename:
+            raise HTTPException(status_code=400, detail="VAPT Excel file is required")
+
+        suffix = os.path.splitext(vapt_file.filename)[1] or ".xlsx"
+        temp_vapt_path = os.path.join(
+            tempfile.gettempdir(),
+            f"web_conv_vapt_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{suffix}",
+        )
+        with open(temp_vapt_path, "wb") as f:
+            f.write(await vapt_file.read())
+
+        if poc_zip and poc_zip.filename:
+            temp_zip_path = os.path.join(
+                tempfile.gettempdir(),
+                f"web_conv_poc_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.zip",
+            )
+            with open(temp_zip_path, "wb") as f:
+                f.write(await poc_zip.read())
+
+        output_path, extract_dir = convert_any_excel_to_format(
+            temp_vapt_path,
+            poc_zip_path=temp_zip_path,
+            poc_layout="web",
+        )
+
+        return FileResponse(
+            path=output_path,
+            filename="Web_format_output.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Web Excel conversion failed: {str(e)}")
+    finally:
+        for p in [temp_vapt_path, temp_zip_path]:
+            try:
+                if p and os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
+        try:
+            if extract_dir and os.path.exists(extract_dir):
+                shutil.rmtree(extract_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
 @app.post("/generate-report/")
 async def generate_report(
     file: UploadFile = File(...),  # Vulnerability file
@@ -1369,7 +1435,7 @@ async def generate_report(
         
         # Use the CSS template v2.1 - use the template in the same directory as type4.py
         template_path = os.path.join(os.path.dirname(__file__), "CSS-NEW_Technical_Sample_Report_Automated_v2.1.docx")
-        report_filename = f"{client_name} VAPT Report {datetime.now().strftime('%Y-%d-%m')}.docx"
+        report_filename = f"{client_name}_Web_Report_{datetime.now().strftime('%Y-%m-%d')}.docx"
         output_path = os.path.join(UPLOAD_DIR, report_filename)
         
         # Generate the report, passing both vulnerability and document control data
@@ -1847,6 +1913,34 @@ async def root():
 
         }
 
+        .step-card {
+            border: 2px solid #6923d0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+            background-color: #0f1a35;
+        }
+        .step-title {
+            display: inline-block;
+            background-color: #6923d0;
+            color: white;
+            font-weight: bold;
+            font-size: 0.85em;
+            padding: 3px 12px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        .step-card h3 { margin-top: 4px; color: #c084fc; }
+        .divider { border: none; border-top: 2px dashed #6923d0; margin: 10px 0 30px 0; }
+        .btn-success { background-color: #1a7a3a; }
+        .btn-success:hover { background-color: #22a04d; }
+        button:disabled { background-color: #444; cursor: not-allowed; }
+        .result { margin-top: 12px; padding: 10px; border-radius: 4px; }
+        .result.success { background-color: rgba(0,200,80,0.15); border: 1px solid #22a04d; color: #7fffb0; }
+        .result.error   { background-color: rgba(255,60,60,0.15); border: 1px solid #c0392b; color: #ff9999; }
+
     </style>
 
 </head>
@@ -1857,9 +1951,32 @@ async def root():
 
         <a href="/report_formats.html" class="back-link">← Back to Report Formats</a>
 
-        <h1>VAPT Report Generator</h1>
+        <h1>Web VAPT Report Generator</h1>
 
-        
+        <!-- STEP 1: Convert any Excel to Web Format (OPTIONAL) -->
+        <div class="step-card">
+            <div class="step-title">Step 1 — Optional</div>
+            <h3>Convert Any Excel to Web Format Excel <span style="font-size:0.75em;color:#a78bfa;font-weight:normal;">(Skip if your Excel is already in Web format)</span></h3>
+            <p style="color:#aaa;margin-top:0;">Only needed if your Excel is not already in the required Web format. Upload any VAPT tracker Excel and optional POC ZIP to get a properly formatted Web Excel.</p>
+            <div class="form-group">
+                <label for="conv_vapt_file">Upload Any VAPT Excel (.xlsx) *</label>
+                <input type="file" id="conv_vapt_file" accept=".xlsx,.xls">
+            </div>
+            <div class="form-group">
+                <label for="conv_poc_zip">Upload POC ZIP (optional) — for screenshot mapping</label>
+                <input type="file" id="conv_poc_zip" accept=".zip">
+            </div>
+            <button type="button" class="btn-success" id="convertBtn">Convert to Web Format Excel</button>
+            <div class="result" id="convertResult" style="display:none;"></div>
+        </div>
+
+        <hr class="divider">
+
+        <!-- STEP 2: Generate Report -->
+        <div class="step-card">
+            <div class="step-title">Step 2</div>
+            <h3>Generate Web VAPT Word Report</h3>
+            <p style="color:#aaa;margin-top:0;">Upload your Web Format Excel (output from Step 1, or any correctly formatted Web Excel) along with Assessment Details to generate the final Word report.</p>
 
         <form id="generateForm" enctype="multipart/form-data">
 
@@ -1945,17 +2062,105 @@ async def root():
 
         </div>
 
+        </div><!-- end step-card step2 -->
+
     </div>
 
     
 
     <script>
 
+        let CSRF_TOKEN = null;
+
+        // Fetch CSRF token on page load
+        (async () => {
+            try {
+                const res = await fetch('/csrf-token', { credentials: 'same-origin' });
+                if (res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    CSRF_TOKEN = data.csrf_token || data.token || data.csrf || null;
+                }
+            } catch (_) {}
+        })();
+
+        async function refreshCsrf() {
+            try {
+                const res = await fetch('/csrf-token', { credentials: 'same-origin' });
+                if (res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    CSRF_TOKEN = data.csrf_token || data.token || data.csrf || CSRF_TOKEN;
+                }
+            } catch (_) {}
+        }
+
+        // ── Step 1: Convert Excel ──────────────────────────────────────────────
+        document.addEventListener('DOMContentLoaded', function() {
+            const convertBtn = document.getElementById('convertBtn');
+            if (convertBtn) {
+                convertBtn.addEventListener('click', async function () {
+                    const resultEl = document.getElementById('convertResult');
+                    resultEl.style.display = 'none';
+                    const vaptFile = document.getElementById('conv_vapt_file').files[0];
+                    if (!vaptFile) {
+                        resultEl.innerHTML = '<p>Please choose a VAPT Excel file first.</p>';
+                        resultEl.className = 'result error';
+                        resultEl.style.display = 'block';
+                        return;
+                    }
+                    this.disabled = true;
+                    this.textContent = 'Converting...';
+                    await refreshCsrf();
+                    const fd = new FormData();
+                    fd.append('vapt_file', vaptFile);
+                    const pocFile = document.getElementById('conv_poc_zip').files[0];
+                    if (pocFile) fd.append('poc_zip', pocFile);
+                    if (CSRF_TOKEN) fd.append('csrf_token', CSRF_TOKEN);
+                    try {
+                        const headers = {};
+                        if (CSRF_TOKEN) headers['X-CSRF-Token'] = CSRF_TOKEN;
+                        const response = await fetch('/type4/convert-excel/', {
+                            method: 'POST',
+                            headers: headers,
+                            body: fd,
+                            credentials: 'same-origin'
+                        });
+                        if (response.status === 401) {
+                            throw new Error('Session expired. <a href="/auth/test-login" style="color:#a78bfa;">Click here to log in again</a>.');
+                        }
+                        if (!response.ok) {
+                            const err = await response.json().catch(() => ({}));
+                            throw new Error(err.detail || 'Conversion failed (' + response.status + ')');
+                        }
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        const cd = response.headers.get('content-disposition') || '';
+                        a.download = cd.match(/filename="?([^";\\n]+)"?/)?.[1] || 'Web_format_output.xlsx';
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        resultEl.innerHTML = '<h4>Conversion successful!</h4><p>Web Format Excel downloaded. Use it in Step 2 above.</p>';
+                        resultEl.className = 'result success';
+                        resultEl.style.display = 'block';
+                    } catch (error) {
+                        resultEl.innerHTML = '<h4>Conversion failed</h4><p>' + error.message + '</p>';
+                        resultEl.className = 'result error';
+                        resultEl.style.display = 'block';
+                    } finally {
+                        this.disabled = false;
+                        this.textContent = 'Convert to Web Format Excel';
+                    }
+                });
+            }
+        });
+
         function setStatus(message, isError = false) {
 
             const statusDiv = document.getElementById('status');
 
-            statusDiv.innerText = message;
+            statusDiv.innerHTML = message;
 
             statusDiv.style.backgroundColor = isError ? 'rgba(255, 0, 0, 0.3)' : 'rgba(0, 255, 0, 0.1)';
 
@@ -2003,7 +2208,7 @@ async def root():
 
         
 
-        function generateReport() {
+        async function generateReport() {
 
             const fileInput = document.getElementById('excelFile');
 
@@ -2051,7 +2256,7 @@ async def root():
 
             document.getElementById('validationErrors').style.display = 'none';
 
-            
+            await refreshCsrf();
 
             const formData = new FormData();
 
@@ -2073,13 +2278,20 @@ async def root():
 
             }
 
-            
+            if (CSRF_TOKEN) { formData.append('csrf_token', CSRF_TOKEN); }
+
+            const reqHeaders = {};
+            if (CSRF_TOKEN) { reqHeaders['X-CSRF-Token'] = CSRF_TOKEN; }
 
             fetch('/type4/generate-report/', {
 
                 method: 'POST',
 
-                body: formData
+                headers: reqHeaders,
+
+                body: formData,
+
+                credentials: 'same-origin'
 
             })
 
@@ -2117,6 +2329,10 @@ async def root():
 
                 
 
+                if (response.status === 401) {
+                    throw new Error('Session expired. Please <a href="/auth/test-login">log in again</a>.');
+                }
+
                 if (response.ok) {
 
                     if (!validationErrors || validationErrors === '[]') {
@@ -2131,7 +2347,7 @@ async def root():
 
                 return response.json().then(error => {
 
-                    throw new Error(error.detail || 'Error generating report');
+                    throw new Error(error.detail || 'Error generating report (' + response.status + ')');
 
                 });
 
@@ -2145,13 +2361,15 @@ async def root():
 
                 a.href = url;
 
-                a.download = `${clientName || 'Client'} VAPT Report.docx`;
+                a.download = `${clientName || 'Client'}_Web_Report.docx`;
 
                 document.body.appendChild(a);
 
                 a.click();
 
                 window.URL.revokeObjectURL(url);
+
+                document.body.removeChild(a);
 
             })
 

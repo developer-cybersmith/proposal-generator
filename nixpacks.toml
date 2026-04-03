@@ -2,4 +2,5 @@
 nixPkgs = ["python312"]
 
 [start]
-cmd = "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"
+# Match Procfile: Gunicorn + Uvicorn worker for long report generation; Railway sets PORT.
+cmd = "gunicorn app:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT} --timeout 300"

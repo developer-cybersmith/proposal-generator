@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>VAPT Report Generator</title>
+    <title>IP VAPT Report Generator (Type 1)</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -11,7 +11,7 @@
             padding: 20px;
         }
         .container {
-            max-width: 800px;
+            max-width: 860px;
             margin: 0 auto;
             padding: 20px;
             background-color: #16213e;
@@ -20,6 +20,34 @@
         h1 {
             color: #8a2be2;
             text-align: center;
+        }
+        .step-card {
+            border: 2px solid #6923d0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+            background-color: #0f1a35;
+        }
+        .step-title {
+            display: inline-block;
+            background-color: #6923d0;
+            color: white;
+            font-weight: bold;
+            font-size: 0.85em;
+            padding: 3px 12px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        .step-card h3 {
+            margin-top: 4px;
+            color: #c084fc;
+        }
+        .divider {
+            border: none;
+            border-top: 2px dashed #6923d0;
+            margin: 10px 0 30px 0;
         }
         .form-group {
             margin-bottom: 15px;
@@ -35,6 +63,7 @@
             border-radius: 4px;
             background-color: #0f3460;
             color: white;
+            box-sizing: border-box;
         }
         button {
             background-color: #6923d0;
@@ -46,208 +75,297 @@
             font-weight: bold;
             margin-top: 10px;
         }
-        button:hover {
-            background-color: #8a2be2;
-        }
+        button:hover { background-color: #8a2be2; }
+        button:disabled { background-color: #444; cursor: not-allowed; }
+        .btn-success { background-color: #1a7a3a; }
+        .btn-success:hover { background-color: #22a04d; }
         .status {
-            margin-top: 20px;
+            margin-top: 15px;
             padding: 10px;
             border-radius: 4px;
-            background-color: rgba(0, 0, 0, 0.3);
+            background-color: rgba(0,0,0,0.3);
+            min-height: 20px;
         }
-        .info-section {
-            margin-top: 20px;
+        .result {
+            margin-top: 12px;
             padding: 10px;
-            border: 1px dashed #6923d0;
             border-radius: 4px;
-            background-color: rgba(0, 0, 0, 0.2);
         }
-        .info-section h3 {
-            margin-top: 0;
-            color: #8a2be2;
-        }
-        .info-section ul {
-            margin-left: 20px;
-            padding-left: 0;
-        }
-        .info-section li {
-            margin-bottom: 5px;
-        }
+        .result.success { background-color: rgba(0,200,80,0.15); border: 1px solid #22a04d; color: #7fffb0; }
+        .result.error   { background-color: rgba(255,60,60,0.15); border: 1px solid #c0392b; color: #ff9999; }
         .error-list {
             color: #ff5555;
             margin-top: 15px;
-            background-color: rgba(255, 0, 0, 0.1);
+            background-color: rgba(255,0,0,0.1);
             padding: 10px;
             border-radius: 4px;
             max-height: 200px;
             overflow-y: auto;
         }
-        .error-list h4 {
-            margin-top: 0;
-            color: #ff5555;
+        .error-list h4 { margin-top: 0; color: #ff5555; }
+        .error-list ul { margin-top: 5px; padding-left: 20px; }
+        .error-list li { margin-bottom: 5px; }
+        .info-section {
+            margin-top: 15px;
+            padding: 10px;
+            border: 1px dashed #6923d0;
+            border-radius: 4px;
+            background-color: rgba(0,0,0,0.2);
         }
-        .error-list ul {
-            margin-top: 5px;
-            padding-left: 20px;
-        }
-        .error-list li {
-            margin-bottom: 5px;
-        }
+        .info-section h3 { margin-top: 0; color: #8a2be2; }
+        .info-section ul { margin-left: 20px; padding-left: 0; }
+        .info-section li { margin-bottom: 5px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>VAPT Report Generator</h1>
-        
-        <form id="generateForm" enctype="multipart/form-data">
+        <h1>IP VAPT Report Generator (Type 1)</h1>
+
+        <!-- STEP 1: Convert any Excel to IP Format (OPTIONAL) -->
+        <div class="step-card">
+            <div class="step-title">Step 1 — Optional</div>
+            <h3>Convert Any Excel to IP Format Excel <span style="font-size:0.75em;color:#a78bfa;font-weight:normal;">(Skip if your Excel is already in IP format)</span></h3>
+            <p style="color:#aaa;margin-top:0;">Only needed if your Excel is not already in the required IP format. Upload any VAPT tracker Excel and optional POC ZIP to get a properly formatted IP Excel.</p>
             <div class="form-group">
-                <label for="excelFile">Excel File with Vulnerabilities </label>
-                <input type="file" id="excelFile" name="file" accept=".xlsx, .xls">
-            </div>
-            <div class="form-group">
-                <label for="assessmentFile">Excel File with Assessment Details:</label>
-                <input type="file" id="assessmentFile" name="assessment_file" accept=".xlsx, .xls">
-            </div>
-            <div class="form-group">
-                <label for="pocImages">POC Screenshots (.zip):</label>
-                <input type="file" id="pocImages" name="poc_images" accept=".zip">
+                <label for="conv_vapt_file">Upload Any VAPT Excel (.xlsx) *</label>
+                <input type="file" id="conv_vapt_file" accept=".xlsx,.xls">
             </div>
             <div class="form-group">
-                <label for="clientName">Client Name:</label>
-                <input type="text" id="clientName" name="client_name" placeholder="Client Name">
+                <label for="conv_poc_zip">Upload POC ZIP (optional) — for screenshot mapping</label>
+                <input type="file" id="conv_poc_zip" accept=".zip">
             </div>
-            <div class="form-group">
-                <label for="companyLogo">Company Logo:</label>
-                <input type="file" id="companyLogo" name="company_logo" accept="image/png, image/jpeg">
+            <button type="button" class="btn-success" id="convertBtn">Convert to IP Format Excel</button>
+            <div class="result" id="convertResult" style="display:none;"></div>
+        </div>
+
+        <hr class="divider">
+
+        <!-- STEP 2: Generate Report from IP Format Excel -->
+        <div class="step-card">
+            <div class="step-title">Step 2</div>
+            <h3>Generate IP VAPT Word Report</h3>
+            <p style="color:#aaa;margin-top:0;">Upload your IP Format Excel (output from Step 1, or any correctly formatted IP Excel) along with Assessment Details to generate the final Word report.</p>
+            <form id="generateForm" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="excelFile">IP Format Excel (.xlsx) — output from Step 1 or any correctly formatted IP Excel *</label>
+                    <input type="file" id="excelFile" name="file" accept=".xlsx,.xls">
+                </div>
+                <div class="form-group">
+                    <label for="assessmentFile">Assessment Details Excel (.xlsx) *</label>
+                    <input type="file" id="assessmentFile" name="assessment_file" accept=".xlsx,.xls">
+                </div>
+                <div class="form-group">
+                    <label for="pocImages">POC Screenshots ZIP (optional)</label>
+                    <input type="file" id="pocImages" name="poc_images" accept=".zip">
+                </div>
+                <div class="form-group">
+                    <label for="clientName">Client Name</label>
+                    <input type="text" id="clientName" name="client_name" placeholder="Client Name">
+                </div>
+                <div class="form-group">
+                    <label for="companyLogo">Company Logo (optional)</label>
+                    <input type="file" id="companyLogo" name="company_logo" accept="image/png,image/jpeg">
+                </div>
+
+                <div class="info-section">
+                    <h3>Format Notes</h3>
+                    <ul>
+                        <li>Use the IP Format Excel downloaded from Step 1 above</li>
+                        <li>POC ZIP structure: <code>POC Screenshots/&lt;IP&gt;/&lt;Severity&gt;/VUL-NNN/stepN.png</code></li>
+                        <li>For an IP with no vulnerabilities, set Sr no. to "No Vulnerabilities"</li>
+                    </ul>
+                </div>
+
+                <button type="button" onclick="generateReport()" id="generateReportBtn">Generate Report</button>
+            </form>
+
+            <div id="status" class="status" style="display:none;"></div>
+            <div id="validationErrors" class="error-list" style="display:none;">
+                <h4>Validation Errors</h4>
+                <ul id="errorList"></ul>
             </div>
-            
-            <div class="info-section">
-                <h3>How to Use This Tool</h3>
-                <ul>
-                    <li>Use the provided Excel template with 15 screenshot columns</li>
-                    <li>Add vulnerability details in each row</li>
-                    <li>Insert screenshot filenames in the respective "Screenshot X" columns</li>
-                    <li>Ensure your steps are separated by line breaks (Enter/Return key)</li>
-                    <li>The system will automatically map screenshots to steps in the final report</li>
-                    <li>For each vulnerability, the number of steps should match the number of screenshots</li>
-                    <li>For an IP having no vulnerabilities, mention it in the Excel file and under "Sr. No." mention as "No Vulnerabilities"</li>
-                </ul>
-            </div>
-            
-            <button type="button" onclick="generateReport()" id="generateReportBtn">Generate Report</button>
-        </form>
-        
-        <div id="status" class="status"></div>
-        <div id="validationErrors" class="error-list" style="display: none;">
-            <h4>Validation Errors</h4>
-            <ul id="errorList"></ul>
         </div>
     </div>
-    
+
     <script>
-	const API_BASE_URL = window.location.origin;
+        const API_BASE_URL = window.location.origin;
+        let CSRF_TOKEN = null;
+
+        // Fetch CSRF token on page load
+        (async () => {
+            try {
+                const res = await fetch('/csrf-token', { credentials: 'same-origin' });
+                if (res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    CSRF_TOKEN = data.csrf_token || data.token || data.csrf || null;
+                }
+            } catch (_) {}
+        })();
+
+        async function refreshCsrf() {
+            try {
+                const res = await fetch('/csrf-token', { credentials: 'same-origin' });
+                if (res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    CSRF_TOKEN = data.csrf_token || data.token || data.csrf || CSRF_TOKEN;
+                }
+            } catch (_) {}
+        }
+
+        // ── Step 1: Convert Excel ──────────────────────────────────────────────
+        document.getElementById('convertBtn').addEventListener('click', async function () {
+            const resultEl = document.getElementById('convertResult');
+            resultEl.style.display = 'none';
+
+            const vaptFile = document.getElementById('conv_vapt_file').files[0];
+            if (!vaptFile) {
+                resultEl.innerHTML = '<p>Please choose a VAPT Excel file first.</p>';
+                resultEl.className = 'result error';
+                resultEl.style.display = 'block';
+                return;
+            }
+
+            this.disabled = true;
+            this.textContent = 'Converting...';
+            await refreshCsrf();
+
+            const fd = new FormData();
+            fd.append('vapt_file', vaptFile);
+            const pocFile = document.getElementById('conv_poc_zip').files[0];
+            if (pocFile) fd.append('poc_zip', pocFile);
+            if (CSRF_TOKEN) fd.append('csrf_token', CSRF_TOKEN);
+
+            try {
+                const headers = {};
+                if (CSRF_TOKEN) headers['X-CSRF-Token'] = CSRF_TOKEN;
+
+                const response = await fetch(`${API_BASE_URL}/type1/convert-excel/`, {
+                    method: 'POST',
+                    headers: headers,
+                    body: fd,
+                    credentials: 'same-origin'
+                });
+
+                if (response.status === 401) {
+                    throw new Error('Session expired. <a href="/auth/test-login" style="color:#a78bfa;">Click here to log in again</a>.');
+                }
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.detail || `Conversion failed (${response.status})`);
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const cd = response.headers.get('content-disposition') || '';
+                a.download = cd.match(/filename="?([^";\n]+)"?/)?.[1] || 'IP_format_output.xlsx';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                resultEl.innerHTML = '<h4>Conversion successful!</h4><p>IP Format Excel downloaded. Use it in Step 2 above.</p>';
+                resultEl.className = 'result success';
+                resultEl.style.display = 'block';
+            } catch (error) {
+                resultEl.innerHTML = `<h4>Conversion failed</h4><p>${error.message}</p>`;
+                resultEl.className = 'result error';
+                resultEl.style.display = 'block';
+            } finally {
+                this.disabled = false;
+                this.textContent = 'Convert to IP Format Excel';
+            }
+        });
+
+        // ── Step 2: Generate Report ────────────────────────────────────────────
         function setStatus(message, isError = false) {
             const statusDiv = document.getElementById('status');
-            statusDiv.innerText = message;
-            statusDiv.style.backgroundColor = isError ? 'rgba(255, 0, 0, 0.3)' : 'rgba(0, 255, 0, 0.1)';
+            statusDiv.style.display = 'block';
+            statusDiv.innerHTML = message;
+            statusDiv.style.backgroundColor = isError ? 'rgba(255,0,0,0.3)' : 'rgba(0,255,0,0.1)';
         }
-        
+
         function showValidationErrors(errors) {
             const errorDiv = document.getElementById('validationErrors');
             const errorList = document.getElementById('errorList');
-            
-            // Clear previous errors
             errorList.innerHTML = '';
-            
             if (errors && errors.length > 0) {
                 errors.forEach(error => {
                     const li = document.createElement('li');
                     li.textContent = `Row ${error.row}: ${error.message}`;
                     errorList.appendChild(li);
                 });
-                
                 errorDiv.style.display = 'block';
             } else {
                 errorDiv.style.display = 'none';
             }
         }
-        
-        function generateReport() {
-            const fileInput = document.getElementById('excelFile');
-            const assessmentFileInput = document.getElementById('assessmentFile');
-            const clientNameInput = document.getElementById('clientName');
-            const pocImagesInput = document.getElementById('pocImages');
-            const companyLogoInput = document.getElementById('companyLogo');
-            const clientName = clientNameInput.value;
-            const file = fileInput.files[0];
-            const assessmentFile = assessmentFileInput.files[0];
-            const pocImagesFile = pocImagesInput.files[0];
-            const companyLogoFile = companyLogoInput.files[0];
-            
-            if (!file) {
-                setStatus('Please select a Vulnerabilities Excel file', true);
-                return;
-            }
-            if (!assessmentFile) {
-                setStatus('Please select an Assessment Detail Excel file', true);
-                return;
-            }
-            
+
+        async function generateReport() {
+            const file = document.getElementById('excelFile').files[0];
+            const assessmentFile = document.getElementById('assessmentFile').files[0];
+            const clientName = document.getElementById('clientName').value;
+            const pocImagesFile = document.getElementById('pocImages').files[0];
+            const companyLogoFile = document.getElementById('companyLogo').files[0];
+
+            if (!file) { setStatus('Please select an IP Format Excel file', true); return; }
+            if (!assessmentFile) { setStatus('Please select an Assessment Details Excel file', true); return; }
+
             setStatus('Generating report, please wait...');
             document.getElementById('generateReportBtn').disabled = true;
             document.getElementById('validationErrors').style.display = 'none';
-            
+
+            await refreshCsrf();
+
             const formData = new FormData();
             formData.append('file', file);
             formData.append('assessment_file', assessmentFile);
             formData.append('client_name', clientName);
-            if (pocImagesFile) {
-                formData.append('poc_images', pocImagesFile);
-            }
-            if (companyLogoFile) {
-                formData.append('company_logo', companyLogoFile);
-            }
-            formData.append('report_type', 'initial_ip_type1'); // Default to initial_ip_type1
-            
+            if (pocImagesFile) formData.append('poc_images', pocImagesFile);
+            if (companyLogoFile) formData.append('company_logo', companyLogoFile);
+            formData.append('report_type', 'initial_ip_type1');
+            if (CSRF_TOKEN) formData.append('csrf_token', CSRF_TOKEN);
+
+            const headers = {};
+            if (CSRF_TOKEN) headers['X-CSRF-Token'] = CSRF_TOKEN;
+
             fetch(`${API_BASE_URL}/type1/generate-report/`, {
                 method: 'POST',
-                body: formData
+                headers: headers,
+                body: formData,
+                credentials: 'same-origin'
             })
             .then(response => {
                 document.getElementById('generateReportBtn').disabled = false;
-                
-                // Check for validation errors
                 const validationErrors = response.headers.get('X-Validation-Errors');
                 if (validationErrors) {
                     try {
                         const errors = JSON.parse(validationErrors);
                         if (errors && errors.length > 0) {
                             showValidationErrors(errors);
-                            setStatus('Report generated with validation warnings. Please review the errors below.', true);
+                            setStatus('Report generated with validation warnings.', true);
                         }
-                    } catch (e) {
-                        console.error('Error parsing validation errors:', e);
-                    }
+                    } catch (e) {}
                 }
-                
+                if (response.status === 401) {
+                    throw new Error('Session expired. Please <a href="/auth/test-login">log in again</a>.');
+                }
                 if (response.ok) {
-                    if (!validationErrors || validationErrors === '[]') {
-                        setStatus('Report generated successfully! Downloading...');
-                    }
+                    if (!validationErrors || validationErrors === '[]') setStatus('Report generated successfully! Downloading...');
                     return response.blob();
                 }
-                return response.json().then(error => {
-                    throw new Error(error.detail || 'Error generating report');
-                });
+                return response.json().then(error => { throw new Error(error.detail || `Error generating report (${response.status})`); });
             })
             .then(blob => {
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `${clientName || 'Client'} VAPT Report.docx`;
+                a.download = `${clientName || 'Client'}_IP_Type1_Report.docx`;
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
             })
             .catch(error => {
                 console.error('Error:', error);
@@ -257,4 +375,4 @@
         }
     </script>
 </body>
-</html> 
+</html>

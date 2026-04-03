@@ -1,16 +1,17 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request, Depends
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.sessions import SessionMiddleware
 import os
 import sys
 import pandas as pd
 from docxtpl import DocxTemplate
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
+from docx.oxml.ns import qn
 from datetime import datetime
 import traceback
+import shutil
 import tempfile
 import json
 import re
@@ -23,17 +24,13 @@ from db import get_db, AuditLog, CertINReport
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 from excel_parser import parse_excel_data, format_for_template
 
+# Shared Excel converter (any-format -> feature-format)
+from Automation.backend.excel_converter import convert_any_excel_to_format
+
 VERSION = "2.2.0"
 
 app = FastAPI()
-
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=os.getenv("SESSION_SECRET_KEY", "supersecret"),
-    https_only=False,
-    same_site="lax",
-    session_cookie="reportgen_session"
-)
+# Session cookie is owned only by Report-Generator-IP-main/app.py (no nested SessionMiddleware here).
 
 app.add_middleware(
     CORSMiddleware,
@@ -336,11 +333,11 @@ def generate_vulnerability_sections(vulnerabilities, poc_mapping):
 def create_landscape_vulnerability_box(doc, vulnerability_section):
     """Create properly formatted vulnerability box matching expected layout"""
     import os
-    from docx.shared import Inches, Pt, RGBColor, Twips
+    from docx.shared import Inches, Pt, RGBColor, Twips, Cm
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
     from docx.oxml import parse_xml
-    from docx.oxml.ns import nsdecls
+    from docx.oxml.ns import nsdecls, qn
 
     # Get severity colors
     severity = safe_str(vulnerability_section.get('severity', 'Medium')).strip()
@@ -356,6 +353,26 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
     # Create main table - Row 1: Obs | Severity | Status, Row 2: New/Repeat | CVE/CWE
     table = doc.add_table(rows=2, cols=3)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = False
+    # Set total table width to page width (A4 with margins ~16.5cm usable)
+    tbl_elem = table._tbl
+    tblPr_elem = tbl_elem.tblPr if tbl_elem.tblPr is not None else parse_xml(f'<w:tblPr {nsdecls("w")}/>')
+    tblW = parse_xml(f'<w:tblW {nsdecls("w")} w:w="9350" w:type="dxa"/>')
+    existing_tblW = tblPr_elem.find(qn('w:tblW'))
+    if existing_tblW is not None:
+        tblPr_elem.remove(existing_tblW)
+    tblPr_elem.append(tblW)
+    # Set column widths: 40% | 30% | 30% of 9350 twips
+    col_widths_twips = [3740, 2805, 2805]
+    for i, col in enumerate(table.columns):
+        for cell in col.cells:
+            tc = cell._tc
+            tcPr = tc.get_or_add_tcPr()
+            tcW = parse_xml(f'<w:tcW {nsdecls("w")} w:w="{col_widths_twips[i]}" w:type="dxa"/>')
+            existing = tcPr.find(qn('w:tcW'))
+            if existing is not None:
+                tcPr.remove(existing)
+            tcPr.append(tcW)
     
     # Set light gray border color for the table
     tbl = table._tbl
@@ -559,14 +576,15 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
             run.font.size = Pt(10)
             run.font.bold = False
 
-            # Add the image if present
+            # Add the image if present - constrained to fit inside the cell
             img_path = poc_img.get('path') or poc_img.get('filename')
             if img_path and os.path.exists(img_path):
                 img_p = cell.add_paragraph()
                 img_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 img_run = img_p.add_run()
                 try:
-                    img_run.add_picture(img_path, width=Inches(5))
+                    # Max width = full table width minus small padding (4.5 inches fits A4 margins)
+                    img_run.add_picture(img_path, width=Inches(4.5))
                 except Exception as e:
                     err_p = cell.add_paragraph(f"[Image error: {os.path.basename(img_path)}: {e}]")
                     err_p.runs[0].font.italic = True
@@ -581,6 +599,7 @@ def create_asset_findings_table(doc, vulnerability_data):
     """Create the Asset/Hostname findings table with vulnerability counts"""
     from docx.oxml import parse_xml
     from docx.oxml.ns import nsdecls
+    from docx.enum.table import WD_TABLE_ALIGNMENT
     
     if not vulnerability_data:
         return None
@@ -645,7 +664,28 @@ def create_asset_findings_table(doc, vulnerability_data):
     table._element.getparent().remove(table._element)
     table = doc.add_table(rows=num_rows, cols=10)
     table.style = 'Table Grid'
-    
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = False
+    # Set total table width and column widths (9350 twips = ~16.5cm, A4 usable width)
+    tbl_elem = table._tbl
+    tblPr_elem = tbl_elem.tblPr if tbl_elem.tblPr is not None else parse_xml(f'<w:tblPr {nsdecls("w")}/>')
+    tblW_elem = parse_xml(f'<w:tblW {nsdecls("w")} w:w="9350" w:type="dxa"/>')
+    existing_tblW = tblPr_elem.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tblW')
+    if existing_tblW is not None:
+        tblPr_elem.remove(existing_tblW)
+    tblPr_elem.append(tblW_elem)
+    # Column widths in twips: Sr(500) | Asset(2000) | Purpose(1200) | Status(1000) | Crit(600) | High(600) | Med(600) | Low(600) | Info(800) | Total(450)
+    col_widths = [500, 2000, 1200, 1000, 600, 600, 600, 600, 800, 450]
+    for col_i, col in enumerate(table.columns):
+        for cell in col.cells:
+            tc = cell._tc
+            tcPr = tc.get_or_add_tcPr()
+            tcW = parse_xml(f'<w:tcW {nsdecls("w")} w:w="{col_widths[col_i]}" w:type="dxa"/>')
+            existing = tcPr.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tcW')
+            if existing is not None:
+                tcPr.remove(existing)
+            tcPr.append(tcW)
+
     # Header row styling
     header_row = table.rows[0]
     headers = ['Sr.\nNo.', 'Asset/Hostname', 'Instant\npurpose', 'VAPT\nStatus', 'Critical', 'High', 'Medium', 'Low', 'Informational', 'Total']
@@ -773,6 +813,97 @@ def create_asset_findings_table(doc, vulnerability_data):
     return table
 
 
+def _certin_tbl_clear_left_indent(table) -> None:
+    tbl_pr = table._tbl.tblPr
+    if tbl_pr is None:
+        return
+    for old in tbl_pr.findall(qn("w:tblInd")):
+        tbl_pr.remove(old)
+
+
+def _certin_template_table_header_text(table) -> str:
+    if not table.rows:
+        return ""
+    parts = []
+    for cell in table.rows[0].cells:
+        parts.append(cell.text.replace("\n", " ").replace("\r", " "))
+    return " ".join(parts).lower()
+
+
+def _certin_center_template_front_sections(doc: Document) -> None:
+    """
+    Cert-IN template tables are often left-indented in Word XML. Center Engagement Scope,
+    Auditing team, Audit Activities, and Tools tables like programmatic tables; center section titles.
+    """
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+
+    for p in doc.paragraphs:
+        raw = p.text.strip()
+        if not raw:
+            continue
+        norm = re.sub(r"\s+", " ", raw).strip().lower()
+        if norm == "engagement scope":
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            continue
+        if norm == "details of the auditing team":
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            continue
+        if norm == "audit activities and timelines":
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            continue
+        if re.match(r"^tools\s*/\s*software\s*used$", norm):
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            continue
+
+    for table in doc.tables:
+        h = _certin_template_table_header_text(table)
+        if not h or len(table.rows[0].cells) < 2:
+            continue
+        if "asset description" in h and "criticality" in h:
+            _certin_tbl_clear_left_indent(table)
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            continue
+        if (
+            "designation" in h
+            and "email" in h
+            and "organization" not in h
+            and ("qualification" in h or "cert" in h or "listed" in h)
+        ):
+            _certin_tbl_clear_left_indent(table)
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            continue
+        if "activity" in h and "date" in h:
+            _certin_tbl_clear_left_indent(table)
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            continue
+        if "tool" in h and "software" in h and ("version" in h or "open source" in h or "licensed" in h):
+            _certin_tbl_clear_left_indent(table)
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            continue
+
+
+def _certin_insert_page_break_before_risk_level_section(doc: Document) -> None:
+    """Force 'Risk Level & Description' (and following graphics) onto a new page to avoid clipping."""
+    from docx.text.paragraph import Paragraph as DocxParagraph
+    from docx.oxml import OxmlElement
+
+    target = None
+    for p in doc.paragraphs:
+        t = " ".join(p.text.split()).strip().lower()
+        if t == "risk level & description" or (t.startswith("risk level") and "description" in t):
+            target = p
+            break
+    if target is None:
+        return
+    new_p = OxmlElement("w:p")
+    target._element.addprevious(new_p)
+    pb_para = DocxParagraph(new_p, doc)
+    pb_para.paragraph_format.space_before = Pt(0)
+    pb_para.paragraph_format.space_after = Pt(0)
+    run = pb_para.add_run()
+    run.add_break(WD_BREAK.PAGE)
+
+
 def generate_certin_report_from_form(data, template_path, output_path, vulnerability_data=None, poc_mapping=None):
     """Generate Cert-IN report from form data and template"""
     try:
@@ -845,8 +976,9 @@ def generate_certin_report_from_form(data, template_path, output_path, vulnerabi
             doc.save(tmp.name)
             tmp_path = tmp.name
         
-        from docx import Document
         doc = Document(tmp_path)
+        _certin_center_template_front_sections(doc)
+        _certin_insert_page_break_before_risk_level_section(doc)
         
         if vulnerability_sections:
             # Find where "Total Vulnerabilities" graph starts
@@ -959,8 +1091,36 @@ async def root():
             .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
             .form-group textarea { height: 60px; resize: vertical; }
             .dynamic-list { border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 4px; }
-            .dynamic-item { display: flex; gap: 10px; margin-bottom: 10px; align-items: end; }
-            .dynamic-item input { flex: 1; }
+            .dynamic-item { display: flex; gap: 10px; margin-bottom: 10px; align-items: end; flex-wrap: wrap; }
+            .dynamic-item input, .dynamic-item select { flex: 1; min-width: 120px; box-sizing: border-box; }
+            /* Engagement scope: many fields per row + many rows — match MitKat layout, stay on screen */
+            #engagementScopeList {
+                max-height: min(480px, 60vh);
+                overflow-y: auto;
+                overflow-x: hidden;
+                padding: 10px;
+                border: 1px solid #ddd;
+                border-radius: 6px;
+                background: #fafafa;
+            }
+            #engagementScopeList .dynamic-item {
+                align-items: center;
+                margin-bottom: 12px;
+                padding: 10px;
+                border: 1px solid #e8e8e8;
+                border-radius: 4px;
+                background: #fff;
+            }
+            #engagementScopeList .dynamic-item input,
+            #engagementScopeList .dynamic-item select {
+                flex: 1 1 140px;
+                min-width: 130px;
+                max-width: 100%;
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+            }
+            #engagementScopeList .dynamic-item .btn { flex: 0 0 auto; }
             .btn { background-color: #6923d0; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
             .btn:hover { background-color: #5a1fb8; }
             .btn-secondary { background-color: #6c757d; }
@@ -988,7 +1148,40 @@ async def root():
             <p style="text-align: center; color: #666; margin-bottom: 30px;">
                 Generate Cert-IN compliant reports with document control pages
             </p>
-            
+
+            <!-- STEP 1: Convert any Excel to Cert-IN Format (OPTIONAL) -->
+            <div class="form-section" style="border: 2px solid #28a745; background: #f0fff4;">
+                <h3 style="color:#28a745; border-bottom-color:#28a745;">
+                    <span style="background:#28a745;color:white;padding:2px 10px;border-radius:10px;font-size:0.8em;margin-right:8px;text-transform:uppercase;letter-spacing:1px;">Step 1 — Optional</span>
+                    Convert Any Excel to Cert-IN Format Excel
+                    <span style="font-size:0.7em;color:#555;font-weight:normal;"> (Skip if your Excel is already in Cert-IN format)</span>
+                </h3>
+                <p style="color:#555;margin-top:0;">Only needed if your Excel is not already in the required Cert-IN format. Upload any VAPT tracker Excel and optional POC ZIP to get a properly formatted Cert-IN Excel.</p>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="conv_vapt_file">Upload Any VAPT Excel (.xlsx) *</label>
+                        <input type="file" id="conv_vapt_file" accept=".xlsx,.xls">
+                    </div>
+                    <div class="form-group">
+                        <label for="conv_poc_zip">Upload POC ZIP (optional) — for screenshot mapping</label>
+                        <input type="file" id="conv_poc_zip" accept=".zip">
+                    </div>
+                </div>
+                <button type="button" class="btn btn-success" id="convertBtn">Convert to Cert-IN Format Excel</button>
+                <div class="result" id="convertResult" style="display:none;"></div>
+            </div>
+
+            <hr style="border: 2px dashed #6923d0; margin: 10px 0 30px 0;">
+
+            <!-- STEP 2: Generate Report -->
+            <div class="form-section" style="border: 2px solid #6923d0;">
+                <h3 style="color:#6923d0; border-bottom-color:#6923d0;">
+                    <span style="background:#6923d0;color:white;padding:2px 10px;border-radius:10px;font-size:0.8em;margin-right:8px;text-transform:uppercase;letter-spacing:1px;">Step 2</span>
+                    Generate Cert-IN Word Report
+                </h3>
+                <p style="color:#555;margin-top:0;">Fill in the report details and upload the Cert-IN Format Excel (output from Step 1, or any correctly formatted Cert-IN Excel) to generate the final Word report.</p>
+            </div>
+
             <form id="certinForm">
                 <!-- Basic Report Information -->
                 <div class="form-section">
@@ -1114,6 +1307,7 @@ async def root():
                 <!-- Engagement Scope -->
                 <div class="form-section">
                     <h3>🎯 Engagement Scope</h3>
+                    <p style="color:#666;font-size:0.9em;margin-top:0;">Fields wrap on smaller screens; scroll the list when you have many assets.</p>
                     <div id="engagementScopeList">
                         <div class="dynamic-item">
                             <input type="number" name="scope_sr_no[]" placeholder="S. No">
@@ -1260,6 +1454,79 @@ async def root():
                     }
                 } catch (_) {}
             })();
+
+            async function refreshCsrf() {
+                try {
+                    const res = await fetch('/csrf-token', { credentials: 'same-origin' });
+                    if (res.ok) {
+                        const data = await res.json().catch(() => ({}));
+                        CSRF_TOKEN = data.csrf_token || data.token || data.csrf || CSRF_TOKEN;
+                    }
+                } catch (_) {}
+            }
+
+            // ── Step 1: Convert Excel ──────────────────────────────────────
+            document.addEventListener('DOMContentLoaded', function() {
+                const convertBtn = document.getElementById('convertBtn');
+                if (convertBtn) {
+                    convertBtn.addEventListener('click', async function () {
+                        const resultEl = document.getElementById('convertResult');
+                        resultEl.style.display = 'none';
+                        const vaptFile = document.getElementById('conv_vapt_file').files[0];
+                        if (!vaptFile) {
+                            resultEl.innerHTML = '<p>Please choose a VAPT Excel file first.</p>';
+                            resultEl.className = 'result error';
+                            resultEl.style.display = 'block';
+                            return;
+                        }
+                        this.disabled = true;
+                        this.textContent = 'Converting...';
+                        await refreshCsrf();
+                        const fd = new FormData();
+                        fd.append('vapt_file', vaptFile);
+                        const pocFile = document.getElementById('conv_poc_zip').files[0];
+                        if (pocFile) fd.append('poc_zip', pocFile);
+                        if (CSRF_TOKEN) fd.append('csrf_token', CSRF_TOKEN);
+                        try {
+                            const headers = {};
+                            if (CSRF_TOKEN) headers['X-CSRF-Token'] = CSRF_TOKEN;
+                            const response = await fetch('/type3/convert-excel/', {
+                                method: 'POST',
+                                headers: headers,
+                                body: fd,
+                                credentials: 'same-origin'
+                            });
+                            if (response.status === 401) {
+                                throw new Error('Session expired. <a href="/auth/test-login" style="color:#28a745;">Click here to log in again</a>.');
+                            }
+                            if (!response.ok) {
+                                const err = await response.json().catch(() => ({}));
+                                throw new Error(err.detail || 'Conversion failed (' + response.status + ')');
+                            }
+                            const blob = await response.blob();
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            const cd = response.headers.get('content-disposition') || '';
+                            a.download = cd.match(/filename="?([^";\\n]+)"?/)?.[1] || 'CertIN_format_output.xlsx';
+                            document.body.appendChild(a);
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                            document.body.removeChild(a);
+                            resultEl.innerHTML = '<h4>Conversion successful!</h4><p>Cert-IN Format Excel downloaded. Use it in Step 2 below.</p>';
+                            resultEl.className = 'result success';
+                            resultEl.style.display = 'block';
+                        } catch (error) {
+                            resultEl.innerHTML = '<h4>Conversion failed</h4><p>' + error.message + '</p>';
+                            resultEl.className = 'result error';
+                            resultEl.style.display = 'block';
+                        } finally {
+                            this.disabled = false;
+                            this.textContent = 'Convert to Cert-IN Format Excel';
+                        }
+                    });
+                }
+            });
 
             function addChangeHistory() {
                 const container = document.getElementById('changeHistoryList');
@@ -1518,7 +1785,10 @@ async def root():
                     document.getElementById('progress').style.display = 'block';
                     document.getElementById('progressText').textContent = 'Generating report...';
                     document.getElementById('progressBar').style.width = '50%';
-                    
+
+                    await refreshCsrf();
+                    if (CSRF_TOKEN) formData.append('csrf_token', CSRF_TOKEN);
+
                     const response = await fetch('/type3/generate-report/', {
                         method: 'POST',
                         headers: CSRF_TOKEN ? { 'X-CSRF-Token': CSRF_TOKEN } : {},
@@ -1526,6 +1796,12 @@ async def root():
                         credentials: 'same-origin'
                     });
                     
+                    if (response.status === 401) {
+                        throw new Error('Session expired. <a href="/auth/test-login" style="color:#28a745;">Click here to log in again</a>.');
+                    }
+                    if (response.status === 403) {
+                        throw new Error('CSRF validation failed. Refresh this page and try again.');
+                    }
                     if (!response.ok) {
                         let msg = 'Report generation failed';
                         try {
@@ -1537,20 +1813,41 @@ async def root():
                         }
                         throw new Error(msg);
                     }
-                    
-                    const result = await response.json();
-                    
+
+                    const cd = response.headers.get('content-disposition') || '';
+                    let saveName = 'Cert-IN_Report.docx';
+                    const utf8m = cd.match(/filename\\*=UTF-8''([^;\\n]+)/i);
+                    if (utf8m) {
+                        try { saveName = decodeURIComponent(utf8m[1]); } catch (_) {}
+                    } else {
+                        const qm = cd.match(/filename="([^"]+)"/i);
+                        const nm = cd.match(/filename=([^;\\n]+)/i);
+                        if (qm) saveName = qm[1];
+                        else if (nm) saveName = nm[1].trim().replace(/^["']|["']$/g, '');
+                    }
+
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = saveName;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+
+                    const vulnN = response.headers.get('X-Report-Vuln-Count') || '—';
+                    const pocN = response.headers.get('X-Report-Poc-Count') || '—';
+
                     document.getElementById('progressText').textContent = 'Report generated successfully!';
                     document.getElementById('progressBar').style.width = '100%';
-                    
+
                     document.getElementById('result').innerHTML = `
                         <h3>✅ Report Generated Successfully!</h3>
-                        <p><strong>Filename:</strong> ${result.filename}</p>
-                        <p><strong>Vulnerabilities:</strong> ${result.vulnerability_count}</p>
-                        <p><strong>PoC Images:</strong> ${result.poc_count} observations with images</p>
-                        <a href="${result.download_url}" download class="btn btn-success">
-                            📥 Download Report
-                        </a>
+                        <p><strong>Filename:</strong> ${saveName}</p>
+                        <p><strong>Vulnerabilities:</strong> ${vulnN}</p>
+                        <p><strong>PoC observations with images:</strong> ${pocN}</p>
+                        <p style="margin-top:10px;color:#555;">The Word file should download automatically. If it did not, run the flow again or check your browser download settings.</p>
                     `;
                     document.getElementById('result').className = 'result success';
                     document.getElementById('result').style.display = 'block';
@@ -1570,6 +1867,69 @@ async def root():
     </html>
     """
     return HTMLResponse(content=html_content)
+
+@app.post("/convert-excel/")
+async def certin_convert_excel(
+    vapt_file: UploadFile = File(...),
+    poc_zip: UploadFile = File(None),
+):
+    """
+    Step 1 for Cert-IN reports.
+    Convert any VAPT Excel to the 29-column Cert-IN format Excel.
+    """
+    temp_vapt_path = None
+    temp_zip_path = None
+    extract_dir = None
+    output_path = None
+    try:
+        if not vapt_file or not vapt_file.filename:
+            raise HTTPException(status_code=400, detail="VAPT Excel file is required")
+
+        suffix = os.path.splitext(vapt_file.filename)[1] or ".xlsx"
+        temp_vapt_path = os.path.join(
+            tempfile.gettempdir(),
+            f"certin_conv_vapt_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{suffix}",
+        )
+        with open(temp_vapt_path, "wb") as f:
+            f.write(await vapt_file.read())
+
+        if poc_zip and poc_zip.filename:
+            temp_zip_path = os.path.join(
+                tempfile.gettempdir(),
+                f"certin_conv_poc_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.zip",
+            )
+            with open(temp_zip_path, "wb") as f:
+                f.write(await poc_zip.read())
+
+        output_path, extract_dir = convert_any_excel_to_format(
+            temp_vapt_path,
+            poc_zip_path=temp_zip_path,
+            poc_layout="certin",
+        )
+
+        return FileResponse(
+            path=output_path,
+            filename="CertIN_format_output.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Cert-IN Excel conversion failed: {str(e)}")
+    finally:
+        for p in [temp_vapt_path, temp_zip_path]:
+            try:
+                if p and os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
+        try:
+            if extract_dir and os.path.exists(extract_dir):
+                shutil.rmtree(extract_dir, ignore_errors=True)
+        except Exception:
+            pass
+
 
 @app.post("/generate-report/")
 async def generate_report(
@@ -1672,15 +2032,16 @@ async def generate_report(
         except Exception as e:
             print(f"Error logging audit: {e}")
 
-        return JSONResponse(
-            content={
-                "message": "Cert-IN report generated successfully",
-                "filename": safe_filename,
-                "download_url": f"/type3/download/{safe_filename}",
-                "vulnerability_count": len(vulnerability_data),
-                "poc_count": len(poc_mapping)
+        # Return the file directly so the browser does not need a second GET to /download/
+        # (avoids extra session/CSRF surface and matches Type 1/2 blob-download flow).
+        return FileResponse(
+            path=safe_output_path,
+            filename=safe_filename,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "X-Report-Vuln-Count": str(len(vulnerability_data)),
+                "X-Report-Poc-Count": str(len(poc_mapping)),
             },
-            status_code=200
         )
 
     except HTTPException:
@@ -1720,9 +2081,9 @@ async def list_reports(request: Request, db: Session = Depends(get_db)):
     """List all generated Cert-IN reports"""
     try:
         user = request.session.get('user')
-        if not user:
+        if not user and os.getenv("TEST_MODE", "false").lower() != "true":
             raise HTTPException(status_code=401, detail="Not authenticated")
-        
+
         reports = db.query(CertINReport).order_by(CertINReport.created_at.desc()).limit(50).all()
         
         return [

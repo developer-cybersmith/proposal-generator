@@ -349,7 +349,8 @@ The system will generate a Word document with all document control pages (1, 4, 
           
           const uploadResponse = await fetch('/type3/upload/', {
             method: 'POST',
-            body: uploadFormData
+            body: uploadFormData,
+            credentials: 'same-origin'
           });
           
           if (!uploadResponse.ok) {
@@ -368,29 +369,55 @@ The system will generate a Word document with all document control pages (1, 4, 
           
           const generateResponse = await fetch('/type3/generate-report/', {
             method: 'POST',
-            body: generateFormData
+            body: generateFormData,
+            credentials: 'same-origin'
           });
           
           if (!generateResponse.ok) {
-            const errorData = await generateResponse.json();
-            throw new Error(errorData.detail || 'Report generation failed');
+            const err = await generateResponse.json().catch(() => ({}));
+            throw new Error(err.detail || 'Report generation failed');
           }
-          
-          const generateResult = await generateResponse.json();
-          
-          document.getElementById('certinProgressText').textContent = 'Report generated successfully!';
-          document.getElementById('certinProgressBar').style.width = '100%';
-          
-          // Show success message and download link
-          document.getElementById('certinResult').innerHTML = `
-            <div style="background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 4px;">
-              <h3>✅ Report Generated Successfully!</h3>
-              <p><strong>Filename:</strong> ${generateResult.filename}</p>
-              <a href="${generateResult.download_url}" download style="background-color: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 10px;">
-                📥 Download Report
-              </a>
-            </div>
-          `;
+
+          const ct = (generateResponse.headers.get('content-type') || '').toLowerCase();
+          if (ct.includes('json')) {
+            const generateResult = await generateResponse.json();
+            document.getElementById('certinProgressText').textContent = 'Report generated successfully!';
+            document.getElementById('certinProgressBar').style.width = '100%';
+            document.getElementById('certinResult').innerHTML = `
+              <div style="background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 4px;">
+                <h3>✅ Report Generated Successfully!</h3>
+                <p><strong>Filename:</strong> ${generateResult.filename}</p>
+                <a href="${generateResult.download_url}" download style="background-color: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 10px;">
+                  📥 Download Report
+                </a>
+              </div>
+            `;
+          } else {
+            const cd = generateResponse.headers.get('content-disposition') || '';
+            let saveName = 'Cert-IN_Report.docx';
+            const qm = cd.match(/filename="([^"]+)"/i);
+            const nm = cd.match(/filename=([^;\n]+)/i);
+            if (qm) saveName = qm[1];
+            else if (nm) saveName = nm[1].trim().replace(/^["']|["']$/g, '');
+            const blob = await generateResponse.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = saveName;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            document.getElementById('certinProgressText').textContent = 'Report generated successfully!';
+            document.getElementById('certinProgressBar').style.width = '100%';
+            document.getElementById('certinResult').innerHTML = `
+              <div style="background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 4px;">
+                <h3>✅ Report Generated Successfully!</h3>
+                <p><strong>Filename:</strong> ${saveName}</p>
+                <p>The Word file should download automatically.</p>
+              </div>
+            `;
+          }
           document.getElementById('certinResult').style.display = 'block';
           
         } catch (error) {

@@ -39,6 +39,9 @@ except ImportError:
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 from excel_parser import parse_excel_data, format_for_template
 
+# Shared Excel converter (any-format -> feature-format)
+from Automation.backend.excel_converter import convert_any_excel_to_format
+
 # Version tracking for code changes
 # Format: MAJOR.MINOR.PATCH
 # Increment MAJOR for significant structural changes
@@ -1556,6 +1559,69 @@ async def auto_upload_to_dashboard(vulnerabilities, client_name, db, request):
         print(f"Error in auto_upload_to_dashboard: {e}")
         raise
 
+@app.post("/convert-excel/")
+async def ip2_convert_excel(
+    vapt_file: UploadFile = File(...),
+    poc_zip: UploadFile = File(None),
+):
+    """
+    Step 1 for Type-2 IP reports.
+    Convert any VAPT Excel to the 29-column IP format Excel.
+    """
+    temp_vapt_path = None
+    temp_zip_path = None
+    extract_dir = None
+    output_path = None
+    try:
+        if not vapt_file or not vapt_file.filename:
+            raise HTTPException(status_code=400, detail="VAPT Excel file is required")
+
+        suffix = os.path.splitext(vapt_file.filename)[1] or ".xlsx"
+        temp_vapt_path = os.path.join(
+            tempfile.gettempdir(),
+            f"ip2_conv_vapt_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{suffix}",
+        )
+        with open(temp_vapt_path, "wb") as f:
+            f.write(await vapt_file.read())
+
+        if poc_zip and poc_zip.filename:
+            temp_zip_path = os.path.join(
+                tempfile.gettempdir(),
+                f"ip2_conv_poc_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.zip",
+            )
+            with open(temp_zip_path, "wb") as f:
+                f.write(await poc_zip.read())
+
+        output_path, extract_dir = convert_any_excel_to_format(
+            temp_vapt_path,
+            poc_zip_path=temp_zip_path,
+            poc_layout="ip",
+        )
+
+        return FileResponse(
+            path=output_path,
+            filename="IP_format_output.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"IP Excel conversion failed: {str(e)}")
+    finally:
+        for p in [temp_vapt_path, temp_zip_path]:
+            try:
+                if p and os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
+        try:
+            if extract_dir and os.path.exists(extract_dir):
+                shutil.rmtree(extract_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
 @app.post("/generate-report/")
 async def generate_report(
     file: UploadFile = File(...),  # Vulnerability file
@@ -1634,7 +1700,7 @@ async def generate_report(
         # Make template path absolute
         template_path = os.path.join(get_script_dir(), "CSS-NEW_Technical_Sample_Report_Automated_v2.1.docx")
 
-        report_filename = f"{client_name} VAPT Report {datetime.now().strftime('%Y-%d-%m')}.docx"
+        report_filename = f"{client_name}_IP_Type2_Report_{datetime.now().strftime('%Y-%m-%d')}.docx"
         output_path = os.path.join(UPLOAD_DIR, report_filename)
         image_map = None
         if poc_images_dir:

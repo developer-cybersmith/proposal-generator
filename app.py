@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from starlette.middleware.sessions import SessionMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from fastapi.responses import RedirectResponse
 from Automation.backend.main import app as type1_app
 from Automation.backend.type2 import app as type2_app
@@ -22,24 +23,41 @@ env_path = os.path.join(os.path.dirname(__file__), "Automation", "backend", ".en
 load_dotenv(env_path)
 TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)).strip())
+    except (TypeError, ValueError):
+        return default
+
+# Server-side idle timeout (seconds). Sliding: each authenticated request refreshes _session_time (production).
+SESSION_TIMEOUT = max(60, _env_int("SESSION_TIMEOUT", 2700))
+CSRF_TIMEOUT = max(60, _env_int("CSRF_TIMEOUT", 2700))
+
 app = FastAPI()
 
-# Add session middleware for SSO
-# Add session security middleware FIRST so SessionMiddleware wraps outside and runs earlier
-app.add_middleware(
-    SessionSecurityMiddleware,
-    session_timeout=3600,  # 1 hour
-    csrf_timeout=1800      # 30 minutes
+# Middleware order: first added = innermost. Last added = outermost (runs first on each request).
+# We need ProxyHeaders outermost so X-Forwarded-Proto is applied before SessionMiddleware (Secure cookies on Railway).
+_trusted = os.getenv("TRUSTED_PROXY_HOSTS", "*").strip()
+_trusted_hosts: str | list[str] = (
+    _trusted if _trusted == "*" else [h.strip() for h in _trusted.split(",") if h.strip()]
 )
 
-# Add session middleware OUTERMOST to ensure request.session is available to inner middlewares
+app.add_middleware(
+    SessionSecurityMiddleware,
+    session_timeout=SESSION_TIMEOUT,
+    csrf_timeout=CSRF_TIMEOUT,
+)
+
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET_KEY", "supersecret"),
     https_only=not TEST_MODE,
     same_site="lax",
-    session_cookie="reportgen_session"
+    session_cookie="reportgen_session",
+    max_age=SESSION_TIMEOUT,
 )
+
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_trusted_hosts)
 
 # Include SSO authentication router
 app.include_router(auth_router)
@@ -165,6 +183,20 @@ async def dashboard(request: Request):
 
 @app.on_event("startup")
 def on_startup():
+    if TEST_MODE:
+        print(
+            "\n[TEST_MODE] Session middleware will NOT block /type1-/type5 or /mitkat/ for missing login. "
+            "Use TEST_MODE=false in production.\n"
+            "Open the app in your browser at: http://127.0.0.1:8000  or  http://localhost:8000\n"
+            "(Do not use http://0.0.0.0:8000 — browsers show ERR_ADDRESS_INVALID.)\n"
+        )
+    else:
+        sk = os.getenv("SESSION_SECRET_KEY", "supersecret")
+        if not sk or sk == "supersecret":
+            print(
+                "\n[WARNING] SESSION_SECRET_KEY is not set or uses the default. "
+                "Set a strong SESSION_SECRET_KEY in Railway (or your host) for production.\n"
+            )
     # Ensure DB is initialized
     init_db()
     # Ensure minimal static file exists for tests

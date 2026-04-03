@@ -7,11 +7,26 @@ import os
 import hashlib
 import secrets
 import time
+from pathlib import Path
 from typing import Optional, Dict, Any
 from fastapi import Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response, RedirectResponse
 import json
+
+# Load backend .env here so TEST_MODE is set even if uvicorn was started without cwd/dotenv (fixes local 401).
+def _load_backend_env() -> None:
+    try:
+        from dotenv import load_dotenv
+
+        p = Path(__file__).resolve().parent / "Automation" / "backend" / ".env"
+        if p.is_file():
+            load_dotenv(p, override=False)
+    except Exception:
+        pass
+
+
+_load_backend_env()
 
 class SessionSecurityMiddleware(BaseHTTPMiddleware):
     """Middleware for session security with timeout and CSRF protection"""
@@ -25,7 +40,12 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
         # Skip security checks for certain paths
         if self._should_skip_security(request):
             return await call_next(request)
-        
+
+        # Local dev: bypass session + CSRF for all routes (login/report hub still enforce in their own handlers).
+        # Set TEST_MODE=false in Automation/backend/.env for production.
+        if os.getenv("TEST_MODE", "false").lower() == "true":
+            return await call_next(request)
+
         # Check session validity
         if not self._is_session_valid(request):
             if self._is_protected_endpoint(request):
@@ -38,7 +58,10 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
                     status_code=401,
                     media_type="application/json"
                 )
-        
+        else:
+            # Sliding idle timeout: extend session and CSRF clocks on each authenticated request
+            self._touch_session_activity(request)
+
         # Check CSRF for state-changing operations
         if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
             if not self._is_csrf_valid(request):
@@ -48,7 +71,7 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
                     status_code=403,
                     media_type="application/json"
                 )
-        
+
         response = await call_next(request)
         return response
     
@@ -60,7 +83,7 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
             "/auth/login",
             "/auth/callback",
             "/static/",
-            "/csrf-token",
+            # /csrf-token is not skipped so GET with a logged-in session refreshes idle timers (sliding session).
             "/csrf-refresh",
         ]
         if os.getenv("TEST_MODE", "false").lower() == "true":
@@ -111,6 +134,15 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
         current_fingerprint = self._generate_session_fingerprint(request)
         
         return stored_fingerprint == current_fingerprint
+
+    def _touch_session_activity(self, request: Request) -> None:
+        """Reset idle timers for session and CSRF token lifetime (sliding window)."""
+        session = request.session
+        if not session.get("user"):
+            return
+        now = time.time()
+        session["_session_time"] = now
+        session["_csrf_time"] = now
     
     def _is_csrf_valid(self, request: Request) -> bool:
         """Check CSRF token validity"""
@@ -145,12 +177,10 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
         return stored_token == request_token
     
     def _generate_session_fingerprint(self, request: Request) -> str:
-        """Generate session fingerprint from request characteristics"""
+        """Stable client fingerprint (omit Accept-Encoding — it varies between fetch and navigation)."""
         user_agent = request.headers.get("user-agent", "")
         accept_language = request.headers.get("accept-language", "")
-        accept_encoding = request.headers.get("accept-encoding", "")
-        
-        fingerprint_data = f"{user_agent}:{accept_language}:{accept_encoding}"
+        fingerprint_data = f"{user_agent}:{accept_language}"
         return hashlib.sha256(fingerprint_data.encode()).hexdigest()[:16]
 
 def create_secure_session(request: Request, user_data: Dict[str, Any]) -> None:
@@ -175,13 +205,20 @@ def invalidate_session(request: Request) -> None:
     session = request.session
     session.clear()
 
+def _csrf_timeout_seconds() -> float:
+    try:
+        return float(os.getenv("CSRF_TIMEOUT", "2700").strip())
+    except (TypeError, ValueError):
+        return 2700.0
+
+
 def get_csrf_token(request: Request) -> Optional[str]:
     """Get current CSRF token from session"""
     session = request.session
     stored_time = session.get("_csrf_time")
     
-    # Check if token is expired
-    if stored_time and time.time() - stored_time > 1800:  # 30 minutes
+    # Check if token is expired (aligned with middleware CSRF_TIMEOUT)
+    if stored_time and time.time() - stored_time > _csrf_timeout_seconds():
         return None
     
     return session.get("_csrf_token")
@@ -195,10 +232,8 @@ def refresh_csrf_token(request: Request) -> str:
     return new_token
 
 def _generate_session_fingerprint(request: Request) -> str:
-    """Generate session fingerprint from request characteristics"""
+    """Stable client fingerprint (omit Accept-Encoding — it varies between fetch and navigation)."""
     user_agent = request.headers.get("user-agent", "")
     accept_language = request.headers.get("accept-language", "")
-    accept_encoding = request.headers.get("accept-encoding", "")
-    
-    fingerprint_data = f"{user_agent}:{accept_language}:{accept_encoding}"
+    fingerprint_data = f"{user_agent}:{accept_language}"
     return hashlib.sha256(fingerprint_data.encode()).hexdigest()[:16]

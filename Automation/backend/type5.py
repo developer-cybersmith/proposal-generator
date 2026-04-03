@@ -10,7 +10,6 @@ missing columns, oversized cells, malformed rows, and large files.
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.sessions import SessionMiddleware
 import csv
 import io
 import os
@@ -26,14 +25,7 @@ from openpyxl.utils import get_column_letter
 logger = logging.getLogger("type5")
 
 app = FastAPI()
-
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=os.getenv("SESSION_SECRET_KEY", "supersecret"),
-    https_only=os.getenv("RAILWAY_ENVIRONMENT", "") != "",
-    same_site="lax",
-    session_cookie="reportgen_session",
-)
+# Session cookie is owned only by Report-Generator-IP-main/app.py (no nested SessionMiddleware here).
 
 app.add_middleware(
     CORSMiddleware,
@@ -597,7 +589,14 @@ async def root():
         formData.append('file', fileInput.files[0]);
 
         try {
-            const resp = await fetch('/type5/generate-report/', { method: 'POST', body: formData });
+            const resp = await fetch('/type5/generate-report/', {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+            });
+            if (resp.status === 401) {
+                throw new Error('Session expired. Please <a href="/auth/test-login">log in again</a>.');
+            }
             if (!resp.ok) {
                 let errMsg = 'Generation failed';
                 try {
@@ -623,7 +622,7 @@ async def root():
             status.textContent = 'Report generated and downloaded successfully!';
         } catch (err) {
             status.className = 'status-error';
-            status.textContent = 'Error: ' + err.message;
+            status.innerHTML = 'Error: ' + err.message;
         } finally {
             btn.disabled = false;
         }

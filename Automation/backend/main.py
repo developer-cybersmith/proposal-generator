@@ -27,6 +27,7 @@ import zipfile
 import glob
 import hashlib
 import re
+import xml.etree.ElementTree as ET
 import base64
 import json
 from docx.oxml import OxmlElement
@@ -47,6 +48,9 @@ except ImportError:
 # Add parent directory to path to import excel_parser
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 from excel_parser import parse_excel_data, format_for_template
+
+# Shared Excel converter (any-format → feature-format)
+from Automation.backend.excel_converter import convert_any_excel_to_format
 
 # Version tracking for code changes
 # Format: MAJOR.MINOR.PATCH
@@ -692,6 +696,20 @@ def normalize_filename(fname):
     """Normalize filenames for robust matching: strip, lower, keep extension."""
     return fname.strip().lower() if fname else ''
 
+def sanitize_nan(val, default=''):
+    """Convert pandas NaN / None to a safe default string so downstream int() calls never see NaN."""
+    if val is None:
+        return default
+    try:
+        if isinstance(val, float) and (val != val):  # NaN != NaN is always True
+            return default
+        import pandas as _pd
+        if _pd.isna(val):
+            return default
+    except (TypeError, ValueError):
+        pass
+    return val
+
 # Function to parse the uploaded Excel file for vulnerability data
 def parse_vulnerabilities_excel(file_path):
     """
@@ -724,19 +742,19 @@ def parse_vulnerabilities_excel(file_path):
                             'screenshot': ''  # Screenshots handled separately via PoC mapping
                         })
                 
-                # Convert to main.py format
+                # Convert to main.py format (sanitize all values to prevent NaN-to-int errors)
                 vulnerability = {
-                    'ip': ip,
-                    'name': vuln.get('observation', ''),
-                    'description': vuln.get('detailed_observation', '') or vuln.get('observation_summary', ''),
-                    'impact': '',  # Not in standardized format, will be generated
-                    'severity': vuln.get('severity', 'Medium'),
-                    'cvss': vuln.get('cvss', ''),
-                    'vulnerable_url': vuln.get('ip_url_app', ''),
-                    'vulnerable_parameter': '',  # Not in standardized format
-                    'remediation': vuln.get('recommendation', ''),
+                    'ip': sanitize_nan(ip, 'Unknown'),
+                    'name': sanitize_nan(vuln.get('observation', ''), 'Unknown Vulnerability'),
+                    'description': sanitize_nan(vuln.get('detailed_observation', '') or vuln.get('observation_summary', ''), ''),
+                    'impact': '',
+                    'severity': sanitize_nan(vuln.get('severity', 'Medium'), 'Medium'),
+                    'cvss': sanitize_nan(vuln.get('cvss', ''), ''),
+                    'vulnerable_url': sanitize_nan(vuln.get('ip_url_app', ''), ''),
+                    'vulnerable_parameter': '',
+                    'remediation': sanitize_nan(vuln.get('recommendation', ''), ''),
                     'steps_with_screenshots': steps_with_screenshots,
-                    'sr_no': str(vuln.get('sr_no', f"VUL-{index+1:03d}")).replace('VULN-', 'VUL-').strip(),
+                    'sr_no': str(sanitize_nan(vuln.get('sr_no', f"VUL-{index+1:03d}"), f"VUL-{index+1:03d}")).replace('VULN-', 'VUL-').strip(),
                     'no_vuln': False
                 }
                 
@@ -785,29 +803,26 @@ def parse_vulnerabilities_excel(file_path):
                     vulnerabilities_by_ip[ip].append(vulnerability)
                     print(f"Parsed NO VULNERABILITY for IP: {ip} at index {index}")
                     continue
-                cvss_score = row.get('CVSS Score', row.get('CVSS', None))
-                vulnerable_url = row.get('Vulnerable URL', row.get('Vulnerable Parameter', None))
+                cvss_score = sanitize_nan(row.get('CVSS Score', row.get('CVSS', None)), '')
+                vulnerable_url = sanitize_nan(row.get('Vulnerable URL', row.get('Vulnerable Parameter', None)), '')
                 parameter_value = row.get('Vulnerable Parameter', None)
-                if isinstance(parameter_value, float) and pd.isna(parameter_value):
-                    vulnerable_parameter = None
-                else:
-                    vulnerable_parameter = str(parameter_value)
+                vulnerable_parameter = sanitize_nan(parameter_value, '')
                 steps_with_screenshots = []
-                steps_text = str(row.get('Steps', '')).splitlines()
+                steps_text = str(sanitize_nan(row.get('Steps', ''), '')).splitlines()
                 screenshot_cols = [col for col in df.columns if col.strip().lower().startswith('screenshot')]
                 for i, step_text in enumerate(steps_text):
                     screenshot_filename = ''
                     if i < len(screenshot_cols):
-                        screenshot_filename = str(row.get(screenshot_cols[i], '')).strip().lower()
+                        screenshot_filename = str(sanitize_nan(row.get(screenshot_cols[i], ''), '')).strip().lower()
                     steps_with_screenshots.append({
                         'text': step_text.strip(),
                         'screenshot': screenshot_filename
                     })
                 severity = get_severity_from_cvss(cvss_score)
-                vuln_name = row.get('Vulnerability Name', '')
-                description = row.get('Description', '') or get_vulnerability_description(vuln_name)
-                remediation = row.get('Remediation', '') or get_vulnerability_recommendation(vuln_name)
-                impact = row.get('Impact', '') or get_vulnerability_impact(vuln_name)
+                vuln_name = sanitize_nan(row.get('Vulnerability Name', ''), 'Unknown Vulnerability')
+                description = sanitize_nan(row.get('Description', ''), '') or get_vulnerability_description(vuln_name)
+                remediation = sanitize_nan(row.get('Remediation', ''), '') or get_vulnerability_recommendation(vuln_name)
+                impact = sanitize_nan(row.get('Impact', ''), '') or get_vulnerability_impact(vuln_name)
                 vulnerability = {
                     'ip': ip,
                     'name': vuln_name,
@@ -819,7 +834,7 @@ def parse_vulnerabilities_excel(file_path):
                     'vulnerable_parameter': vulnerable_parameter,
                     'remediation': remediation,
                     'steps_with_screenshots': steps_with_screenshots,
-                    'sr_no': str(row.get('Sr No', f"VUL-{index+1:03d}")).replace('VULN-', 'VUL-').strip(),
+                    'sr_no': str(sanitize_nan(row.get('Sr No', f"VUL-{index+1:03d}"), f"VUL-{index+1:03d}")).replace('VULN-', 'VUL-').strip(),
                 }
                 if ip not in vulnerabilities_by_ip:
                     vulnerabilities_by_ip[ip] = []
@@ -1094,11 +1109,11 @@ def create_vulnerability_table(doc, vulnerability, display_sr_no=None, image_map
         vuln_param = "N/A"
     row_contents = [
         str(vuln_param),
-        str(vulnerability['cvss']) if vulnerability['cvss'] is not None else "N/A",
-        str(vulnerability['severity']) if vulnerability['severity'] else "N/A",
-        str(vulnerability['description']) if vulnerability['description'] else "N/A",
-        str(vulnerability.get('impact', "N/A")),
-        str(vulnerability.get('remediation', "N/A")),
+        str(sanitize_nan(vulnerability['cvss'], 'N/A')) if vulnerability['cvss'] not in (None, '') else "N/A",
+        str(sanitize_nan(vulnerability['severity'], 'Informational')) if vulnerability['severity'] else "N/A",
+        str(sanitize_nan(vulnerability['description'], '')) if vulnerability['description'] else "N/A",
+        str(sanitize_nan(vulnerability.get('impact', ''), 'N/A')) or "N/A",
+        str(sanitize_nan(vulnerability.get('remediation', ''), 'N/A')) or "N/A",
         ""
     ]
     for i in range(3, len(row_labels)):
@@ -1497,6 +1512,69 @@ def insert_steps_with_images(doc, vulnerability, image_map):
         else:
             doc.add_paragraph(f"[Screenshot missing: {step['screenshot']}]")
 
+@app.post("/convert-excel/")
+async def ip_convert_excel(
+    vapt_file: UploadFile = File(...),
+    poc_zip: UploadFile = File(None),
+):
+    """
+    Step 1 for Type-1 IP reports.
+    Convert any VAPT Excel to the 29-column IP format Excel.
+    """
+    temp_vapt_path = None
+    temp_zip_path = None
+    extract_dir = None
+    output_path = None
+    try:
+        if not vapt_file or not vapt_file.filename:
+            raise HTTPException(status_code=400, detail="VAPT Excel file is required")
+
+        suffix = os.path.splitext(vapt_file.filename)[1] or ".xlsx"
+        temp_vapt_path = os.path.join(
+            tempfile.gettempdir(),
+            f"ip_conv_vapt_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{suffix}",
+        )
+        with open(temp_vapt_path, "wb") as f:
+            f.write(await vapt_file.read())
+
+        if poc_zip and poc_zip.filename:
+            temp_zip_path = os.path.join(
+                tempfile.gettempdir(),
+                f"ip_conv_poc_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.zip",
+            )
+            with open(temp_zip_path, "wb") as f:
+                f.write(await poc_zip.read())
+
+        output_path, extract_dir = convert_any_excel_to_format(
+            temp_vapt_path,
+            poc_zip_path=temp_zip_path,
+            poc_layout="ip",
+        )
+
+        return FileResponse(
+            path=output_path,
+            filename="IP_format_output.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"IP Excel conversion failed: {str(e)}")
+    finally:
+        for p in [temp_vapt_path, temp_zip_path]:
+            try:
+                if p and os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
+        try:
+            if extract_dir and os.path.exists(extract_dir):
+                shutil.rmtree(extract_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
 @app.post("/generate-report/")
 async def generate_report(
     file: UploadFile = File(...),  # Vulnerability file
@@ -1555,7 +1633,7 @@ async def generate_report(
         # Make template path absolute
         template_path = os.path.join(get_script_dir(), "CSS-NEW_Technical_Sample_Report_Automated_v2.1-IP.docx")
 
-        report_filename = f"{client_name} VAPT Report {datetime.now().strftime('%Y-%d-%m')}.docx"
+        report_filename = f"{client_name}_IP_Type1_Report_{datetime.now().strftime('%Y-%m-%d')}.docx"
         output_path = os.path.join(UPLOAD_DIR, report_filename)
         image_map = None
         if poc_images_dir:
@@ -3085,6 +3163,8 @@ def build_doc_control(doc, cfg: dict):
     ]
     t = doc.add_table(rows=len(top_data), cols=2)
     t.style = "Table Grid"
+    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+    t.autofit = False
     set_table_col_widths(t, [2880, 6120])
     set_table_border(t)
     for r_idx, (label, value) in enumerate(top_data):
@@ -3110,6 +3190,8 @@ def build_doc_control(doc, cfg: dict):
     ]
     t2 = doc.add_table(rows=1 + len(doc_data), cols=2)
     t2.style = "Table Grid"
+    t2.alignment = WD_TABLE_ALIGNMENT.CENTER
+    t2.autofit = False
     set_table_col_widths(t2, [2880, 6120])
     set_table_border(t2)
     # Header
@@ -3135,6 +3217,8 @@ def build_doc_control(doc, cfg: dict):
     chg = cfg.get("document_change_history", [])
     t3 = doc.add_table(rows=2 + max(len(chg), 1), cols=3)
     t3.style = "Table Grid"
+    t3.alignment = WD_TABLE_ALIGNMENT.CENTER
+    t3.autofit = False
     set_table_col_widths(t3, [1500, 2500, 5000])
     set_table_border(t3)
     shade_cell(t3.rows[0].cells[0], DARK_BLUE)
@@ -3168,6 +3252,8 @@ def build_doc_control(doc, cfg: dict):
     dist = cfg.get("distribution_list", [])
     t4 = doc.add_table(rows=2 + max(len(dist), 1), cols=4)
     t4.style = "Table Grid"
+    t4.alignment = WD_TABLE_ALIGNMENT.CENTER
+    t4.autofit = False
     set_table_col_widths(t4, [1800, 2500, 2000, 2700])
     set_table_border(t4)
     shade_cell(t4.rows[0].cells[0], DARK_BLUE)
@@ -3215,6 +3301,8 @@ def build_scope(doc, cfg: dict):
     widths  = [480, 1400, 1200, 1440, 960, 960, 960, 1600]
     t = doc.add_table(rows=1 + max(len(scope), 1), cols=len(headers))
     t.style = "Table Grid"
+    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+    t.autofit = False
     set_table_col_widths(t, widths)
     set_table_border(t)
     build_header_row(t, headers, widths)
@@ -3248,6 +3336,8 @@ def build_team(doc, cfg: dict):
     widths  = [400, 1400, 1400, 2000, 2000, 1800]
     t = doc.add_table(rows=1 + max(len(team), 1), cols=len(headers))
     t.style = "Table Grid"
+    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+    t.autofit = False
     set_table_col_widths(t, widths)
     set_table_border(t)
     build_header_row(t, headers, widths)
@@ -3278,6 +3368,8 @@ def build_tools(doc, cfg: dict):
     widths  = [600, 2800, 2800, 2800]
     t = doc.add_table(rows=1 + max(len(tools), 1), cols=len(headers))
     t.style = "Table Grid"
+    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+    t.autofit = False
     set_table_col_widths(t, widths)
     set_table_border(t)
     build_header_row(t, headers, widths)
@@ -3329,6 +3421,8 @@ def build_test_case_table(doc):
     widths  = [700, 6000, 2300]
     t = doc.add_table(rows=3, cols=3)
     t.style = "Table Grid"
+    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+    t.autofit = False
     set_table_col_widths(t, widths)
     set_table_border(t)
     build_header_row(t, headers, widths)
@@ -3383,6 +3477,8 @@ def build_overall_findings_table(doc, vulns: list):
 
         t = doc.add_table(rows=3, cols=len(headers))
         t.style = "Table Grid"
+        t.alignment = WD_TABLE_ALIGNMENT.CENTER
+        t.autofit = False
         set_table_col_widths(t, widths)
         set_table_border(t)
 
@@ -3458,6 +3554,8 @@ def build_vuln_list_table(doc, vulns: list):
 
     t = doc.add_table(rows=1 + len(vulns), cols=len(headers))
     t.style = "Table Grid"
+    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+    t.autofit = False
     set_table_col_widths(t, widths)
     set_table_border(t)
     build_header_row(t, headers, widths)
@@ -3546,6 +3644,8 @@ def build_detailed_observations(doc, vulns: list, poc_map: dict):
         #        New/Repeat, POC+Steps, Revalidation Status]
         t = doc.add_table(rows=11, cols=2)
         t.style = "Table Grid"
+        t.alignment = WD_TABLE_ALIGNMENT.CENTER
+        t.autofit = False
         set_table_col_widths(t, [LABEL_W, VALUE_W])
         set_table_border(t, color="AAAAAA", size=4)
 
@@ -3860,6 +3960,222 @@ def build_document_from_scratch(vulns: list, poc_map: dict, cfg: dict) -> Docume
     return doc
 
 
+def _mitkat_hex_luminance_ok_to_darken(val: str) -> bool:
+    """True if w:color val looks like a light grey/blue that fails on bright photos."""
+    if not val or val.lower() in ("auto", "000000"):
+        return False
+    v = val.upper().lstrip("#")
+    if len(v) != 6 or not re.fullmatch(r"[0-9A-F]{6}", v):
+        return False
+    try:
+        r, g, b = int(v[0:2], 16), int(v[2:4], 16), int(v[4:6], 16)
+        lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+        return lum > 0.52
+    except ValueError:
+        return False
+
+
+def _mitkat_patch_cover_document_xml(xml_bytes: bytes) -> bytes:
+    """
+    Adjust MitKat_Base_template.docx word/document.xml after render:
+    - Taller white panel: bump wp:extent cy for left-column shapes (keeps text off the photo).
+    - Darker text: set light w:color in cover text boxes / first body paragraphs to brand navy.
+    """
+    try:
+        s = xml_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return xml_bytes
+
+    brand_navy = "1F3D6A"
+
+    def _bump_extent(m: re.Match) -> str:
+        full = m.group(0)
+        cx_s, cy_s = m.group(1), m.group(2)
+        cx, cy = int(cx_s), int(cy_s)
+        # Skip tiny accents (green bar) and full-bleed background images
+        if cy < 700000 or cx > 9500000:
+            return full
+        # Typical left white panel in MitKat cover (wide column, not full-bleed photo)
+        if 900000 <= cx <= 9000000 and 1500000 <= cy <= 13500000:
+            new_cy = min(int(cy * 1.52), 14500000)
+            return full.replace(f'cy="{cy_s}"', f'cy="{new_cy}"', 1)
+        return full
+
+    # Drawing anchor extents (cover white box) — attribute order varies in Word
+    s = re.sub(
+        r"<(?:wp|wp14|wp15):extent\s+[^>]*?cx=\"(\d+)\"[^>]*?cy=\"(\d+)\"[^>]*/>",
+        _bump_extent,
+        s,
+    )
+
+    try:
+        root = ET.fromstring(s)
+    except ET.ParseError:
+        return s.encode("utf-8")
+
+    def _darken_runs_in(elem: ET.Element) -> None:
+        for rpr in elem.iter():
+            if not rpr.tag.endswith("}rPr"):
+                continue
+            for child in list(rpr):
+                if not child.tag.endswith("}color"):
+                    continue
+                val = child.get(qn("w:val"))
+                if val and _mitkat_hex_luminance_ok_to_darken(val):
+                    child.set(qn("w:val"), brand_navy)
+
+    # Text inside floating text boxes on the cover
+    for txbx in root.iter():
+        if txbx.tag.endswith("}txbxContent"):
+            _darken_runs_in(txbx)
+
+    # First-page body paragraphs only (before document control spills to page 2 in most templates)
+    body = None
+    for el in root.iter():
+        if el.tag.endswith("}body"):
+            body = el
+            break
+    if body is not None:
+        n = 0
+        for child in body:
+            if child.tag.endswith("}p"):
+                _darken_runs_in(child)
+                n += 1
+                if n >= 48:
+                    break
+
+    try:
+        return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    except Exception:
+        return s.encode("utf-8")
+
+
+def _mitkat_fix_cover_page_layout(docx_path: str) -> None:
+    """
+    Post-process rendered MitKat docx so the cover white panel and text match readable RXIL-style output.
+    Set MITKAT_COVER_LAYOUT_FIX=false to skip.
+    """
+    if os.getenv("MITKAT_COVER_LAYOUT_FIX", "true").lower() not in ("1", "true", "yes"):
+        return
+    try:
+        buf = io.BytesIO()
+        with ZipFile(docx_path, "r") as zin:
+            if "word/document.xml" not in zin.namelist():
+                return
+            new_xml = _mitkat_patch_cover_document_xml(zin.read("word/document.xml"))
+            with ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    data = zin.read(item.filename)
+                    if item.filename == "word/document.xml":
+                        data = new_xml
+                    zout.writestr(item, data)
+        with open(docx_path, "wb") as f:
+            f.write(buf.getvalue())
+    except Exception as e:
+        print(f"[WARNING] MitKat cover layout fix skipped: {e}")
+
+
+def _mitkat_template_table_header_text(table) -> str:
+    """Lowercase single-line header text from row 0 for matching."""
+    if not table.rows:
+        return ""
+    parts = []
+    for cell in table.rows[0].cells:
+        parts.append(cell.text.replace("\n", " ").replace("\r", " "))
+    return " ".join(parts).lower()
+
+
+def _mitkat_tbl_clear_left_indent(table) -> None:
+    """Remove w:tblInd so w:jc center takes effect (templates often indent tables)."""
+    tbl_pr = table._tbl.tblPr
+    for old in tbl_pr.findall(qn("w:tblInd")):
+        tbl_pr.remove(old)
+
+
+def _mitkat_strip_template_stub_observations_block(doc: Document) -> None:
+    """
+    Mitkat_Base_template.docx includes a sample Observations / Test Case / End of Report block
+    at the end of the boilerplate. generate_report_with_template() then adds a page break and
+    builds the real Observations section again — causing duplicate tables and a stray mid-document
+    End of Report. Remove the template stub block (paragraph + tables) in one contiguous range.
+    """
+    from docx.text.paragraph import Paragraph
+
+    body = doc.element.body
+    children = list(body)
+    start_idx = None
+    for i, child in enumerate(children):
+        if child.tag.endswith("}p"):
+            p = Paragraph(child, doc)
+            t = " ".join(p.text.split()).strip().lower()
+            if t == "observations":
+                start_idx = i
+                break
+    if start_idx is None:
+        return
+    end_idx = None
+    for j in range(start_idx + 1, len(children)):
+        child = children[j]
+        if child.tag.endswith("}p"):
+            p = Paragraph(child, doc)
+            t = " ".join(p.text.split()).strip().lower()
+            if t == "end of report":
+                end_idx = j
+                break
+    if end_idx is None:
+        return
+    for k in range(end_idx, start_idx - 1, -1):
+        body.remove(children[k])
+
+
+def _mitkat_center_template_front_sections(doc: Document) -> None:
+    """
+    Mitkat_Base_template.docx tables are often left-aligned in Word XML.
+    Match Engagement Scope / Auditing team / Tools tables (same columns as build_scope/build_team/build_tools)
+    and center them like programmatic vuln/observation tables.
+    """
+    # Section title paragraphs (dark theme pages)
+    for p in doc.paragraphs:
+        raw = p.text.strip()
+        if not raw:
+            continue
+        norm = re.sub(r"\s+", " ", raw).strip().lower()
+        if norm == "engagement scope":
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            continue
+        if norm == "details of the auditing team":
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            continue
+        if re.match(r"^tools\s*/\s*software\s*used$", norm):
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            continue
+
+    for table in doc.tables:
+        h = _mitkat_template_table_header_text(table)
+        if not h:
+            continue
+        # Engagement Scope — same semantic columns as build_scope()
+        if "asset description" in h and "criticality" in h:
+            _mitkat_tbl_clear_left_indent(table)
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            continue
+        # Distribution list has Organization; auditing team does not
+        if (
+            "designation" in h
+            and "email" in h
+            and "organization" not in h
+            and ("qualification" in h or "cert" in h or "listed" in h)
+        ):
+            _mitkat_tbl_clear_left_indent(table)
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            continue
+        # Tools / Software — same as build_tools()
+        if "tool" in h and "software" in h and ("version" in h or "open source" in h or "licensed" in h):
+            _mitkat_tbl_clear_left_indent(table)
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            continue
+
+
 def generate_report_with_template(vulns: list, poc_map: dict, cfg: dict,
                                    template_path: str, output_path: str):
     """
@@ -3897,7 +4213,11 @@ def generate_report_with_template(vulns: list, poc_map: dict, cfg: dict,
             tpl.save(tmp.name)
             tmp_path = tmp.name
 
+        _mitkat_fix_cover_page_layout(tmp_path)
+
         doc = Document(tmp_path)
+        _mitkat_center_template_front_sections(doc)
+        _mitkat_strip_template_stub_observations_block(doc)
         os.unlink(tmp_path)
     except Exception as e:
         print(f"[WARNING] Template rendering failed ({e}), building from scratch.")
@@ -4936,11 +5256,12 @@ async def mitkat_form():
             </div>
             
             <div class="form-section step-card">
-                <div class="step-title">Step 1</div>
-                <h3>Convert your VAPT Tracker Excel to MitKat Format</h3>
+                <div class="step-title">Step 1 — Optional</div>
+                <h3>Convert your Excel to MitKat Format <span style="font-size:0.75em;color:#888;font-weight:normal;">(Skip if your Excel is already in MitKat format)</span></h3>
+                <p style="color:#888;margin-top:0;font-size:0.9em;">Only needed if your Excel is not already in the required MitKat Cert-IN format. Upload any VAPT tracker Excel to convert it.</p>
                 <div class="form-group">
-                    <label for="convert_vapt_file">Upload your VAPT Tracker Excel (.xlsx) *</label>
-                    <input type="file" id="convert_vapt_file" accept=".xlsx" required>
+                    <label for="convert_vapt_file">Upload Excel (.xlsx) *</label>
+                    <input type="file" id="convert_vapt_file" accept=".xlsx">
                 </div>
                 <div class="form-group">
                     <label for="convert_poc_zip">Upload POC zip (optional) — for screenshot mapping</label>
@@ -4956,6 +5277,7 @@ async def mitkat_form():
 
             <div class="step-title">Step 2</div>
             <h3 style="color:#6923d0;margin-top:8px;">Generate MitKat Report from MitKat Formatted Excel</h3>
+            <p style="color:#888;font-size:0.9em;margin-top:0;">Upload your MitKat Cert-IN Excel (output from Step 1, or any correctly formatted MitKat Excel) to generate the final Word report.</p>
 
             <form id="mitkatForm">
                 <!-- Front Page Data -->
@@ -5251,9 +5573,12 @@ async def mitkat_form():
                         body: fd,
                         credentials: 'same-origin'
                     });
+                    if (response.status === 401) {
+                        throw new Error('Session expired. <a href="/auth/test-login" style="color:#a78bfa;">Click here to log in again</a>.');
+                    }
                     if (!response.ok) {
                         const err = await response.json().catch(() => ({}));
-                        throw new Error(err.detail || 'Conversion failed');
+                        throw new Error(err.detail || `Conversion failed (${response.status})`);
                     }
 
                     const blob = await response.blob();
@@ -5521,8 +5846,16 @@ async def mitkat_form():
                 };
                 formData.append('doc_control_data', JSON.stringify(docControlData));
                 
-                // Files
-                formData.append('vulnerability_file', document.getElementById('vulnerability_file').files[0]);
+                // Files — validate before appending
+                const vulnFile = document.getElementById('vulnerability_file').files[0];
+                if (!vulnFile) {
+                    document.getElementById('progress').style.display = 'none';
+                    document.getElementById('result').innerHTML = '<h3>&#10060; Error</h3><p>Please select a MitKat Excel file before generating the report.</p>';
+                    document.getElementById('result').className = 'result error';
+                    document.getElementById('result').style.display = 'block';
+                    return;
+                }
+                formData.append('vulnerability_file', vulnFile);
                 if (document.getElementById('poc_zip').files[0]) {
                     formData.append('poc_zip', document.getElementById('poc_zip').files[0]);
                 }
@@ -5550,9 +5883,12 @@ async def mitkat_form():
                         credentials: 'same-origin'
                     });
                     
+                    if (response.status === 401) {
+                        throw new Error('Session expired. <a href="/auth/test-login" style="color:#a78bfa;">Click here to log in again</a>.');
+                    }
                     if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.detail || 'Report generation failed');
+                        const errorData = await response.json().catch(() => ({}));
+                        throw new Error(errorData.detail || `Server error (${response.status})`);
                     }
                     
                     // Download the file

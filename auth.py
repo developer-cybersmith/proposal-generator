@@ -33,8 +33,26 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 AZURE_CLIENT_ID = os.getenv("AZURE_CLIENT_ID")
 AZURE_CLIENT_SECRET = os.getenv("AZURE_CLIENT_SECRET")
 AZURE_TENANT_ID = os.getenv("AZURE_TENANT_ID")
-# For EC2 deployment, use the environment variable or default to localhost
-AZURE_REDIRECT_URI = os.getenv("AZURE_REDIRECT_URI", "https://13.202.112.84/auth/callback")
+
+
+def _resolve_azure_redirect_uri() -> str:
+    """
+    OAuth redirect URI must match the app URL and Azure app registration exactly.
+    Prefer explicit AZURE_REDIRECT_URI. On Railway, if unset, derive from RAILWAY_PUBLIC_DOMAIN.
+    """
+    explicit = (os.getenv("AZURE_REDIRECT_URI") or "").strip()
+    if explicit:
+        return explicit
+    raw = (os.getenv("RAILWAY_PUBLIC_DOMAIN") or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("http://") or raw.startswith("https://"):
+        base = raw.rstrip("/")
+        return f"{base}/auth/callback"
+    return f"https://{raw}/auth/callback"
+
+
+AZURE_REDIRECT_URI = _resolve_azure_redirect_uri()
 AZURE_AUTHORITY = f"https://login.microsoftonline.com/{AZURE_TENANT_ID}"
 AZURE_AUTH_ENDPOINT = f"{AZURE_AUTHORITY}/oauth2/v2.0/authorize"
 AZURE_TOKEN_ENDPOINT = f"{AZURE_AUTHORITY}/oauth2/v2.0/token"

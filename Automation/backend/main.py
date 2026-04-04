@@ -2953,6 +2953,37 @@ def heading(doc, text: str, level=1,
     return p
 
 
+def _mitkat_section_heading(
+    doc: Document,
+    text: str,
+    level: int = 1,
+    color=RGBColor(0x6A, 0x44, 0x9A),
+    size=14,
+    bold=True,
+):
+    """
+    Section title using Word Heading 1–3 so TOC \\o \"1-3\" can rebuild from outline levels.
+    Keeps MitKat purple styling on top of the built-in heading style.
+    """
+    level = max(1, min(3, int(level)))
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(12)
+    p.paragraph_format.space_after = Pt(4)
+    no_space_para(p)
+    try:
+        p.style = doc.styles[f"Heading {level}"]
+    except KeyError:
+        pass
+    p.clear()
+    try:
+        p.style = doc.styles[f"Heading {level}"]
+    except KeyError:
+        pass
+    no_space_para(p)
+    _run(p, text, bold=bold, size=size, color=color)
+    return p
+
+
 def body_para(doc, text: str, size=10, indent=False):
     """Add a body text paragraph."""
     p = doc.add_paragraph()
@@ -4115,6 +4146,284 @@ def _mitkat_prepare_template_for_render(template_path: str) -> tuple[str, str | 
         return template_path, None
 
 
+def _mitkat_clear_toc_field_result_xml(s: str) -> str:
+    """
+    Remove cached TOC field result (nested HYPERLINK/PAGEREF blocks) so Word rebuilds the TOC
+    from Heading 1–3 outline levels on open/update. Targets the Table of Contents SDT only.
+    """
+    marker = '<w:docPartGallery w:val="Table of Contents"/>'
+    gi = s.find(marker)
+    if gi == -1:
+        return s
+    si = s.find("<w:sdtContent>", gi)
+    if si == -1:
+        return s
+    ei = s.find("</w:sdtContent>", si)
+    if ei == -1:
+        return s
+    block = s[si:ei]
+    toc_instr = (
+        '<w:instrText xml:space="preserve"> TOC \\o &quot;1-3&quot; \\h \\z \\u </w:instrText>'
+    )
+    ti = block.find(toc_instr)
+    if ti == -1:
+        return s
+    after_instr = ti + len(toc_instr)
+    j = block.find('<w:fldChar w:fldCharType="separate"', after_instr)
+    if j == -1:
+        return s
+    k = block.find("/>", j)
+    if k == -1:
+        return s
+    pos_after_sep = k + 2
+    last_end = block.rfind('<w:fldChar w:fldCharType="end"')
+    if last_end == -1:
+        return s
+    rem_start_abs = si + pos_after_sep
+    keep_from_abs = si + last_end
+    if keep_from_abs <= rem_start_abs:
+        return s
+    return s[:rem_start_abs] + s[keep_from_abs:]
+
+
+def _mitkat_strip_toc_pageref_cache_xml(s: str) -> str:
+    """Remove cached numeric results after PAGEREF instructions (fallback if TOC still shows stale digits)."""
+    pat = re.compile(
+        r'(<w:instrText[^>]*>\s*PAGEREF _Toc\d+ \\h\s*</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>)'
+        r'<w:r>(?:<w:rPr>[\s\S]*?</w:rPr>)?<w:t>\d+</w:t></w:r>',
+        re.IGNORECASE,
+    )
+    return pat.sub(r"\1", s)
+
+
+def _mitkat_fix_toc_field_empty_result_runs(s: str) -> str:
+    """After clearing cached TOC, separate and end fldChars may sit in one run; split for Word field refresh."""
+    return re.sub(
+        r'<w:fldChar w:fldCharType="separate"/><w:fldChar w:fldCharType="end"/></w:r>',
+        '<w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>',
+        s,
+    )
+
+
+def _mitkat_ensure_settings_update_fields_xml(s: str) -> str:
+    """Ask Word to refresh fields (TOC, PAGE) when the document opens."""
+    if "w:updateFields" in s:
+        return s
+    return re.sub(r"(<w:settings[^>]*>)", r'\1<w:updateFields w:val="true"/>', s, count=1)
+
+
+def _mitkat_apply_footer_page_numbers(doc: Document) -> None:
+    """Right-aligned PAGE field in first-section footer; later sections link to the same footer."""
+    sections = doc.sections
+    if not sections:
+        return
+    for i, section in enumerate(sections):
+        if i > 0:
+            section.footer.is_linked_to_previous = True
+            continue
+        section.footer.is_linked_to_previous = False
+        footer = section.footer
+        p = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+        p.clear()
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        run = p.add_run()
+        fld_begin = OxmlElement("w:fldChar")
+        fld_begin.set(qn("w:fldCharType"), "begin")
+        instr = OxmlElement("w:instrText")
+        instr.set(qn("xml:space"), "preserve")
+        instr.text = " PAGE "
+        fld_sep = OxmlElement("w:fldChar")
+        fld_sep.set(qn("w:fldCharType"), "separate")
+        t = OxmlElement("w:t")
+        t.text = "1"
+        fld_end = OxmlElement("w:fldChar")
+        fld_end.set(qn("w:fldCharType"), "end")
+        run._r.append(fld_begin)
+        run._r.append(instr)
+        run._r.append(fld_sep)
+        run._r.append(t)
+        run._r.append(fld_end)
+        try:
+            for r in p.runs:
+                # Default footer background is white; dark text must be visible (white-on-white was invisible).
+                r.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
+                r.font.name = FONT_NAME
+                r.font.size = Pt(10)
+        except Exception:
+            pass
+
+
+def _mitkat_footer_page_paragraph_xml() -> str:
+    """OOXML fragment: right-aligned PAGE field (black text for standard white footer area)."""
+    fn = FONT_NAME.replace("&", "&amp;").replace('"', "&quot;")
+    return (
+        '<w:p><w:pPr><w:jc w:val="right"/></w:pPr>'
+        '<w:r><w:rPr><w:rFonts w:ascii="' + fn + '" w:hAnsi="' + fn + '"/>'
+        '<w:color w:val="000000"/><w:sz w:val="20"/></w:rPr>'
+        '<w:fldChar w:fldCharType="begin"/>'
+        '<w:instrText xml:space="preserve"> PAGE </w:instrText>'
+        '<w:fldChar w:fldCharType="separate"/>'
+        '<w:t>1</w:t>'
+        '<w:fldChar w:fldCharType="end"/>'
+        "</w:r></w:p>"
+    )
+
+
+def _mitkat_max_r_id_from_rels(rels_xml: str) -> int:
+    ids = [int(x) for x in re.findall(r'Id="rId(\d+)"', rels_xml)]
+    return max(ids) if ids else 1
+
+
+def _mitkat_footer_xml_has_page_field(footer_xml: str) -> bool:
+    return bool(re.search(r"<w:instrText[^>]*>\s*PAGE\s*</w:instrText>", footer_xml, re.IGNORECASE))
+
+
+def _mitkat_ensure_footer_zip_parts(parts: dict, order: list) -> None:
+    """
+    Ensure default footer exists and contains a PAGE field (OOXML-level fallback if python-docx
+    did not persist a footer). Mutates parts and may append new part names to order.
+    """
+    doc_bytes = parts.get("word/document.xml")
+    rels_path = "word/_rels/document.xml.rels"
+    rels_bytes = parts.get(rels_path)
+    if not doc_bytes or not rels_bytes:
+        return
+    d = doc_bytes.decode("utf-8")
+    rels_txt = rels_bytes.decode("utf-8")
+    ftr_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer"
+
+    rid_to_target = {}
+    for m in re.finditer(r"<Relationship[^/]+/>", rels_txt):
+        rel = m.group(0)
+        if ftr_type not in rel:
+            continue
+        idm = re.search(r'Id="(rId\d+)"', rel)
+        tgm = re.search(r'Target="([^"]+)"', rel)
+        if idm and tgm:
+            rid_to_target[idm.group(1)] = tgm.group(2)
+
+    mref = re.search(r'<w:footerReference[^>]*w:type="default"[^>]*r:id="([^"]+)"', d)
+    if not mref:
+        mref = re.search(r'<w:footerReference[^>]*r:id="([^"]+)"', d)
+    footer_rid = mref.group(1) if mref else None
+    if footer_rid and footer_rid not in rid_to_target:
+        for m in re.finditer(r"<Relationship[^/]+/>", rels_txt):
+            rel = m.group(0)
+            if footer_rid not in rel or ftr_type not in rel:
+                continue
+            tgm = re.search(r'Target="([^"]+)"', rel)
+            if tgm:
+                rid_to_target[footer_rid] = tgm.group(1)
+                break
+
+    def norm_footer_path(tgt: str) -> str:
+        tgt = tgt.replace("\\", "/")
+        if not tgt.startswith("word/"):
+            tgt = "word/" + tgt.lstrip("/")
+        return tgt
+
+    if footer_rid and footer_rid in rid_to_target:
+        fp = norm_footer_path(rid_to_target[footer_rid])
+        if fp not in parts:
+            parts[fp] = (
+                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                + _mitkat_footer_page_paragraph_xml()
+                + "</w:ftr>"
+            ).encode("utf-8")
+            order.append(fp)
+        else:
+            fx = parts[fp].decode("utf-8")
+            if not _mitkat_footer_xml_has_page_field(fx):
+                idx = fx.rfind("</w:ftr>")
+                if idx != -1:
+                    fx = fx[:idx] + _mitkat_footer_page_paragraph_xml() + fx[idx:]
+                    parts[fp] = fx.encode("utf-8")
+        return
+
+    new_num = _mitkat_max_r_id_from_rels(rels_txt) + 1
+    new_rid = "rId%d" % new_num
+    fp = "word/footer1.xml"
+    parts[fp] = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        + _mitkat_footer_page_paragraph_xml()
+        + "</w:ftr>"
+    ).encode("utf-8")
+    if fp not in order:
+        order.append(fp)
+    frag = '<Relationship Id="%s" Type="%s" Target="footer1.xml"/>' % (new_rid, ftr_type)
+    rels_txt = rels_txt.replace("</Relationships>", frag + "</Relationships>")
+    parts[rels_path] = rels_txt.encode("utf-8")
+    ct_path = "[Content_Types].xml"
+    ct = parts.get(ct_path)
+    if ct:
+        ctt = ct.decode("utf-8")
+        if "/word/footer1.xml" not in ctt:
+            ov = (
+                '<Override PartName="/word/footer1.xml" '
+                'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'
+            )
+            ctt = ctt.replace("</Types>", ov + "</Types>")
+            parts[ct_path] = ctt.encode("utf-8")
+    ms = list(re.finditer(r"<w:sectPr>", d))
+    if ms:
+        pos = ms[-1].end()
+        d = d[:pos] + '<w:footerReference w:type="default" r:id="%s"/>' % new_rid + d[pos:]
+        parts["word/document.xml"] = d.encode("utf-8")
+
+
+def _mitkat_normalize_footer_text_colors(parts: dict) -> None:
+    """Ensure footer runs are not white-on-white (Word default footer background is white)."""
+    for name in list(parts.keys()):
+        if not (name.startswith("word/footer") and name.endswith(".xml")):
+            continue
+        try:
+            t = parts[name].decode("utf-8")
+        except Exception:
+            continue
+        t2 = re.sub(r'(<w:color[^>]*w:val=")FFFFFF(")', r"\g<1>000000\2", t)
+        t2 = re.sub(r'(<w:color[^>]*w:val=")ffffff(")', r"\g<1>000000\2", t2)
+        if t2 != t:
+            parts[name] = t2.encode("utf-8")
+
+
+def _mitkat_postprocess_report_docx_toc_settings(docx_path: str) -> None:
+    """Clear stale TOC cache, ensure footer PAGE field, strip PAGEREF digits, enable updateFields on open."""
+    try:
+        with ZipFile(docx_path, "r") as zin:
+            order = []
+            parts = {}
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+                parts[item.filename] = data
+                order.append(item.filename)
+        doc_xml = parts.get("word/document.xml")
+        if doc_xml:
+            s = doc_xml.decode("utf-8")
+            s = _mitkat_clear_toc_field_result_xml(s)
+            s = _mitkat_fix_toc_field_empty_result_runs(s)
+            s = _mitkat_strip_toc_pageref_cache_xml(s)
+            parts["word/document.xml"] = s.encode("utf-8")
+        st = parts.get("word/settings.xml")
+        if st:
+            parts["word/settings.xml"] = _mitkat_ensure_settings_update_fields_xml(st.decode("utf-8")).encode("utf-8")
+        _mitkat_ensure_footer_zip_parts(parts, order)
+        _mitkat_normalize_footer_text_colors(parts)
+        buf = io.BytesIO()
+        with ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
+            for name in order:
+                zout.writestr(name, parts[name])
+            for name in parts:
+                if name not in order:
+                    zout.writestr(name, parts[name])
+        with open(docx_path, "wb") as f:
+            f.write(buf.getvalue())
+    except Exception as e:
+        print(f"[WARNING] MitKat TOC/settings/footer postprocess skipped: {e}")
+        traceback.print_exc()
+
+
 def _mitkat_fix_cover_page_layout(docx_path: str) -> None:
     """
     Post-process rendered MitKat docx so the cover white panel and text match readable RXIL-style output.
@@ -4379,10 +4688,10 @@ def generate_report_with_template(vulns: list, poc_map: dict, cfg: dict,
             except OSError:
                 pass
 
-    # Append dynamic sections
+    # Append dynamic sections (Heading styles so TOC \o "1-3" can list these sections)
     doc.add_page_break()
 
-    heading(doc, "Observations", size=14, color=RGBColor(0x6A, 0x44, 0x9A))
+    _mitkat_section_heading(doc, "Observations", level=1, size=14, color=RGBColor(0x6A, 0x44, 0x9A))
     p_tc = doc.add_paragraph()
     _run(p_tc, "Test Case", bold=True, size=11)
     build_test_case_table(doc)
@@ -4392,12 +4701,12 @@ def generate_report_with_template(vulns: list, poc_map: dict, cfg: dict,
     build_vuln_list_table(doc, vulns)
     doc.add_page_break()
 
-    heading(doc, "Risk Level & Description", size=13)
+    _mitkat_section_heading(doc, "Risk Level & Description", level=1, size=13, color=RGBColor(0x1F, 0x3D, 0x6A))
     body_para(doc, "The vulnerability ranging risk pattern below indicates the ratings "
               "according to their respective CVSS3.1 Scores.")
     doc.add_page_break()
 
-    heading(doc, "Detailed Observations", size=14, color=RGBColor(0x6A, 0x44, 0x9A))
+    _mitkat_section_heading(doc, "Detailed Observations", level=1, size=14, color=RGBColor(0x6A, 0x44, 0x9A))
     spacer(doc)
     build_detailed_observations(doc, vulns, poc_map)
 
@@ -4406,7 +4715,9 @@ def generate_report_with_template(vulns: list, poc_map: dict, cfg: dict,
     _run(p_end, "End of Report", bold=True, size=12,
          color=RGBColor(0x1F, 0x3D, 0x6A))
 
+    _mitkat_apply_footer_page_numbers(doc)
     doc.save(output_path)
+    _mitkat_postprocess_report_docx_toc_settings(output_path)
     print(f"[OK] Report saved: {output_path}")
     return output_path
 
@@ -4914,7 +5225,9 @@ def generate_mitkat_report(vulnerabilities, front_page_data, doc_control_data, t
             )
         else:
             doc = mitkat_rpt_build_document_from_scratch(rpt_vulns, normalized_poc_map, cfg)
+            _mitkat_apply_footer_page_numbers(doc)
             doc.save(output_path)
+            _mitkat_postprocess_report_docx_toc_settings(output_path)
 
         return output_path
     except Exception as e:
@@ -5462,13 +5775,25 @@ async def mitkat_form():
                         </div>
                         <div class="form-group">
                             <label for="type_of_audit">Type of Audit *</label>
-                            <input type="text" id="type_of_audit" name="type_of_audit" value="WebApplication Vulnerability Assessment & Penetration Testing" required>
+                            <select id="type_of_audit" name="type_of_audit" required>
+                                <option value="">Select Type</option>
+                                <option value="Security assessment (VAPT) - WEB & Network">Security assessment (VAPT) - WEB & Network</option>
+                                <option value="Security assessment (VAPT) - WEB">Security assessment (VAPT) - WEB</option>
+                                <option value="Security assessment (VAPT) - Network">Security assessment (VAPT) - Network</option>
+                                <option value="Penetration Testing">Penetration Testing</option>
+                                <option value="Vulnerability Assessment">Vulnerability Assessment</option>
+                            </select>
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="type_of_audit_report">Type of Audit Report *</label>
-                            <input type="text" id="type_of_audit_report" name="type_of_audit_report" value="FinalReport" required>
+                            <select id="type_of_audit_report" name="type_of_audit_report" required>
+                                <option value="">Select Type</option>
+                                <option value="First Audit Report">First Audit Report</option>
+                                <option value="Follow-up Audit Report">Follow-up Audit Report</option>
+                                <option value="Final Audit Report">Final Audit Report</option>
+                            </select>
                         </div>
                         <div class="form-group">
                             <label for="period">Period *</label>

@@ -4050,6 +4050,71 @@ def _mitkat_patch_cover_document_xml(xml_bytes: bytes) -> bytes:
         return s.encode("utf-8")
 
 
+def _mitkat_remove_empty_table_rows_xml(s: str) -> str:
+    """
+    Remove <w:tr> rows that have no Jinja placeholders and no non-whitespace text in w:t.
+    MitKat_Base_template.docx places two blank spacer rows between {% for %} and the data row;
+    those render as persistent empty rows when lists are empty or after partial loop output.
+    """
+    tr_pat = re.compile(r"<w:tr\b[^>]*>[\s\S]*?</w:tr>", re.IGNORECASE)
+
+    def _maybe_drop(m: re.Match) -> str:
+        tr = m.group(0)
+        if "{%" in tr or "{{" in tr:
+            return tr
+        texts = re.findall(r"<w:t[^>]*>([^<]*)</w:t>", tr)
+        if not texts:
+            return ""
+        if all(not t.strip() for t in texts):
+            return ""
+        return tr
+
+    out = s
+    for _ in range(50):
+        nxt = tr_pat.sub(_maybe_drop, out)
+        if nxt == out:
+            return out
+        out = nxt
+    return out
+
+
+def _mitkat_prepare_template_for_render(template_path: str) -> tuple[str, str | None]:
+    """
+    Return (path_to_open_with_docxtpl, temp_copy_to_delete_or_none).
+    Patches word/document.xml in a temp copy: strip blank spacer <w:tr> rows inside tables
+    (MitKat template has two empty rows between {% for %} and the data row).
+    """
+    try:
+        with ZipFile(template_path, "r") as zin:
+            if "word/document.xml" not in zin.namelist():
+                return template_path, None
+            raw = zin.read("word/document.xml").decode("utf-8")
+        cleaned = _mitkat_remove_empty_table_rows_xml(raw)
+        if cleaned == raw:
+            return template_path, None
+        try:
+            ET.fromstring(cleaned.encode("utf-8"))
+        except ET.ParseError as pe:
+            print(f"[WARNING] MitKat template XML patch invalid ({pe}); using original template.")
+            return template_path, None
+        buf = io.BytesIO()
+        with ZipFile(template_path, "r") as zin:
+            with ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    data = zin.read(item.filename)
+                    if item.filename == "word/document.xml":
+                        data = cleaned.encode("utf-8")
+                    zout.writestr(item, data)
+        fd, tmp = tempfile.mkstemp(suffix=".docx")
+        os.close(fd)
+        with open(tmp, "wb") as f:
+            f.write(buf.getvalue())
+        return tmp, tmp
+    except Exception as e:
+        print(f"[WARNING] MitKat template prepare skipped: {e}")
+        return template_path, None
+
+
 def _mitkat_fix_cover_page_layout(docx_path: str) -> None:
     """
     Post-process rendered MitKat docx so the cover white panel and text match readable RXIL-style output.
@@ -4062,7 +4127,9 @@ def _mitkat_fix_cover_page_layout(docx_path: str) -> None:
         with ZipFile(docx_path, "r") as zin:
             if "word/document.xml" not in zin.namelist():
                 return
-            new_xml = _mitkat_patch_cover_document_xml(zin.read("word/document.xml"))
+            s = zin.read("word/document.xml").decode("utf-8")
+            s = _mitkat_remove_empty_table_rows_xml(s)
+            new_xml = _mitkat_patch_cover_document_xml(s.encode("utf-8"))
             with ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zout:
                 for item in zin.infolist():
                     data = zin.read(item.filename)
@@ -4090,6 +4157,81 @@ def _mitkat_tbl_clear_left_indent(table) -> None:
     tbl_pr = table._tbl.tblPr
     for old in tbl_pr.findall(qn("w:tblInd")):
         tbl_pr.remove(old)
+
+
+def _mitkat_nonempty_cell(v) -> bool:
+    if v is None:
+        return False
+    return str(v).strip() != ""
+
+
+def _mitkat_row_has_any(entry: dict, keys: tuple[str, ...]) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    return any(_mitkat_nonempty_cell(entry.get(k)) for k in keys)
+
+
+def _mitkat_filter_template_cfg(cfg: dict) -> dict:
+    """
+    Remove empty rows from docxtpl list context before render.
+
+    The MitKat UI ships one default blank row per section; submit still sends one object with
+    empty strings, so {% for %} renders an extra table row. Filter so only rows with at least
+    one filled field are passed (auto-filled sr_no alone does not count for scope/team/tools).
+    """
+    cfg = dict(cfg or {})
+
+    ch = [
+        e
+        for e in (cfg.get("document_change_history") or [])
+        if _mitkat_row_has_any(e, ("version", "date", "remarks"))
+    ]
+    cfg["document_change_history"] = ch
+
+    dist = [
+        e
+        for e in (cfg.get("distribution_list") or [])
+        if _mitkat_row_has_any(e, ("name", "organization", "designation", "email"))
+    ]
+    cfg["distribution_list"] = dist
+
+    scope = [
+        e
+        for e in (cfg.get("engagement_scope") or [])
+        if _mitkat_row_has_any(
+            e,
+            (
+                "asset_description",
+                "criticality",
+                "internal_ip",
+                "url",
+                "public_ip",
+                "location",
+                "hash_value",
+                "version",
+                "other_details",
+            ),
+        )
+    ]
+    cfg["engagement_scope"] = scope
+
+    team = [
+        e
+        for e in (cfg.get("auditing_team") or [])
+        if _mitkat_row_has_any(
+            e, ("name", "designation", "email", "qualifications", "certin_listed")
+        )
+    ]
+    cfg["auditing_team"] = team
+
+    tools = [
+        e
+        for e in (cfg.get("tools_software") or [])
+        if _mitkat_row_has_any(e, ("name", "version", "type"))
+    ]
+    cfg["tools_software"] = tools
+
+    return cfg
 
 
 def _mitkat_strip_template_stub_observations_block(doc: Document) -> None:
@@ -4182,9 +4324,12 @@ def generate_report_with_template(vulns: list, poc_map: dict, cfg: dict,
     Use an existing docxtpl template for the boilerplate pages,
     then append the dynamic vulnerability sections.
     """
+    tmp_tpl = None
     try:
         from docxtpl import DocxTemplate
-        tpl = DocxTemplate(template_path)
+        cfg = _mitkat_filter_template_cfg(cfg)
+        tpl_path, tmp_tpl = _mitkat_prepare_template_for_render(template_path)
+        tpl = DocxTemplate(tpl_path)
         context = {
             "CLIENT_NAME":            cfg.get("client_name", ""),
             "REPORT_TITLE":           cfg.get("report_title", ""),
@@ -4227,6 +4372,12 @@ def generate_report_with_template(vulns: list, poc_map: dict, cfg: dict,
         section.right_margin = Inches(1)
         section.top_margin   = Inches(1)
         section.bottom_margin= Inches(1)
+    finally:
+        if tmp_tpl and os.path.exists(tmp_tpl):
+            try:
+                os.unlink(tmp_tpl)
+            except OSError:
+                pass
 
     # Append dynamic sections
     doc.add_page_break()

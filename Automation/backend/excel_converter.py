@@ -1,27 +1,52 @@
 """
-Shared Excel Converter Module
-Converts any VAPT tracker Excel (any format) into the standardised 29-column
-output format used by IP (type1/type2), Web (type4), and Cert-IN (type3) report generators.
+Shared Excel Converter Module  (FIXED - v3)
+Converts any VAPT tracker Excel into the standardised 29-column org format.
 
-POC ZIP layouts supported:
-  "ip"     : POC Screenshots*/<IP>/<Severity>/VUL-NNN/stepN.png
-  "web"    : POC Screenshots/<Severity>/VUL-NNN/stepN.png
-  "certin" : <root>/#N/stepN.png   (observation-number folders)
+KEY CHANGE IN v3
+================
+Two operating modes are now used:
+
+  MODE A — ORG FORMAT PASSTHROUGH
+    Triggered when the input Excel already contains all (or most) of the
+    29 standard org-format columns.  In this mode the converter copies
+    every cell value EXACTLY as-is (including pre-filled asset metadata,
+    severity counts, blank rows, etc.) and only injects screenshot
+    filenames from the POC ZIP when one is supplied.
+    Recalculating counts or restructuring rows in this mode would corrupt
+    correct data that the tester already filled in.
+
+  MODE B — FULL TRANSFORMATION
+    Triggered for any external / unknown-format Excel.  Column names are
+    matched via aliases, asset metadata is reconstructed, severity counts
+    are recalculated, and rows are mapped to the 29-column schema.
+
+IP POC INDEX FIX (all modes)
+    The previous indexer used only the VUL folder number as the lookup key,
+    causing collisions when multiple IPs each have their own
+    VUL-001, VUL-002 … folders (last-write-wins, wrong screenshots).
+    The new indexer is keyed by { ip_str: [(vul_id, steps), ...] } and
+    screenshot lookup uses asset IP + a per-IP vuln counter, so each row
+    always gets exactly the screenshots that belong to it.
+
+POC ZIP layouts supported
+    "ip"     : POC Screenshots*/<IP>/<Severity>/<VUL-ID>/stepN.png
+    "web"    : POC Screenshots*/<Severity>/<VUL-ID>/stepN.png
+    "certin" : <root>/#N/stepN.png
 """
 
 import os
 import re
 import zipfile
 import tempfile
-import shutil
 from datetime import datetime
+from collections import defaultdict
 
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-# ── Output column schema (29 columns) ─────────────────────────────────────────
+# ── Output column schema (29 columns, fixed order) ────────────────────────────
 OUTPUT_COLUMNS = [
     "Asset/Hostname",
     "Instant purpose",
@@ -54,6 +79,9 @@ OUTPUT_COLUMNS = [
     "Screenshot4",
 ]
 
+# Minimum number of OUTPUT_COLUMNS that must be present to trigger passthrough mode
+ORG_FORMAT_MIN_MATCH = 22
+
 SEVERITY_ORDER = ["Critical", "High", "Medium", "Low", "Informational"]
 
 SEVERITY_COLORS = {
@@ -63,131 +91,56 @@ SEVERITY_COLORS = {
     "Low":           "FFFF00",
     "Informational": "92D050",
 }
-
 HEADER_FILL_COLOR = "7030A0"
 
 COLUMN_WIDTHS = {
-    "Asset/Hostname": 20,
-    "Instant purpose": 18,
-    "VAPT Status": 14,
-    "Critical": 10,
-    "High": 10,
-    "Medium": 10,
-    "Low": 10,
-    "Informational": 14,
-    "Total": 10,
-    "Tester_Name": 18,
-    "Project": 20,
-    "Sr no.": 8,
-    "Observation": 30,
-    "Severity": 14,
-    "Status": 14,
-    "New or Repeat Observation": 22,
-    "CVE/CWE": 18,
-    "CVSS": 12,
+    "Asset/Hostname": 20, "Instant purpose": 18, "VAPT Status": 14,
+    "Critical": 10, "High": 10, "Medium": 10, "Low": 10,
+    "Informational": 14, "Total": 10, "Tester_Name": 18, "Project": 20,
+    "Sr no.": 10, "Observation": 14, "Severity": 14, "Status": 12,
+    "New or Repeat Observation": 22, "CVE/CWE": 18, "CVSS": 12,
     "CVSS Version Ref": 16,
     "Affected Asset i.e. IP/URL/Application etc.": 35,
     "Observation/Vulnerability Title": 35,
     "Detailed Observation/ Vulnerable Point": 40,
-    "Recommendation": 40,
-    "Reference": 30,
+    "Recommendation": 40, "Reference": 30,
     "Evidence / Proof of Concept": 50,
-    "Screenshot1": 20,
-    "Screenshot2": 20,
-    "Screenshot3": 20,
-    "Screenshot4": 20,
+    "Screenshot1": 20, "Screenshot2": 20, "Screenshot3": 20, "Screenshot4": 20,
 }
 
-# ── Flexible column name aliases ───────────────────────────────────────────────
+# ── Column aliases (Mode B / transformation only) ─────────────────────────────
 _COL_ALIASES = {
-    "asset_hostname": [
-        "Asset/Hostname", "Asset Hostname", "Hostname", "Asset", "IP Address",
-        "IP", "Host", "Target", "Server",
-    ],
-    "instant_purpose": [
-        "Instant purpose", "Purpose", "Audit Purpose", "Assessment Purpose",
-        "Type", "Instant Purpose",
-    ],
-    "vapt_status": [
-        "VAPT Status", "Status", "Assessment Status", "Audit Status",
-        "Revalidation Status", "Revalidation",
-    ],
-    "tester_name": [
-        "Tester_Name", "Tester Name", "Tester", "Reported By", "Auditor",
-        "Assessor", "Analyst",
-    ],
-    "project": [
-        "Project", "Project Name", "Engagement", "Client Project",
-        "Assessment Name",
-    ],
-    "sr_no": [
-        "Sr no.", "Sr no", "Sr No", "Sr.No", "Sr. No.", "S.No", "Serial",
-        "S. No", "SNo", "Sr", "VUL ID", "Vuln ID", "ID", "S.NO.", "S.No.",
-    ],
-    "observation": [
-        "Observation", "Vulnerability Name", "Name of Vulnerability",
-        "Finding", "Title", "Vuln Title", "Vulnerability Title",
-        "Observation/Vulnerability Title", "Observation/ Vulnerability Title",
-    ],
-    "severity": [
-        "Severity", "Risk", "Risk Level", "Risk(Severity)", "Criticality",
-        "Priority",
-    ],
-    "new_repeat": [
-        "New or Repeat Observation", "New or Repeat", "New/Repeat",
-        "Observation Type", "Type of Finding",
-    ],
-    "cve_cwe": [
-        "CVE/CWE", "CVE CWE", "CVE", "CWE", "CVE/CWE ID",
-    ],
-    "cvss": [
-        "CVSS", "CVSS Score", "Score", "CVSS Base Score",
-    ],
-    "cvss_version": [
-        "CVSS Version Ref", "CVSS Version", "CVSS Ref", "CVSS Ver",
-    ],
-    "affected_asset": [
-        "Affected Asset i.e. IP/URL/Application etc.",
-        "Affected Asset", "IP/URL/App", "IP URL App", "Target IP",
-        "Vulnerable URL", "Vulnerable Parameter", "URL", "Endpoint",
-        "Affected URL", "Affected IP",
-    ],
-    "vuln_title": [
-        "Observation/Vulnerability Title", "Observation/ Vulnerability Title",
-        "Vulnerability Title", "Vuln Title", "Title",
-    ],
-    "detailed_observation": [
-        "Detailed Observation/ Vulnerable Point",
-        "Detailed Observation/Vulnerable Point",
-        "Detailed Observation", "Description", "Vulnerability Description",
-        "Observation/Vulnerability", "Detailed O", "Detail",
-        "Vulnerability Details", "Details",
-    ],
-    "recommendation": [
-        "Recommendation", "Remediation", "Fix", "Solution",
-        "Recommended Fix", "Mitigation",
-    ],
-    "reference": [
-        "Reference", "References", "Reference Link", "Links",
-    ],
-    "evidence": [
-        "Evidence / Proof of Concept", "Evidence / Proof Of Concept",
-        "Evidence/Proof of Concept", "Evidence", "Proof of Concept",
-        "POC", "Steps", "Steps to Reproduce",
-    ],
+    "asset_hostname":       ["Asset/Hostname", "Asset Hostname", "Hostname", "Asset", "IP Address", "IP", "Host", "Target", "Server"],
+    "instant_purpose":      ["Instant purpose", "Instant Purpose", "Purpose", "Audit Purpose", "Assessment Purpose", "Type"],
+    "vapt_status":          ["VAPT Status", "Assessment Status", "Audit Status"],
+    "vuln_status":          ["Status", "Vuln Status", "Finding Status", "Vulnerability Status"],
+    "tester_name":          ["Tester_Name", "Tester Name", "Tester", "Reported By", "Auditor", "Assessor", "Analyst"],
+    "project":              ["Project", "Project Name", "Engagement", "Client Project", "Assessment Name"],
+    "sr_no":                ["Sr no.", "Sr no", "Sr No", "Sr.No", "Sr. No.", "S.No", "Serial", "S. No", "SNo", "Sr", "VUL ID", "Vuln ID", "ID"],
+    "observation":          ["Observation"],
+    "severity":             ["Severity", "Risk", "Risk Level", "Risk(Severity)", "Criticality", "Priority"],
+    "new_repeat":           ["New or Repeat Observation", "New or Repeat", "New/Repeat", "Observation Type", "Type of Finding"],
+    "cve_cwe":              ["CVE/CWE", "CVE CWE", "CVE", "CWE", "CVE/CWE ID"],
+    "cvss":                 ["CVSS", "CVSS Score", "Score", "CVSS Base Score"],
+    "cvss_version":         ["CVSS Version Ref", "CVSS Version", "CVSS Ref", "CVSS Ver", "CVSS Vector", "CVSS String"],
+    "affected_asset":       ["Affected Asset i.e. IP/URL/Application etc.", "Affected Asset", "IP/URL/App", "Target IP", "Vulnerable URL", "URL", "Endpoint"],
+    "vuln_title":           ["Observation/Vulnerability Title", "Observation/ Vulnerability Title", "Vulnerability Title", "Vuln Title", "Finding Title", "Title", "Vulnerability Name", "Finding"],
+    "detailed_observation": ["Detailed Observation/ Vulnerable Point", "Detailed Observation/Vulnerable Point", "Detailed Observation", "Description", "Vulnerability Description", "Vulnerability Details", "Details"],
+    "recommendation":       ["Recommendation", "Remediation", "Fix", "Solution", "Recommended Fix", "Mitigation"],
+    "reference":            ["Reference", "References", "Reference Link", "Links"],
+    "evidence":             ["Evidence / Proof of Concept", "Evidence / Proof Of Concept", "Evidence/Proof of Concept", "Evidence", "Proof of Concept", "POC", "Steps", "Steps to Reproduce"],
 }
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Utility ────────────────────────────────────────────────────────────────────
 
 def _clean(val):
-    """Normalise a cell value to a stripped string."""
-    if val is None or (isinstance(val, float) and str(val) == "nan"):
+    if val is None:
         return ""
-    return str(val).strip()
+    s = str(val).strip()
+    return "" if s.lower() == "nan" else s
 
 
 def _find_col(df, aliases):
-    """Return the first column in df whose name matches any alias (case-insensitive)."""
     lower_cols = {c.lower().strip(): c for c in df.columns}
     for alias in aliases:
         if alias.lower().strip() in lower_cols:
@@ -196,130 +149,113 @@ def _find_col(df, aliases):
 
 
 def _normalise_severity(raw):
-    """Map any severity text to one of the 5 canonical values."""
     s = _clean(raw).lower()
-    if "critical" in s:
-        return "Critical"
-    if "high" in s:
-        return "High"
-    if "medium" in s or "moderate" in s:
-        return "Medium"
-    if "low" in s:
-        return "Low"
-    if "info" in s:
-        return "Informational"
-    return "Medium"
+    if "critical"          in s: return "Critical"
+    if "high"              in s: return "High"
+    if "medium" in s or "moderate" in s: return "Medium"
+    if "low"               in s: return "Low"
+    if "info"              in s: return "Informational"
+    return _clean(raw)   # preserve unknown values (e.g. "No vulnerability")
 
 
 def _normalise_new_repeat(raw):
     s = _clean(raw).lower()
-    if "repeat" in s or "follow" in s or "existing" in s:
-        return "Repeat"
-    return "New"
+    return "Repeat" if ("repeat" in s or "follow" in s or "existing" in s) else "New"
 
 
-# ── Excel reader (flexible, handles row-1 and row-2 headers) ──────────────────
+def _is_certin_obs(sr):
+    return bool(re.fullmatch(r"#\d+", str(sr).strip()))
+
+
+# ── Excel reader ───────────────────────────────────────────────────────────────
 
 def _read_any_excel(path):
-    """
-    Read any VAPT Excel file.
-    Tries header=0 first; if that yields fewer than 5 recognisable columns,
-    tries header=1 (row 2 as header, like MitKat AMCS tracker).
-    Returns a pandas DataFrame.
-    """
     def _score(df):
-        """Count how many of our key aliases match columns in df."""
-        key_groups = ["sr_no", "observation", "severity", "affected_asset", "detailed_observation"]
-        score = 0
-        for g in key_groups:
-            if _find_col(df, _COL_ALIASES[g]):
-                score += 1
-        return score
+        key_groups = ["sr_no", "observation", "severity", "vuln_title", "detailed_observation"]
+        return sum(1 for g in key_groups if _find_col(df, _COL_ALIASES[g]))
 
-    try:
-        df0 = pd.read_excel(path, header=0, dtype=str)
-        df0.columns = [str(c).strip() for c in df0.columns]
-        score0 = _score(df0)
-    except Exception:
-        df0, score0 = None, -1
+    best_df, best_score = None, -1
+    for hdr in (0, 1):
+        try:
+            d = pd.read_excel(path, header=hdr, dtype=str, sheet_name=0)
+            d.columns = [str(c).strip() for c in d.columns]
+            score = _score(d)
+            if score > best_score:
+                best_df, best_score = d, score
+        except Exception:
+            pass
 
-    try:
-        df1 = pd.read_excel(path, header=1, dtype=str)
-        df1.columns = [str(c).strip() for c in df1.columns]
-        score1 = _score(df1)
-    except Exception:
-        df1, score1 = None, -1
-
-    if score0 >= score1 and df0 is not None:
-        df = df0
-    elif df1 is not None:
-        df = df1
-    else:
-        raise ValueError("Could not read Excel file with any header row configuration.")
-
-    # Drop completely empty rows
-    df = df.dropna(how="all").reset_index(drop=True)
-    return df
+    if best_df is None:
+        raise ValueError("Could not read Excel file.")
+    return best_df.dropna(how="all").reset_index(drop=True)
 
 
-# ── Severity counts per asset ──────────────────────────────────────────────────
+# ── Org format detection ───────────────────────────────────────────────────────
 
-def _severity_counts(df, asset_col, severity_col):
+def _is_org_format(df):
     """
-    Returns a dict: asset -> {Critical:N, High:N, Medium:N, Low:N, Informational:N, Total:N}
+    Return True when enough OUTPUT_COLUMNS are present by exact name,
+    meaning the input is already in the org format.
     """
-    counts = {}
-    for _, row in df.iterrows():
-        asset = _clean(row.get(asset_col, "")) if asset_col else ""
-        sev = _normalise_severity(row.get(severity_col, "")) if severity_col else "Medium"
-        if not asset:
-            continue
-        if asset not in counts:
-            counts[asset] = {s: 0 for s in SEVERITY_ORDER}
-        counts[asset][sev] = counts[asset].get(sev, 0) + 1
-    for asset in counts:
-        counts[asset]["Total"] = sum(counts[asset][s] for s in SEVERITY_ORDER)
-    return counts
+    exact_cols = {str(c).strip() for c in df.columns}
+    matched = sum(1 for col in OUTPUT_COLUMNS if col in exact_cols)
+    result = matched >= ORG_FORMAT_MIN_MATCH
+    print(f"[INFO] Org format check: {matched}/{len(OUTPUT_COLUMNS)} columns matched → {'PASSTHROUGH' if result else 'TRANSFORM'}")
+    return result
 
 
-# ── POC ZIP indexers ───────────────────────────────────────────────────────────
+# ── POC ZIP helpers ────────────────────────────────────────────────────────────
 
 def _extract_zip(zip_path):
-    """Extract ZIP to a temp dir, return (extract_dir, cleanup_dir)."""
     tmp = tempfile.mkdtemp()
     with zipfile.ZipFile(zip_path, "r") as zf:
         zf.extractall(tmp)
-    return tmp, tmp
+    return tmp
 
 
 def _step_num(filename):
-    """Extract step number from filename like step1.png, step-2.png, step_3.jpg."""
     m = re.search(r"step[\s_\-]?(\d+)", filename.lower())
     return int(m.group(1)) if m else None
 
 
-def _index_poc_ip(root):
-    """
-    IP POC layout: <root>/POC Screenshots*/<IP>/<Severity>/VUL-NNN/stepN.png
-    Returns: { (ip, vul_id): {step_num: abs_path} }
-    Also returns flat: { sr_no_int: {step_num: abs_path} } keyed by VUL number.
-    """
-    index = {}  # vul_id_lower -> {step_num: path}
-    # Find the POC Screenshots* folder
-    poc_root = None
+def _find_poc_root(root):
     for entry in os.listdir(root):
-        if entry.lower().startswith("poc screenshots") or entry.lower().startswith("poc_screenshots"):
+        if re.match(r"poc.?screenshots", entry.lower()):
             candidate = os.path.join(root, entry)
             if os.path.isdir(candidate):
-                poc_root = candidate
-                break
-    if not poc_root:
-        poc_root = root
+                return candidate
+    return root
+
+
+def _screenshots_from_steps(steps_dict):
+    """Convert {step_num: abs_path} → list of 4 basenames."""
+    ss = [os.path.basename(steps_dict[sn]) for sn in sorted(steps_dict.keys())[:4]]
+    while len(ss) < 4:
+        ss.append("")
+    return ss
+
+
+# ── IP POC Indexer v3 ─────────────────────────────────────────────────────────
+# Keyed by IP so that multiple IPs with same VUL folder name never collide.
+
+def _index_poc_ip(root):
+    """
+    Returns { ip_str: [(vul_id_str, {step_num: abs_path}), ...] }
+    List is sorted ascending by the numeric part of the VUL-ID.
+
+    Lookup is then done by (ip, nth_vuln_for_this_ip) not by global VUL number,
+    so the collision where 35.200.155.59/VUL-001 and 172.19.2.21/VUL-001 both
+    mapped to key=1 is completely eliminated.
+    """
+    raw = defaultdict(dict)   # ip -> { vul_id_str -> {step_num: path} }
+    poc_root = _find_poc_root(root)
 
     for ip_folder in os.listdir(poc_root):
         ip_path = os.path.join(poc_root, ip_folder)
         if not os.path.isdir(ip_path):
             continue
+        ip_key = ip_folder.strip()
+
         for sev_folder in os.listdir(ip_path):
             sev_path = os.path.join(ip_path, sev_folder)
             if not os.path.isdir(sev_path):
@@ -328,40 +264,29 @@ def _index_poc_ip(root):
                 vul_path = os.path.join(sev_path, vul_folder)
                 if not os.path.isdir(vul_path):
                     continue
-                vul_key = vul_folder.strip().lower()
-                if vul_key not in index:
-                    index[vul_key] = {}
+                vul_id = vul_folder.strip()
+                if vul_id not in raw[ip_key]:
+                    raw[ip_key][vul_id] = {}
                 for fname in sorted(os.listdir(vul_path)):
                     if fname.lower().endswith((".png", ".jpg", ".jpeg")):
                         sn = _step_num(fname)
                         if sn is not None:
-                            index[vul_key][sn] = os.path.join(vul_path, fname)
+                            raw[ip_key][vul_id][sn] = os.path.join(vul_path, fname)
 
-    # Also build numeric index: VUL-003 -> 3
-    numeric_index = {}
-    for vul_key, steps in index.items():
-        m = re.search(r"(\d+)", vul_key)
-        if m:
-            numeric_index[int(m.group(1))] = steps
-    return numeric_index
+    def _vul_sort_key(vid):
+        m = re.search(r"(\d+)", vid)
+        return int(m.group(1)) if m else 0
+
+    return {
+        ip: sorted(vul_dict.items(), key=lambda kv: _vul_sort_key(kv[0]))
+        for ip, vul_dict in raw.items()
+    }
 
 
 def _index_poc_web(root):
-    """
-    Web POC layout: <root>/POC Screenshots/<Severity>/VUL-NNN/stepN.png
-    Returns: { vul_number_int: {step_num: abs_path} }
-    """
+    """Returns { vul_number_int: {step_num: path} }"""
     index = {}
-    poc_root = None
-    for entry in os.listdir(root):
-        if entry.lower().startswith("poc screenshots") or entry.lower().startswith("poc_screenshots"):
-            candidate = os.path.join(root, entry)
-            if os.path.isdir(candidate):
-                poc_root = candidate
-                break
-    if not poc_root:
-        poc_root = root
-
+    poc_root = _find_poc_root(root)
     for sev_folder in os.listdir(poc_root):
         sev_path = os.path.join(poc_root, sev_folder)
         if not os.path.isdir(sev_path):
@@ -385,10 +310,7 @@ def _index_poc_web(root):
 
 
 def _index_poc_certin(root):
-    """
-    Cert-IN POC layout: <root>/<any_prefix>/#N/stepN.png
-    Returns: { obs_number_int: {step_num: abs_path} }
-    """
+    """Returns { obs_number_int: {step_num: path} }"""
     index = {}
 
     def _walk(base):
@@ -406,28 +328,96 @@ def _index_poc_certin(root):
                                 index[obs_num][sn] = os.path.join(entry_path, fname)
                 else:
                     _walk(entry_path)
-
     _walk(root)
     return index
 
 
-# ── Build POC evidence text and screenshot filenames ──────────────────────────
+# ── Screenshot lookup ─────────────────────────────────────────────────────────
 
-def _build_poc_info(raw_evidence, vul_number, poc_index):
+def _get_screenshots_ip(ip, poc_index, ip_vuln_counter):
     """
-    Given raw evidence text and a vulnerability number (1-based int),
-    return (evidence_text, [ss1, ss2, ss3, ss4]).
+    Fetch screenshots for the Nth vuln seen for this IP.
+    poc_index : { ip_str: [(vul_id, {step: path}), ...] }
+    ip_vuln_counter : { ip_str: int } — caller increments AFTER this call.
+    """
+    entries = poc_index.get(ip, [])
+    n = ip_vuln_counter.get(ip, 0)
+    if n < len(entries):
+        _, steps_dict = entries[n]
+        return _screenshots_from_steps(steps_dict)
+    return ["", "", "", ""]
 
-    poc_index: { vul_number_int: {step_num_int: abs_path} }
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MODE A — ORG FORMAT PASSTHROUGH
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _passthrough_org_format(df, poc_index, poc_layout):
     """
-    steps_dict = poc_index.get(vul_number, {}) if poc_index else {}
+    Copy every cell value exactly as-is.
+    Only injects screenshot filenames from the POC ZIP if supplied.
+    Preserves: asset grouping, blank rows, pre-filled severity counts,
+               tester/project fields, evidence text — everything.
+    """
+    rows_out = []
+    ip_vuln_counter = defaultdict(int)
+    last_asset = ""
+
+    for _, row in df.iterrows():
+        out = {col: _clean(row.get(col, "")) for col in OUTPUT_COLUMNS}
+
+        # Forward-fill asset IP for screenshot lookup (doesn't change cell value)
+        if out["Asset/Hostname"]:
+            last_asset = out["Asset/Hostname"]
+        current_ip = last_asset
+
+        # Skip rows with no identifier at all
+        if not out["Sr no."] and not out["Observation"]:
+            continue
+
+        # Inject screenshots from ZIP
+        if poc_index:
+            if poc_layout == "ip" and current_ip:
+                screenshots = _get_screenshots_ip(current_ip, poc_index, ip_vuln_counter)
+                ip_vuln_counter[current_ip] += 1
+            elif poc_layout == "web":
+                m = re.search(r"(\d+)", out["Sr no."])
+                vul_num = int(m.group(1)) if m else None
+                steps = poc_index.get(vul_num, {}) if vul_num else {}
+                screenshots = _screenshots_from_steps(steps)
+            elif poc_layout == "certin":
+                m = re.search(r"(\d+)", out["Observation"])
+                obs_num = int(m.group(1)) if m else None
+                steps = poc_index.get(obs_num, {}) if obs_num else {}
+                screenshots = _screenshots_from_steps(steps)
+            else:
+                screenshots = ["", "", "", ""]
+
+            # Only overwrite individual screenshot cells that the ZIP provides.
+            # Never blank a cell that already has a value in the input Excel.
+            for ss_col, ss_val in zip(
+                ["Screenshot1", "Screenshot2", "Screenshot3", "Screenshot4"],
+                screenshots
+            ):
+                if ss_val:                           # ZIP gave a filename → use it
+                    out[ss_col] = ss_val
+                # else: leave the existing input value intact (don't blank it)
+
+        rows_out.append(out)
+
+    return rows_out
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MODE B — FULL TRANSFORMATION (external / unknown format)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _build_poc_info_text(raw_evidence, steps_dict):
     sorted_steps = sorted(steps_dict.keys()) if steps_dict else []
-
-    # Build evidence lines
     raw_lines = [l.strip() for l in _clean(raw_evidence).splitlines() if l.strip()]
     evidence_lines = []
+
     for i, sn in enumerate(sorted_steps, 1):
-        # Try to use existing line text if available
         if i <= len(raw_lines):
             line_text = raw_lines[i - 1]
             if not re.match(r"^step\s*\d+", line_text, re.IGNORECASE):
@@ -436,181 +426,165 @@ def _build_poc_info(raw_evidence, vul_number, poc_index):
             line_text = f"Step {sn}: (screenshot)"
         evidence_lines.append(line_text)
 
-    # If no POC images, use raw lines as-is
     if not sorted_steps and raw_lines:
         for i, line in enumerate(raw_lines, 1):
-            if not re.match(r"^step\s*\d+", line, re.IGNORECASE):
-                evidence_lines.append(f"Step {i}: {line}")
-            else:
-                evidence_lines.append(line)
+            evidence_lines.append(
+                line if re.match(r"^step\s*\d+", line, re.IGNORECASE) else f"Step {i}: {line}"
+            )
 
     evidence_text = "\n".join(evidence_lines) if evidence_lines else _clean(raw_evidence)
-
-    # Screenshot filenames (just the basename)
-    screenshots = []
-    for sn in sorted_steps[:4]:
-        path = steps_dict[sn]
-        screenshots.append(os.path.basename(path))
-
-    while len(screenshots) < 4:
-        screenshots.append("")
-
-    return evidence_text, screenshots[:4]
+    screenshots = _screenshots_from_steps({sn: steps_dict[sn] for sn in sorted_steps[:4]})
+    return evidence_text, screenshots
 
 
-# ── Map any DataFrame to the 29-column output ─────────────────────────────────
-
-def _map_to_29_columns(df, poc_index, poc_layout):
-    """
-    Map a DataFrame (any column names) to the 29-column output schema.
-    poc_index: { vul_number_int: {step_num: abs_path} }
-    poc_layout: "ip" | "web" | "certin"
-    Returns a list of dicts, one per row.
-    """
-    # Resolve column names
-    c = {k: _find_col(df, v) for k, v in _COL_ALIASES.items()}
-
-    rows = []
-    # Track per-asset severity counts
-    asset_sev_counts = {}
-
-    # First pass: collect severity counts per asset
+def _severity_counts_from_rows(df, asset_col, severity_col):
+    counts = {}
+    last_asset = ""
     for _, row in df.iterrows():
-        asset = _clean(row[c["asset_hostname"]]) if c["asset_hostname"] else ""
-        sev = _normalise_severity(row[c["severity"]]) if c["severity"] else "Medium"
-        sr = _clean(row[c["sr_no"]]) if c["sr_no"] else ""
-        # If sr_no is empty, try observation column (handles #1, #2 style)
-        if not sr or sr.lower() in ("sr no.", "sr no", "s.no", "serial", "nan"):
-            obs_val = _clean(row[c["observation"]]) if c["observation"] else ""
-            if obs_val and obs_val not in ("nan", ""):
-                sr = obs_val
-            else:
-                continue
-        if not asset:
-            # Try affected_asset as fallback for asset
-            asset = _clean(row[c["affected_asset"]]) if c["affected_asset"] else ""
+        raw_asset = _clean(row[asset_col]) if asset_col else ""
+        if raw_asset:
+            last_asset = raw_asset
+        asset = last_asset
         if not asset:
             continue
-        if asset not in asset_sev_counts:
-            asset_sev_counts[asset] = {s: 0 for s in SEVERITY_ORDER}
-        # Only count real vulnerabilities (not "no vulnerability" rows)
-        if not re.search(r"no.{0,10}vuln", sr.lower()):
-            asset_sev_counts[asset][sev] = asset_sev_counts[asset].get(sev, 0) + 1
+        sev = _normalise_severity(row[severity_col]) if severity_col else "Medium"
+        if asset not in counts:
+            counts[asset] = {s: 0 for s in SEVERITY_ORDER}
+        if sev in SEVERITY_ORDER:
+            counts[asset][sev] += 1
+    for a in counts:
+        counts[a]["Total"] = sum(counts[a][s] for s in SEVERITY_ORDER)
+    return counts
 
-    for asset in asset_sev_counts:
-        asset_sev_counts[asset]["Total"] = sum(
-            asset_sev_counts[asset][s] for s in SEVERITY_ORDER
-        )
 
-    # Second pass: build output rows
-    for idx, row in df.iterrows():
-        sr = _clean(row[c["sr_no"]]) if c["sr_no"] else ""
-        # If sr_no is empty, try observation column (handles #1, #2 style)
-        if not sr or sr.lower() in ("sr no.", "sr no", "s.no", "serial", "nan"):
-            obs_val = _clean(row[c["observation"]]) if c["observation"] else ""
-            if obs_val and obs_val not in ("nan", ""):
-                sr = obs_val
-            else:
-                continue
+def _map_to_29_columns(df, poc_index, poc_layout):
+    """Full transformation for external / unknown-format Excels."""
+    c = {k: _find_col(df, v) for k, v in _COL_ALIASES.items()}
+    sev_counts = _severity_counts_from_rows(df, c["asset_hostname"], c["severity"])
 
-        asset = _clean(row[c["asset_hostname"]]) if c["asset_hostname"] else ""
-        # Fallback: use affected_asset if asset_hostname is empty
-        if not asset or asset in ("nan", ""):
-            asset = _clean(row[c["affected_asset"]]) if c["affected_asset"] else ""
-        sev = _normalise_severity(row[c["severity"]]) if c["severity"] else "Medium"
+    asset_series = []
+    last = ""
+    for _, row in df.iterrows():
+        raw = _clean(row[c["asset_hostname"]]) if c["asset_hostname"] else ""
+        if raw:
+            last = raw
+        asset_series.append(last)
 
-        # Determine vulnerability number for POC lookup
-        vul_num = None
-        m = re.search(r"(\d+)", sr)
-        if m:
-            vul_num = int(m.group(1))
+    rows_out = []
+    written_assets = set()
+    ip_vuln_counter = defaultdict(int)
 
-        raw_evidence = _clean(row[c["evidence"]]) if c["evidence"] else ""
-        evidence_text, screenshots = _build_poc_info(raw_evidence, vul_num, poc_index)
+    for idx, (_, row) in enumerate(df.iterrows()):
+        sr_raw  = _clean(row[c["sr_no"]]) if c["sr_no"] else ""
+        obs_raw = _clean(row[c["observation"]]) if c["observation"] else ""
+        _junk = {"sr no.", "sr no", "s.no", "serial", "observation", "nan", ""}
+        sr_raw  = "" if sr_raw.lower()  in _junk else sr_raw
+        obs_raw = "" if obs_raw.lower() in _junk else obs_raw
 
-        # Severity counts for this asset
-        sc = asset_sev_counts.get(asset, {s: 0 for s in SEVERITY_ORDER})
+        identifier = sr_raw or obs_raw
+        if not identifier:
+            continue
 
-        # Build the observation title: prefer vuln_title, fall back to observation
-        obs_title = ""
-        if c["vuln_title"]:
-            obs_title = _clean(row[c["vuln_title"]])
-        if not obs_title and c["observation"]:
-            obs_title = _clean(row[c["observation"]])
+        if _is_certin_obs(identifier):
+            out_sr_no, out_observation = "", identifier
+        else:
+            out_sr_no, out_observation = identifier, ""
+
+        asset = asset_series[idx]
+        sev   = _normalise_severity(row[c["severity"]]) if c["severity"] else "Medium"
+
+        # Screenshot lookup
+        if poc_layout == "ip":
+            steps_dict = {}
+            if asset:
+                entries = poc_index.get(asset, [])
+                n = ip_vuln_counter[asset]
+                if n < len(entries):
+                    _, steps_dict = entries[n]
+                ip_vuln_counter[asset] += 1
+            raw_evidence = _clean(row[c["evidence"]]) if c["evidence"] else ""
+            evidence_text, screenshots = _build_poc_info_text(raw_evidence, steps_dict)
+        elif poc_layout == "web":
+            m = re.search(r"(\d+)", identifier)
+            vul_num = int(m.group(1)) if m else None
+            steps_dict = poc_index.get(vul_num, {}) if vul_num else {}
+            raw_evidence = _clean(row[c["evidence"]]) if c["evidence"] else ""
+            evidence_text, screenshots = _build_poc_info_text(raw_evidence, steps_dict)
+        else:  # certin
+            m = re.search(r"(\d+)", identifier)
+            obs_num = int(m.group(1)) if m else None
+            steps_dict = poc_index.get(obs_num, {}) if obs_num else {}
+            raw_evidence = _clean(row[c["evidence"]]) if c["evidence"] else ""
+            evidence_text, screenshots = _build_poc_info_text(raw_evidence, steps_dict)
+
+        sc = sev_counts.get(asset, {s: 0 for s in SEVERITY_ORDER})
+        first_for_asset = asset not in written_assets
+        if first_for_asset:
+            written_assets.add(asset)
+
+        vuln_status = _clean(row[c["vuln_status"]]) if c["vuln_status"] else "Open"
+        vapt_status = _clean(row[c["vapt_status"]]) if c["vapt_status"] else "Completed"
+        vuln_title  = _clean(row[c["vuln_title"]]) if c["vuln_title"] else ""
 
         out = {
-            "Asset/Hostname": asset,
-            "Instant purpose": _clean(row[c["instant_purpose"]]) if c["instant_purpose"] else "Web Application",
-            "VAPT Status": _clean(row[c["vapt_status"]]) if c["vapt_status"] else "Completed",
-            "Critical": sc.get("Critical", 0),
-            "High": sc.get("High", 0),
-            "Medium": sc.get("Medium", 0),
-            "Low": sc.get("Low", 0),
-            "Informational": sc.get("Informational", 0),
-            "Total": sc.get("Total", 0),
-            "Tester_Name": _clean(row[c["tester_name"]]) if c["tester_name"] else "",
-            "Project": _clean(row[c["project"]]) if c["project"] else "",
-            "Sr no.": sr,
-            "Observation": _clean(row[c["observation"]]) if c["observation"] else obs_title,
-            "Severity": sev,
-            "Status": _clean(row[c["vapt_status"]]) if c["vapt_status"] else "Open",
-            "New or Repeat Observation": _normalise_new_repeat(
-                row[c["new_repeat"]] if c["new_repeat"] else ""
-            ),
-            "CVE/CWE": _clean(row[c["cve_cwe"]]) if c["cve_cwe"] else "",
-            "CVSS": _clean(row[c["cvss"]]) if c["cvss"] else "",
+            "Asset/Hostname":   asset if first_for_asset else "",
+            "Instant purpose":  (_clean(row[c["instant_purpose"]]) if c["instant_purpose"] else "Web Application") if first_for_asset else "",
+            "VAPT Status":      vapt_status if first_for_asset else "",
+            "Critical":         sc.get("Critical", 0) if first_for_asset else "",
+            "High":             sc.get("High", 0)     if first_for_asset else "",
+            "Medium":           sc.get("Medium", 0)   if first_for_asset else "",
+            "Low":              sc.get("Low", 0)      if first_for_asset else "",
+            "Informational":    sc.get("Informational", 0) if first_for_asset else "",
+            "Total":            sc.get("Total", 0)    if first_for_asset else "",
+            "Tester_Name":      (_clean(row[c["tester_name"]]) if c["tester_name"] else "") if first_for_asset else "",
+            "Project":          (_clean(row[c["project"]]) if c["project"] else "")         if first_for_asset else "",
+            "Sr no.":           out_sr_no,
+            "Observation":      out_observation,
+            "Severity":         sev,
+            "Status":           vuln_status or "Open",
+            "New or Repeat Observation": _normalise_new_repeat(row[c["new_repeat"]] if c["new_repeat"] else ""),
+            "CVE/CWE":          _clean(row[c["cve_cwe"]]) if c["cve_cwe"] else "",
+            "CVSS":             _clean(row[c["cvss"]]) if c["cvss"] else "",
             "CVSS Version Ref": _clean(row[c["cvss_version"]]) if c["cvss_version"] else "",
-            "Affected Asset i.e. IP/URL/Application etc.": (
-                _clean(row[c["affected_asset"]]) if c["affected_asset"] else asset
-            ),
-            "Observation/Vulnerability Title": obs_title,
-            "Detailed Observation/ Vulnerable Point": (
-                _clean(row[c["detailed_observation"]]) if c["detailed_observation"] else ""
-            ),
-            "Recommendation": _clean(row[c["recommendation"]]) if c["recommendation"] else "",
-            "Reference": _clean(row[c["reference"]]) if c["reference"] else "",
+            "Affected Asset i.e. IP/URL/Application etc.": _clean(row[c["affected_asset"]]) if c["affected_asset"] else asset,
+            "Observation/Vulnerability Title": vuln_title,
+            "Detailed Observation/ Vulnerable Point": _clean(row[c["detailed_observation"]]) if c["detailed_observation"] else "",
+            "Recommendation":   _clean(row[c["recommendation"]]) if c["recommendation"] else "",
+            "Reference":        _clean(row[c["reference"]]) if c["reference"] else "",
             "Evidence / Proof of Concept": evidence_text,
-            "Screenshot1": screenshots[0],
-            "Screenshot2": screenshots[1],
-            "Screenshot3": screenshots[2],
-            "Screenshot4": screenshots[3],
+            "Screenshot1": screenshots[0], "Screenshot2": screenshots[1],
+            "Screenshot3": screenshots[2], "Screenshot4": screenshots[3],
         }
-        rows.append(out)
+        rows_out.append(out)
 
-    return rows
+    return rows_out
 
 
 # ── Write styled Excel ─────────────────────────────────────────────────────────
 
 def _write_styled_excel(rows, output_path):
-    """Write the 29-column output as a styled Excel file."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Sheet1"
 
-    header_font = Font(name="Calibri", bold=True, color="FFFFFF", size=11)
-    header_fill = PatternFill("solid", fgColor=HEADER_FILL_COLOR)
+    header_font  = Font(name="Calibri", bold=True, color="FFFFFF", size=11)
+    header_fill  = PatternFill("solid", fgColor=HEADER_FILL_COLOR)
     header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    thin = Side(border_style="thin", color="000000")
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    thin         = Side(border_style="thin", color="000000")
+    border       = Border(left=thin, right=thin, top=thin, bottom=thin)
     center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    wrap_align = Alignment(horizontal="left", vertical="top", wrap_text=True)
+    wrap_align   = Alignment(horizontal="left", vertical="top", wrap_text=True)
 
-    # Write header row
     for col_idx, col_name in enumerate(OUTPUT_COLUMNS, 1):
         cell = ws.cell(row=1, column=col_idx, value=col_name)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = header_align
-        cell.border = border
+        cell.font = header_font; cell.fill = header_fill
+        cell.alignment = header_align; cell.border = border
         ws.column_dimensions[get_column_letter(col_idx)].width = COLUMN_WIDTHS.get(col_name, 18)
-
     ws.row_dimensions[1].height = 30
 
-    # Write data rows
-    count_cols = {"Critical", "High", "Medium", "Low", "Informational", "Total"}
-    center_cols = {"Sr no.", "Severity", "Status", "New or Repeat Observation",
-                   "CVSS", "CVSS Version Ref", "CVE/CWE"}
+    count_cols  = {"Critical", "High", "Medium", "Low", "Informational", "Total"}
+    center_cols = {"Sr no.", "Observation", "Severity", "Status",
+                   "New or Repeat Observation", "CVSS", "CVSS Version Ref", "CVE/CWE"}
 
     for row_idx, row_data in enumerate(rows, 2):
         sev = row_data.get("Severity", "")
@@ -619,26 +593,14 @@ def _write_styled_excel(rows, output_path):
 
         for col_idx, col_name in enumerate(OUTPUT_COLUMNS, 1):
             value = row_data.get(col_name, "")
-            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell  = ws.cell(row=row_idx, column=col_idx, value=value)
             cell.border = border
+            cell.alignment = center_align if (col_name in count_cols or col_name in center_cols) else wrap_align
+            if row_fill:
+                cell.fill = row_fill
 
-            if col_name in count_cols:
-                cell.alignment = center_align
-                if row_fill:
-                    cell.fill = row_fill
-            elif col_name in center_cols:
-                cell.alignment = center_align
-                if row_fill:
-                    cell.fill = row_fill
-            else:
-                cell.alignment = wrap_align
-                if row_fill:
-                    cell.fill = row_fill
-
-    # Freeze header row
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = f"A1:{get_column_letter(len(OUTPUT_COLUMNS))}1"
-
     wb.save(output_path)
 
 
@@ -646,53 +608,51 @@ def _write_styled_excel(rows, output_path):
 
 def convert_any_excel_to_format(input_path, poc_zip_path=None, poc_layout="ip"):
     """
-    Convert any VAPT Excel to the 29-column standard format.
+    Convert any VAPT Excel to the 29-column standard org format.
 
     Parameters
     ----------
-    input_path   : str  - Path to any input VAPT Excel (.xlsx/.xls)
+    input_path   : str  - Path to input Excel (.xlsx / .xls)
     poc_zip_path : str  - Path to POC ZIP file (optional)
-    poc_layout   : str  - One of "ip", "web", "certin"
+    poc_layout   : str  - "ip" | "web" | "certin"
 
     Returns
     -------
     (output_path, extract_dir)
-      output_path  : str  - Path to the written output Excel
-      extract_dir  : str or None - Temp dir to clean up after use
     """
     extract_dir = None
-    poc_index = {}
+    poc_index   = {}
 
-    try:
-        df = _read_any_excel(input_path)
-    except Exception as e:
-        raise ValueError(f"Failed to read input Excel: {e}")
+    df = _read_any_excel(input_path)
 
     if poc_zip_path and os.path.isfile(poc_zip_path):
         try:
-            extract_dir, _ = _extract_zip(poc_zip_path)
+            extract_dir = _extract_zip(poc_zip_path)
             if poc_layout == "ip":
                 poc_index = _index_poc_ip(extract_dir)
             elif poc_layout == "web":
                 poc_index = _index_poc_web(extract_dir)
             elif poc_layout == "certin":
                 poc_index = _index_poc_certin(extract_dir)
-        except Exception:
+        except Exception as e:
+            print(f"[WARN] POC ZIP indexing failed: {e}")
             poc_index = {}
 
-    rows = _map_to_29_columns(df, poc_index, poc_layout)
+    if _is_org_format(df):
+        print("[INFO] Org format detected — using PASSTHROUGH mode")
+        rows = _passthrough_org_format(df, poc_index, poc_layout)
+    else:
+        print("[INFO] External format detected — using TRANSFORMATION mode")
+        rows = _map_to_29_columns(df, poc_index, poc_layout)
 
     if not rows:
         raise ValueError(
-            "No vulnerability rows found in the input Excel. "
-            "Please ensure the file has Sr no. and Severity columns."
+            "No vulnerability rows found. "
+            "Ensure the file has Sr no. / Observation and Severity columns."
         )
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    layout_label = {"ip": "IP", "web": "Web", "certin": "CertIN"}.get(poc_layout, poc_layout.upper())
-    output_filename = f"{layout_label}_format_{ts}.xlsx"
-    output_path = os.path.join(tempfile.gettempdir(), output_filename)
-
+    ts    = datetime.now().strftime("%Y%m%d_%H%M%S")
+    label = {"ip": "IP", "web": "Web", "certin": "CertIN"}.get(poc_layout, poc_layout.upper())
+    output_path = os.path.join(tempfile.gettempdir(), f"{label}_format_{ts}.xlsx")
     _write_styled_excel(rows, output_path)
-
     return output_path, extract_dir

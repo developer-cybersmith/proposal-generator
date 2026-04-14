@@ -1,0 +1,8 @@
+# Railway deploy config: https://docs.railway.com/deploy/config-as-code
+# Set secrets in the Railway dashboard (OPENAI_API_KEY, SESSION_SECRET_KEY, Azure SSO, etc.).
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "gunicorn app:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 300"

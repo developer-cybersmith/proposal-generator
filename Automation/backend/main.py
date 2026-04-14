@@ -727,20 +727,25 @@ def parse_vulnerabilities_excel(file_path):
             
             vulnerabilities_by_ip = {}
             for index, vuln in enumerate(parsed_data['vulnerabilities']):
-                # Get IP from affected_asset or ip_url_app
-                ip = vuln.get('affected_asset', '') or vuln.get('ip_url_app', '')
+                # For IP reports, prefer the forward-filled Asset/Hostname (vuln["asset"]).
+                # The 29-col sheet also has affected_asset which is often a URL (not the IP).
+                ip = vuln.get("asset", "") or vuln.get("affected_asset", "") or vuln.get("ip_url_app", "")
                 if not ip:
+                    print(f"Row {index} missing IP, skipping.")
+                    continue
+                ip = sanitize_nan(ip, "").strip()
+                if not ip or ip.lower() == "nan":
                     print(f"Row {index} missing IP, skipping.")
                     continue
                 
                 # Convert steps to steps_with_screenshots format
                 steps_with_screenshots = []
-                if vuln.get('steps'):
-                    for step in vuln['steps']:
-                        steps_with_screenshots.append({
-                            'text': step['content'],
-                            'screenshot': ''  # Screenshots handled separately via PoC mapping
-                        })
+                screenshots = list(vuln.get("screenshots") or [])
+                if vuln.get("steps"):
+                    for i, step in enumerate(vuln["steps"]):
+                        # Screenshot names come from Screenshot1.. columns and should match ZIP step naming
+                        shot = screenshots[i] if i < len(screenshots) else ""
+                        steps_with_screenshots.append({"text": step.get("content", ""), "screenshot": str(shot or "").strip()})
                 
                 # Convert to main.py format (sanitize all values to prevent NaN-to-int errors)
                 vulnerability = {
@@ -750,7 +755,7 @@ def parse_vulnerabilities_excel(file_path):
                     'impact': '',
                     'severity': sanitize_nan(vuln.get('severity', 'Medium'), 'Medium'),
                     'cvss': sanitize_nan(vuln.get('cvss', ''), ''),
-                    'vulnerable_url': sanitize_nan(vuln.get('ip_url_app', ''), ''),
+                    'vulnerable_url': sanitize_nan(vuln.get('affected_asset', '') or vuln.get('ip_url_app', ''), ''),
                     'vulnerable_parameter': '',
                     'remediation': sanitize_nan(vuln.get('recommendation', ''), ''),
                     'steps_with_screenshots': steps_with_screenshots,
@@ -777,11 +782,11 @@ def parse_vulnerabilities_excel(file_path):
         vulnerabilities_by_ip = {}
         for index, row in df.iterrows():
             try:
-                ip = str(row.get('IP', '')).strip()
-                if not ip:
+                ip = str(sanitize_nan(row.get('IP', ''), '')).strip()
+                if (not ip) or ip.lower() == "nan":
                     print(f"Row {index} missing IP, skipping.")
                     continue
-                sr_no_val = str(row.get('Sr No', '')).strip()
+                sr_no_val = str(sanitize_nan(row.get('Sr No', ''), '')).strip()
                 if sr_no_val.lower() == 'no vulnerability' or sr_no_val.lower() == 'no vulnerabilities':
                     # Special handling for IPs with no vulnerabilities
                     vulnerability = {
@@ -1328,9 +1333,13 @@ def generate_word_report(vulnerabilities_by_ip, doc_control_data, template_path,
             heading.runs[0].font.size = Pt(18)
             heading.runs[0].font.name = 'Altone Trial'
             heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            # Assign display_sr_no for this IP
+            # Assign display_sr_no for this IP (preserve existing VUL-* IDs so ZIP mapping works).
             for idx, vuln in enumerate(vulns, 1):
-                vuln['display_sr_no'] = f"VUL-{idx:03d}"
+                existing = str(vuln.get("sr_no") or "").strip()
+                if existing.lower().startswith("vul-"):
+                    vuln["display_sr_no"] = existing
+                else:
+                    vuln["display_sr_no"] = f"VUL-{idx:03d}"
             # If this IP is a 'no vulnerability' IP, skip summary table and add special table
             if len(vulns) == 1 and vulns[0].get('no_vuln'):
                 create_no_vulnerability_table(doc, ip, vulns[0].get('steps_with_screenshots', []))
@@ -1342,7 +1351,10 @@ def generate_word_report(vulnerabilities_by_ip, doc_control_data, template_path,
                 ip_chart_path = create_ip_severity_bar_chart(ip, vulns, ip_chart_file.name)
                 img_paragraph = doc.add_paragraph()
                 run = img_paragraph.add_run()
-                run.add_picture(ip_chart_path, width=Inches(4.5))
+                if ip_chart_path and os.path.exists(ip_chart_path):
+                    run.add_picture(ip_chart_path, width=Inches(4.5))
+                else:
+                    img_paragraph.add_run("[Chart unavailable]").italic = True
                 img_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
             # Insert vulnerability tables for this IP
             for vuln in vulns:
@@ -2314,6 +2326,7 @@ def create_ip_severity_bar_chart(ip, vulnerabilities, output_path):
     plt.tight_layout()
     plt.savefig(output_path, bbox_inches='tight')
     plt.close()
+    return output_path
 
 # Audit Logs Endpoint
 @router.get("/audit-logs")

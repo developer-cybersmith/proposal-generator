@@ -45,10 +45,10 @@ from docx.shared import Inches, Pt, RGBColor
 from db import AuditLog, SessionLocal
 
 from .exec_summary_prompts import (
-    SYSTEM_PROMPT,
     build_canonical_user_payload,
     build_user_message,
     parse_exec_summary_json,
+    system_prompt_for_metadata,
     validate_no_foreign_identifiers,
 )
 
@@ -614,6 +614,8 @@ def _pick_worksheet(wb, report_type: str):
         if _sheet_has_vuln_headers(ws):
             return ws
     # Last resort: first sheet (may raise missing columns in _build_header_map)
+    if not names:
+        raise ValueError("Workbook has no worksheets.")
     return wb[names[0]]
 
 
@@ -719,7 +721,7 @@ def _parse_excel_to_payload(
         wb.close()
 
 
-def _call_openai_exec_summary(user_payload_str: str) -> dict[str, Any]:
+def _call_openai_exec_summary(user_payload_str: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
     client = _get_openai_client()
     model = (
         os.getenv("EXEC_SUMMARY_OPENAI_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-4o"
@@ -730,20 +732,33 @@ def _call_openai_exec_summary(user_payload_str: str) -> dict[str, Any]:
         max_tokens=4000,
         response_format={"type": "json_object"},
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt_for_metadata(metadata)},
             {"role": "user", "content": build_user_message({}, user_payload_str)},
         ],
     )
-    content = response.choices[0].message.content or ""
-    parsed = parse_exec_summary_json(content)
+    ch0 = response.choices[0] if getattr(response, "choices", None) else None
+    if ch0 is None or not getattr(ch0, "message", None):
+        raise RuntimeError("OpenAI returned no message choices.")
+    content = (ch0.message.content or "")
+    parsed = parse_exec_summary_json(
+        content,
+        report_type_label=str((metadata or {}).get("report_type_label") or "").strip() or None,
+    )
     return parsed
 
 
-def _generate_with_retries(user_payload_str: str, allowed_cve: str, allowed_hosts: set[str], retries: int = 2) -> dict[str, Any]:
+def _generate_with_retries(
+    user_payload_str: str,
+    allowed_cve: str,
+    allowed_hosts: set[str],
+    retries: int = 2,
+    *,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     last_err: Exception | None = None
     for attempt in range(retries + 1):
         try:
-            parsed = _call_openai_exec_summary(user_payload_str)
+            parsed = _call_openai_exec_summary(user_payload_str, metadata=metadata)
             if allowed_cve.strip():
                 validate_no_foreign_identifiers(parsed, allowed_cve, allowed_hosts)
             return parsed
@@ -757,6 +772,97 @@ def _generate_with_retries(user_payload_str: str, allowed_cve: str, allowed_host
             if attempt < retries:
                 time.sleep(1.0)
     raise HTTPException(status_code=502, detail=f"AI generation failed: {last_err}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Public helpers for reusing Executive Summary in other generators (MitKat)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def mitkat_metadata_from_cfg(front_data: dict[str, Any], doc_control: dict[str, Any]) -> dict[str, Any]:
+    """
+    Map MitKat UI JSON to the metadata shape expected by the Exec Summary prompt.
+
+    The Exec Summary service accepts these keys in the canonical JSON payload; they are
+    used for narrative tone only (not for vulnerability parsing).
+    """
+    front_data = front_data or {}
+    doc_control = doc_control or {}
+
+    client_name = str(front_data.get("client_name") or "").strip() or "Client"
+    org_name = str(doc_control.get("org_name") or doc_control.get("organization_name") or "CyberSmithSECURE").strip() or "CyberSmithSECURE"
+
+    # Prefer the release date shown on the MitKat cover/doc-control pages.
+    report_date = (
+        str(doc_control.get("report_release_date") or "").strip()
+        or str(doc_control.get("release_date") or "").strip()
+        or str(doc_control.get("report_date") or "").strip()
+    )
+
+    # MitKat UI provides two related fields; keep it readable in narrative.
+    type_of_audit = str(doc_control.get("type_of_audit") or "").strip()
+    type_of_audit_report = str(doc_control.get("type_of_audit_report") or "").strip()
+    assessment_type = " ".join([p for p in (type_of_audit, type_of_audit_report) if p]).strip() or "VAPT Assessment"
+
+    document_id = str(doc_control.get("document_id") or "").strip()
+
+    return {
+        "client_name": client_name,
+        "org_name": org_name,
+        "report_date": report_date,
+        "assessment_type": assessment_type,
+        "document_id": document_id,
+        "report_type_label": "mitkat",
+    }
+
+
+def generate_exec_summary_dict_from_excel(
+    *,
+    excel_path: str,
+    report_type: str,
+    metadata: dict[str, Any],
+    retries: int = 2,
+) -> dict[str, Any] | None:
+    """
+    Build executive summary JSON from an Excel workbook without FastAPI Request context.
+
+    Returns the parsed dict on success, or None if OpenAI/unexpected errors occur.
+    Parsing / required-columns errors are also converted to None so MitKat generation
+    can proceed without hard-failing.
+    """
+    try:
+        assets, total_counts, top_v, allowed_cve = _parse_excel_to_payload(excel_path, report_type, metadata)
+        user_json = build_canonical_user_payload(metadata, assets, total_counts, top_v)
+        allowed_hosts = {str(a.get("hostname", "")).lower() for a in assets if a.get("hostname")}
+        return _generate_with_retries(user_json, allowed_cve, allowed_hosts, retries=retries, metadata=metadata)
+    except Exception:
+        return None
+
+
+def generate_exec_summary_with_counts_from_excel(
+    *,
+    excel_path: str,
+    report_type: str,
+    metadata: dict[str, Any],
+    retries: int = 2,
+) -> tuple[dict[str, Any] | None, dict[str, int] | None]:
+    """
+    MitKat helper: parse Excel once, return (ai_dict|None, total_counts|None).
+
+    - total_counts is derived deterministically from Excel.
+    - ai_dict is best-effort (may be None if OpenAI fails).
+    """
+    try:
+        assets, total_counts, top_v, allowed_cve = _parse_excel_to_payload(excel_path, report_type, metadata)
+    except Exception:
+        return None, None
+
+    try:
+        user_json = build_canonical_user_payload(metadata, assets, total_counts, top_v)
+        allowed_hosts = {str(a.get("hostname", "")).lower() for a in assets if a.get("hostname")}
+        ai = _generate_with_retries(user_json, allowed_cve, allowed_hosts, retries=retries, metadata=metadata)
+        return ai, total_counts
+    except Exception:
+        return None, total_counts
 
 
 def _severity_chart_png(total_counts: dict[str, int]) -> bytes:
@@ -814,6 +920,52 @@ def _severity_pie_chart_png(total_counts: dict[str, int]) -> bytes:
     fig.tight_layout()
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=120)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def mitkat_severity_3d_chart_png(total_counts: dict[str, int]) -> bytes:
+    """
+    Render a 2D bar chart (PNG) for MitKat executive summary.
+
+    NOTE: Function name kept for backward compatibility with callers.
+    This is deterministic from Excel-derived total_counts and does not depend on OpenAI.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    labels = ["Informational", "Low", "Medium", "High", "Critical"]
+    keys = ["informational", "low", "medium", "high", "critical"]
+    vals = [int(total_counts.get(k, 0) or 0) for k in keys]
+    colors = ["#0070C0", "#00B050", "#FFC000", "#FF0000", "#C00000"]
+
+    fig, ax = plt.subplots(figsize=(7.4, 4.0))
+    bars = ax.bar(labels, vals, color=colors, edgecolor="#333333", linewidth=0.5)
+    ax.set_title("TOTAL VULNERABILITIES IDENTIFIED", fontsize=12, fontweight="bold", pad=12)
+    ax.set_ylabel("Count")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(axis="y", linestyle="--", linewidth=0.6, alpha=0.35)
+
+    max_v = max(vals) if vals else 0
+    ax.set_ylim(0, max(1, int(max_v * 1.25) if max_v else 1))
+
+    for b, v in zip(bars, vals, strict=False):
+        ax.text(
+            b.get_x() + b.get_width() / 2,
+            b.get_height() + max(0.1, max_v * 0.03),
+            str(int(v)),
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            color="#111111",
+        )
+
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=160, transparent=True)
     plt.close(fig)
     return buf.getvalue()
 

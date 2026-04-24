@@ -33,6 +33,13 @@ OUTPUT_TOP_KEYS = (
     "conclusion",
 )
 
+MITKAT_CONCLUSION_ADDENDUM = """
+MitKat-specific conclusion rules:
+- Write exactly ONE short paragraph (3-5 sentences).
+- Do NOT include thank-you lines or sign-offs.
+- Close with: residual risk statement, remediation priority by severity/business impact, and the need for continuous monitoring and periodic reassessment to prevent recurrence.
+""".strip()
+
 SYSTEM_PROMPT = """
 You are a senior cybersecurity executive report writer for CyberSmithSECURE.
 You write concise, professional content for C-suite readers (CEO, CTO, board).
@@ -62,6 +69,13 @@ Rules:
 - requirement must be one of: Critical, High, Medium, Low.
 - Return valid JSON only. No markdown fences.
 """.strip()
+
+
+def system_prompt_for_metadata(metadata: dict[str, Any] | None) -> str:
+    md = metadata or {}
+    if str(md.get("report_type_label") or "").strip().lower() == "mitkat":
+        return SYSTEM_PROMPT + "\n\n" + MITKAT_CONCLUSION_ADDENDUM
+    return SYSTEM_PROMPT
 
 
 def _strip_code_fences(text: str) -> str:
@@ -299,7 +313,7 @@ def _pad_executive_narrative(en: str) -> str:
     return (en + extra).strip()
 
 
-def parse_exec_summary_json(raw_text: str) -> dict[str, Any]:
+def parse_exec_summary_json(raw_text: str, *, report_type_label: str | None = None) -> dict[str, Any]:
     cleaned = _strip_code_fences(raw_text)
     try:
         data = json.loads(cleaned)
@@ -349,14 +363,23 @@ def parse_exec_summary_json(raw_text: str) -> dict[str, Any]:
 
     conc = _clean_str(data.get("conclusion"))
     if len(conc) < 80:
-        conc = (
-            conc + " "
-            if conc
-            else ""
-        ) + (
-            "In summary, the assessment provides a structured view of risk based on the supplied data. "
-            "We thank the security team for their cooperation and stand ready to support follow-up activities."
-        )
+        if str(report_type_label or "").strip().lower() == "mitkat":
+            conc = (
+                (conc + " ") if conc else ""
+            ) + (
+                "In conclusion, the assessment indicates measurable risk based on the supplied findings. "
+                "Remediation should be prioritised by severity and business impact, with fixes validated through re-testing. "
+                "Ongoing monitoring, timely patching, and periodic reassessment are essential to prevent recurrence and reduce residual risk."
+            )
+        else:
+            conc = (
+                conc + " "
+                if conc
+                else ""
+            ) + (
+                "In summary, the assessment provides a structured view of risk based on the supplied data. "
+                "We thank the security team for their cooperation and stand ready to support follow-up activities."
+            )
 
     return {
         "executive_narrative": en,

@@ -83,11 +83,65 @@ class TestExecSummarySmoke(unittest.TestCase):
         self.assertGreaterEqual(len(out["best_practices"]), 3)
         self.assertGreaterEqual(len(out["must_have"]), 3)
         self.assertGreaterEqual(len(out["should_have"]), 2)
+        out_mitkat = parse_exec_summary_json(minimal, report_type_label="mitkat")
+        self.assertIn("conclusion", out_mitkat)
 
     def test_exec_summary_app_importable(self):
         from Automation.backend import exec_summary  # noqa: F401
 
         self.assertIsNotNone(exec_summary.app)
+
+    def test_exec_summary_bridge_from_excel_mocks_openai(self):
+        """MitKat bridge: parse Excel + call OpenAI wrapper (mocked) returns dict."""
+        from openpyxl import Workbook
+        from unittest.mock import patch
+
+        from Automation.backend.exec_summary import (
+            REQUIRED_HEADERS,
+            generate_exec_summary_dict_from_excel,
+            generate_exec_summary_with_counts_from_excel,
+            mitkat_severity_3d_chart_png,
+        )
+
+        wb = Workbook()
+        ws = wb.active
+        for i, h in enumerate(REQUIRED_HEADERS, start=1):
+            ws.cell(row=1, column=i, value=h)
+        ws.cell(row=2, column=1, value="host1")
+        ws.cell(row=2, column=21, value="SQL injection in login")
+        ws.cell(row=2, column=14, value="High")
+        ws.cell(row=2, column=4, value=1)
+        ws.cell(row=2, column=9, value=1)
+
+        path = os.path.join(tempfile.gettempdir(), f"exec_summary_bridge_{uuid.uuid4().hex}.xlsx")
+        try:
+            wb.save(path)
+            wb.close()
+            with patch("Automation.backend.exec_summary._generate_with_retries", return_value=_sample_ai_payload()):
+                out = generate_exec_summary_dict_from_excel(
+                    excel_path=path,
+                    report_type="mitkat",
+                    metadata={"client_name": "C", "assessment_type": "MitKat"},
+                )
+            self.assertIsInstance(out, dict)
+            self.assertIn("executive_narrative", out)
+            self.assertIn("phase1_observations", out)
+
+            with patch("Automation.backend.exec_summary._generate_with_retries", return_value=_sample_ai_payload()):
+                ai, counts = generate_exec_summary_with_counts_from_excel(
+                    excel_path=path,
+                    report_type="mitkat",
+                    metadata={"client_name": "C", "assessment_type": "MitKat", "report_type_label": "mitkat"},
+                )
+            self.assertIsInstance(ai, dict)
+            self.assertIsInstance(counts, dict)
+            png = mitkat_severity_3d_chart_png(counts)
+            self.assertGreater(len(png), 1000)
+        finally:
+            try:
+                Path(path).unlink(missing_ok=True)
+            except PermissionError:
+                pass
 
     def test_routes_registered(self):
         from Automation.backend.exec_summary import app
@@ -96,6 +150,17 @@ class TestExecSummarySmoke(unittest.TestCase):
         self.assertIn("/", paths)
         self.assertIn("/generate/", paths)
         self.assertIn("/health", paths)
+
+    def test_mitkat_routes_registered(self):
+        """MitKat router is declared late in backend/main.py; ensure it is included."""
+        import sys
+        sys.path.insert(0, r"D:\intern\vapt-app-backup-main\Report-Generator-IP-main\Automation\backend")
+        import main as backend_main  # noqa: E402
+
+        paths = {getattr(r, "path", None) for r in backend_main.app.routes}
+        self.assertIn("/mitkat/", paths)
+        self.assertIn("/mitkat/convert-excel/", paths)
+        self.assertIn("/mitkat/generate-report/", paths)
 
     def test_build_document_contains_sections(self):
         from Automation.backend.exec_summary import _build_document

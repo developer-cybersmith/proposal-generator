@@ -2742,6 +2742,56 @@ def mitkat_conv_write_excel(out_df, output_path):
 FONT_NAME   = "Arial"
 FONT_SIZE   = 10
 
+def _mitkat_force_font_everywhere(doc: Document, font_name: str) -> None:
+    """
+    Enforce a single font family across the entire document, including
+    template-rendered paragraphs/tables and generated sections.
+    """
+    if not font_name:
+        return
+
+    def _set_run(r):
+        try:
+            r.font.name = font_name
+        except Exception:
+            pass
+        try:
+            rPr = r._element.get_or_add_rPr()
+            rFonts = rPr.rFonts
+            if rFonts is None:
+                rFonts = OxmlElement("w:rFonts")
+                rPr.append(rFonts)
+            rFonts.set(qn("w:ascii"), font_name)
+            rFonts.set(qn("w:hAnsi"), font_name)
+            rFonts.set(qn("w:cs"), font_name)
+        except Exception:
+            pass
+
+    def _iter_cell_paragraphs(cell):
+        for p in getattr(cell, "paragraphs", []) or []:
+            yield p
+        for tbl in getattr(cell, "tables", []) or []:
+            for row in tbl.rows:
+                for c in row.cells:
+                    yield from _iter_cell_paragraphs(c)
+
+    for p in doc.paragraphs:
+        for r in p.runs:
+            _set_run(r)
+    for tbl in doc.tables:
+        for row in tbl.rows:
+            for cell in row.cells:
+                for p in _iter_cell_paragraphs(cell):
+                    for r in p.runs:
+                        _set_run(r)
+    for sec in doc.sections:
+        for p in sec.header.paragraphs:
+            for r in p.runs:
+                _set_run(r)
+        for p in sec.footer.paragraphs:
+            for r in p.runs:
+                _set_run(r)
+
 # A4 page with 2.54cm (1") margins → content width ≈ 6.26" = 9014 DXA
 # We use 9000 DXA for safety
 CONTENT_W   = 9000   # total table width in DXA (twips)
@@ -2931,6 +2981,8 @@ def cell_write(cell, text: str, bold=False, size=FONT_SIZE,
                color: RGBColor = None, align=WD_ALIGN_PARAGRAPH.LEFT,
                italic=False, underline=False, clear=True, indent_pt=0):
     """Write text into a cell's first paragraph."""
+    if not cell.paragraphs:
+        cell.add_paragraph()
     if clear:
         for p in cell.paragraphs:
             p.clear()
@@ -2987,14 +3039,58 @@ def _mitkat_section_heading(
         p.style = doc.styles[f"Heading {level}"]
     except KeyError:
         pass
-    p.clear()
-    try:
-        p.style = doc.styles[f"Heading {level}"]
-    except KeyError:
-        pass
     no_space_para(p)
     _run(p, text, bold=bold, size=size, color=color)
     return p
+
+
+def _mitkat_apply_heading_styles_to_template_sections(doc: Document) -> None:
+    """
+    Make sure template-rendered section titles participate in TOC generation.
+    The MitKat base template often contains section titles as plain paragraphs.
+    """
+    wanted = {
+        "Document Control": 1,
+        "Introduction": 1,
+        "Engagement Scope": 1,
+        "Details of the Auditing team": 1,
+        "Executive Summary": 1,
+        "Overall Findings": 1,
+        "Observations": 1,
+        "Risk Level & Description": 1,
+        "Detailed Observations": 1,
+    }
+
+    def _norm(t: str) -> str:
+        return " ".join((t or "").replace("\r", " ").replace("\n", " ").split()).strip().lower()
+
+    norm_to_level = {_norm(k): v for k, v in wanted.items()}
+
+    for p in doc.paragraphs:
+        txt = _norm(p.text)
+        if not txt:
+            continue
+        if txt not in norm_to_level:
+            continue
+        lvl = norm_to_level[txt]
+        try:
+            p.style = doc.styles[f"Heading {lvl}"]
+        except Exception:
+            # Best-effort; document may not contain the built-in heading styles.
+            pass
+
+
+def _mitkat_build_toc_entries(doc: Document) -> None:
+    """
+    Best-effort preparation for TOC: ensure headings exist as Heading 1-3 paragraphs.
+    The actual TOC SDT population is performed in the OOXML post-process step so it
+    works even when python-docx cannot manipulate SDT structures directly.
+    """
+    try:
+        # Ensure template section titles get heading styles if present.
+        _mitkat_apply_heading_styles_to_template_sections(doc)
+    except Exception:
+        pass
 
 
 def body_para(doc, text: str, size=10, indent=False):
@@ -3107,16 +3203,55 @@ def read_excel_vulns(excel_path: str) -> list:
     df.columns = [str(c).strip() for c in df.columns]
     vulns = []
 
-    # Column name aliases (case-insensitive substring matching)
+    # Column name aliases: prefer exact match, then substring match.
     def fc(names):
+        cols = [str(c) for c in df.columns]
+        cols_norm = {c.strip().lower(): c for c in cols}
         for name in names:
-            for col in df.columns:
-                if name.lower() in col.lower():
+            key = str(name).strip().lower()
+            if key in cols_norm:
+                return cols_norm[key]
+        for name in names:
+            needle = str(name).strip().lower()
+            for col in cols:
+                if needle and needle in col.strip().lower():
                     return col
         return None
 
-    sr_col     = fc(["Sr no", "Sr.no", "Serial"])
-    obs_col    = fc(["Observation/Vulnerability", "Observation"])
+    def _fc_observation_col():
+        """
+        Map the human-readable vuln title column. Never pick 'New or Repeat Observation'
+        when matching generic 'observation' (column reorder would break the title).
+        """
+        cols = [str(c) for c in df.columns]
+        nmap = {c.strip().lower(): c for c in cols}
+        for key in (
+            "observation/vulnerability title",
+            "observation/ vulnerability title",
+        ):
+            if key in nmap:
+                return nmap[key]
+        for c in cols:
+            if c.strip().lower() == "observation":
+                return c
+        for c in cols:
+            cl = c.strip().lower()
+            if "new or repeat" in cl:
+                continue
+            if "observation" in cl and "vulnerability" in cl and "title" in cl:
+                return c
+        for name in ("Observation/Vulnerability", "Observation"):
+            needle = str(name).strip().lower()
+            for col in cols:
+                cl = col.strip().lower()
+                if "new or repeat" in cl:
+                    continue
+                if needle and needle in cl:
+                    return col
+        return None
+
+    sr_col     = fc(["Sr no.", "Sr no", "Sr.no", "Serial"])
+    obs_col    = _fc_observation_col() or fc(["Observation/Vulnerability Title", "Observation/Vulnerability", "Observation"])
     asset_col  = fc(["Affected Asset", "IP/URL"])
     cve_col    = fc(["CVE/CWE", "CVE", "CWE"])
     sev_col    = fc(["Severity"])
@@ -3136,16 +3271,20 @@ def read_excel_vulns(excel_path: str) -> list:
 
     for idx, row in df.iterrows():
         sr_val = _c(row.get(sr_col, "")) if sr_col else ""
+        obs_raw_title = _c(row.get(obs_col, "")) if obs_col else ""
+        m_cert = re.fullmatch(r"#\s*(\d+)", (obs_raw_title or "").strip())
+        if (not sr_val) and m_cert:
+            sr_val = m_cert.group(1)
         if not sr_val:
             continue
 
-        title = _c(row.get(obs_col, "")) if obs_col else ""
-        if not title or title.startswith("#"):
+        title = obs_raw_title
+        if not title or title.strip().startswith("#"):
             # If observation col has #N, try Observation/Vulnerability Title col explicitly
             for col in df.columns:
                 if "observation/vulnerability" in col.lower():
                     t = _c(row.get(col, ""))
-                    if t and not t.startswith("#"):
+                    if t and not t.strip().startswith("#"):
                         title = t
                         break
 
@@ -3442,7 +3581,7 @@ def build_exec_summary(doc, cfg: dict, vulns: list):
         # Auto-generate from vulnerability data
         sev_counts = {}
         for v in vulns:
-            s = v["severity"]
+            s = v.get("severity") or "Medium"
             sev_counts[s] = sev_counts.get(s, 0) + 1
         parts = []
         for s in ["Critical", "High", "Medium", "Low", "Informational"]:
@@ -3483,107 +3622,113 @@ def build_test_case_table(doc):
         cell_write(row.cells[2], status, size=FONT_SIZE, align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
 
 
-def build_overall_findings_table(doc, vulns: list):
+def build_overall_findings_table(doc, vulns: list, cfg: dict | None = None):
     """
-    Overall Findings table per unique asset/hostname.
-    Matches RXIL format exactly.
+    Overall Findings: compact table with one row per distinct IP/hostname/project
+    and one merged "Overall Findings" totals row at the bottom.
+    Asset values longer than 60 chars are truncated to keep the table presentable.
     """
-    # Group by asset
-    assets = {}
-    for v in vulns:
-        key = v.get("hostname") or v.get("asset") or "Unknown"
-        if key not in assets:
-            assets[key] = []
-        assets[key].append(v)
+    MAX_ASSET_LEN = 60
 
-    # Compute overall totals
-    overall = {s: 0 for s in ["Critical","High","Medium","Low","Informational"]}
+    def _short_asset(raw: str) -> str:
+        raw = raw.strip()
+        if len(raw) <= MAX_ASSET_LEN:
+            return raw
+        return raw[:MAX_ASSET_LEN - 3] + "..."
+
+    overall = {s: 0 for s in ["Critical", "High", "Medium", "Low", "Informational"]}
     for v in vulns:
-        s = v["severity"]
-        if s in overall:
-            overall[s] += 1
+        sev = v.get("severity") or "Medium"
+        if sev in overall:
+            overall[sev] += 1
+
+    assets: dict[str, dict] = {}
+    for v in vulns:
+        key = _short_asset(v.get("hostname") or v.get("asset") or v.get("project", "") or "Unknown")
+        if key not in assets:
+            assets[key] = {
+                "purpose": v.get("purpose", ""),
+                "status": v.get("status", ""),
+                "counts": {s: 0 for s in overall},
+            }
+        sev = v.get("severity") or "Medium"
+        if sev in assets[key]["counts"]:
+            assets[key]["counts"][sev] += 1
+
+    if not assets:
+        proj = (cfg or {}).get("client_name", "Unknown")
+        assets[proj] = {"purpose": "Web Application", "status": "Completed",
+                        "counts": dict(overall)}
+
+    asset_list = list(assets.items())
 
     headers = ["Sr. No.", "Hostname/Address", "Instant\npurpose",
                "VAPT\nStatus", "Critical", "High", "Medium", "Low",
                "Informational", "Total"]
-    widths  = [500, 2000, 1000, 800, 700, 700, 700, 700, 1000, 600]
+    widths = [500, 2200, 1000, 800, 700, 700, 700, 700, 900, 600]
+    sev_names = ["Critical", "High", "Medium", "Low", "Informational"]
+    num_data_rows = len(asset_list)
 
-    for sr_idx, (asset_key, asset_vulns) in enumerate(assets.items(), 1):
-        purpose = asset_vulns[0].get("purpose", "Web Application")
-        status  = asset_vulns[0].get("status", "Completed")
+    t = doc.add_table(rows=1 + num_data_rows + 1, cols=len(headers))
+    t.style = "Table Grid"
+    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+    t.autofit = False
+    set_table_col_widths(t, widths)
+    set_table_border(t)
+    build_header_row(t, headers, widths)
 
-        # Per-asset severity counts
-        a_sev = {s: 0 for s in ["Critical","High","Medium","Low","Informational"]}
-        for v in asset_vulns:
-            if v["severity"] in a_sev:
-                a_sev[v["severity"]] += 1
-        a_total = sum(a_sev.values())
-
-        t = doc.add_table(rows=3, cols=len(headers))
-        t.style = "Table Grid"
-        t.alignment = WD_TABLE_ALIGNMENT.CENTER
-        t.autofit = False
-        set_table_col_widths(t, widths)
-        set_table_border(t)
-
-        # Header row
-        build_header_row(t, headers, widths)
-
-        # Data row
-        row1 = t.rows[1]
-        for c in row1.cells:
+    for r_idx, (aname, ainfo) in enumerate(asset_list, 1):
+        row = t.rows[r_idx]
+        for c in row.cells:
             set_cell_margins(c)
-        vals = [str(sr_idx), asset_key, purpose, status,
-                str(a_sev["Critical"]), str(a_sev["High"]),
-                str(a_sev["Medium"]),   str(a_sev["Low"]),
-                str(a_sev["Informational"]), str(a_total)]
-        sev_cols = {4: "Critical", 5: "High", 6: "Medium", 7: "Low",
-                    8: "Informational", 9: None}
-        for ci, (cell, val) in enumerate(zip(row1.cells, vals)):
-            cell_write(cell, val, size=FONT_SIZE, align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
-            if ci in sev_cols and ci <= 8:
-                sev = sev_cols[ci]
+        a_total = sum(ainfo["counts"].values())
+        vals = [str(r_idx), aname,
+                ainfo["purpose"] or "Web Application",
+                ainfo["status"] or "Completed",
+                str(ainfo["counts"]["Critical"]), str(ainfo["counts"]["High"]),
+                str(ainfo["counts"]["Medium"]), str(ainfo["counts"]["Low"]),
+                str(ainfo["counts"]["Informational"]), str(a_total)]
+        for ci, (cell, val) in enumerate(zip(row.cells, vals)):
+            if 4 <= ci <= 8:
+                sev = sev_names[ci - 4]
                 shade_cell(cell, SEVERITY_FILL.get(sev, "FFFFFF"))
-                # Re-write with white text for dark backgrounds
-                tc = SEVERITY_TEXT.get(sev, RGBColor(0,0,0))
-                cell_write(cell, val, size=FONT_SIZE, bold=True, color=tc,
-                           align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
-            elif ci == 9:  # Total col
-                shade_cell(cell, "7030A0")
-                cell_write(cell, val, size=FONT_SIZE, bold=True,
-                           color=RGBColor(255,255,255),
-                           align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
-
-        # Overall Findings row
-        row2 = t.rows[2]
-        for c in row2.cells:
-            set_cell_margins(c)
-        # Merge first 4 cells for "Overall Findings"
-        row2.cells[0].merge(row2.cells[1]).merge(row2.cells[2]).merge(row2.cells[3])
-        shade_cell(row2.cells[0], DARK_BLUE)
-        cell_write(row2.cells[0], "Overall Findings", bold=True,
-                   color=RGBColor(255,255,255), size=FONT_SIZE,
-                   align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
-        ov_vals = [str(overall["Critical"]), str(overall["High"]),
-                   str(overall["Medium"]),   str(overall["Low"]),
-                   str(overall["Informational"]), str(sum(overall.values()))]
-        ov_cols  = list(range(4, 10))
-        ov_sevs  = ["Critical","High","Medium","Low","Informational",None]
-        for ci, (col_idx, val, sev) in enumerate(zip(ov_cols, ov_vals, ov_sevs)):
-            cell = row2.cells[col_idx]
-            _tcW(cell, widths[col_idx])
-            set_cell_margins(cell)
-            if sev:
-                shade_cell(cell, SEVERITY_FILL.get(sev, "FFFFFF"))
-                tc = SEVERITY_TEXT.get(sev, RGBColor(0,0,0))
+                tc = SEVERITY_TEXT.get(sev, RGBColor(0, 0, 0))
                 cell_write(cell, val, bold=True, color=tc, size=FONT_SIZE,
                            align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
-            else:  # Total
+            elif ci == 9:
                 shade_cell(cell, "7030A0")
-                cell_write(cell, val, bold=True, color=RGBColor(255,255,255),
+                cell_write(cell, val, bold=True, color=RGBColor(255, 255, 255),
                            size=FONT_SIZE, align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+            else:
+                cell_write(cell, val, size=FONT_SIZE, clear=True,
+                           align=WD_ALIGN_PARAGRAPH.CENTER if ci in (0, 3) else WD_ALIGN_PARAGRAPH.LEFT)
 
-        spacer(doc)
+    # Merged "Overall Findings" totals row
+    last_row = t.rows[1 + num_data_rows]
+    for c in last_row.cells:
+        set_cell_margins(c)
+    last_row.cells[0].merge(last_row.cells[1]).merge(last_row.cells[2]).merge(last_row.cells[3])
+    shade_cell(last_row.cells[0], DARK_BLUE)
+    cell_write(last_row.cells[0], "Overall Findings", bold=True,
+               color=RGBColor(255, 255, 255), size=FONT_SIZE,
+               align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+    ov_vals = [str(overall[s]) for s in sev_names] + [str(sum(overall.values()))]
+    for ci_off, (val, sev) in enumerate(zip(ov_vals, sev_names + [None])):
+        col_idx = 4 + ci_off
+        cell = last_row.cells[col_idx]
+        _tcW(cell, widths[col_idx])
+        set_cell_margins(cell)
+        if sev:
+            shade_cell(cell, SEVERITY_FILL.get(sev, "FFFFFF"))
+            tc = SEVERITY_TEXT.get(sev, RGBColor(0, 0, 0))
+            cell_write(cell, val, bold=True, color=tc, size=FONT_SIZE,
+                       align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+        else:
+            shade_cell(cell, "7030A0")
+            cell_write(cell, val, bold=True, color=RGBColor(255, 255, 255),
+                       size=FONT_SIZE, align=WD_ALIGN_PARAGRAPH.CENTER, clear=True)
+
+    spacer(doc)
 
 
 def build_vuln_list_table(doc, vulns: list):
@@ -3608,9 +3753,9 @@ def build_vuln_list_table(doc, vulns: list):
         row = t.rows[r_idx]
         for c in row.cells:
             set_cell_margins(c)
-        sev  = v["severity"]
-        vals = [v["sr_no"], v["asset"], v["title"],
-                v["cve_cwe"], sev, v["new_repeat"]]
+        sev  = v.get("severity") or "Medium"
+        vals = [v.get("sr_no", r_idx), v.get("asset", ""), v.get("title", ""),
+                v.get("cve_cwe", ""), sev, v.get("new_repeat", "New")]
         for ci, (cell, val) in enumerate(zip(row.cells, vals)):
             if ci == 4:   # Severity column — color coded
                 fill = SEVERITY_FILL.get(sev, "FFFFFF")
@@ -3671,16 +3816,19 @@ def build_detailed_observations(doc, vulns: list, poc_map: dict):
     Matches RXIL reference exactly.
     """
     for idx, v in enumerate(vulns, 1):
-        sev      = v["severity"]
+        sev = v.get("severity") or "Medium"
         sev_fill = SEVERITY_FILL.get(sev, "FFFFFF")
         sev_tc   = SEVERITY_TEXT.get(sev, RGBColor(0, 0, 0))
 
         # Get poc images for this vulnerability
         try:
-            sr_int = int(v["sr_no"])
-        except (ValueError, TypeError):
-            sr_int = 0
-        step_imgs = poc_map.get(sr_int, {})  # {step_num: path}
+            sr_int = int(float(str(v.get("sr_no", idx)).replace(",", "").strip().split()[0]))
+        except (ValueError, TypeError, IndexError):
+            m = re.search(r"(\d+)", str(v.get("sr_no", "")))
+            sr_int = int(m.group(1)) if m else int(idx)
+        step_imgs = poc_map.get(sr_int, {})
+        if not isinstance(step_imgs, dict):
+            step_imgs = {}
 
         # ── Build the detail table ─────────────────────────────────────────
         # Rows: [Affected Asset, Vuln Title, Detailed Obs, CVE/CWE,
@@ -3720,10 +3868,10 @@ def build_detailed_observations(doc, vulns: list, poc_map: dict):
             _run(vc.paragraphs[0], value, bold=val_bold, size=FONT_SIZE,
                  color=val_color)
 
-        lv_row(0,  "Affected Asset i.e.\nIP/URL/Application etc.", v["asset"])
-        lv_row(1,  "Observation /\nVulnerability title", v["title"])
-        lv_row(2,  "Detailed observation /\nVulnerable point", v["detailed"])
-        lv_row(3,  "CVE/CWE", v["cve_cwe"])
+        lv_row(0,  "Affected Asset i.e.\nIP/URL/Application etc.", v.get("asset", ""))
+        lv_row(1,  "Observation /\nVulnerability title", v.get("title", ""))
+        lv_row(2,  "Detailed observation /\nVulnerable point", v.get("detailed", ""))
+        lv_row(3,  "CVE/CWE", v.get("cve_cwe", ""))
         lv_row(4,  "Severity", sev.upper(),
                val_bold=True, val_color=sev_tc, shade_val=sev_fill)
         lv_row(5,  "Current status", v.get("status", "Open"))
@@ -3739,9 +3887,9 @@ def build_detailed_observations(doc, vulns: list, poc_map: dict):
         no_space_para(lc6.paragraphs[0])
         _run(lc6.paragraphs[0], "Recommendation", bold=True, size=FONT_SIZE)
         vc6.paragraphs[0].clear()
-        rec_text = v["recommendation"]
+        rec_text = v.get("recommendation") or ""
         # Split on numbered items if possible
-        rec_lines = [l.strip() for l in rec_text.split("\n") if l.strip()]
+        rec_lines = [l.strip() for l in str(rec_text).split("\n") if l.strip()]
         if rec_lines:
             no_space_para(vc6.paragraphs[0])
             _run(vc6.paragraphs[0], rec_lines[0], size=FONT_SIZE)
@@ -3770,7 +3918,7 @@ def build_detailed_observations(doc, vulns: list, poc_map: dict):
                         color=RGBColor(0, 0, 0xFF) if ref_text else None,
                         underline=bool(ref_text))
 
-        lv_row(8, "New or Repeat\nobservation", v["new_repeat"])
+        lv_row(8, "New or Repeat\nobservation", v.get("new_repeat", "New"))
 
         # POC row — step text + screenshots
         row9   = t.rows[9]
@@ -3787,7 +3935,8 @@ def build_detailed_observations(doc, vulns: list, poc_map: dict):
         vc9.paragraphs[0].clear()
         vc9.paragraphs[0].clear()
         first_para = True
-        for step_idx, step_line in enumerate(v["poc_lines"], 1):
+        _poc_lines = v.get("poc_lines") or ["(No steps provided)"]
+        for step_idx, step_line in enumerate(_poc_lines, 1):
             if first_para:
                 p = vc9.paragraphs[0]
                 first_para = False
@@ -3800,10 +3949,6 @@ def build_detailed_observations(doc, vulns: list, poc_map: dict):
             img_path = step_imgs.get(step_idx)
             if img_path and os.path.exists(img_path):
                 _add_image_to_cell(vc9, img_path)
-        if not v["poc_lines"]:
-            vc9.paragraphs[0].clear()
-            no_space_para(vc9.paragraphs[0])
-            _run(vc9.paragraphs[0], "(No steps provided)", size=FONT_SIZE, italic=True)
 
         # Revalidation Status row
         row10  = t.rows[10]
@@ -3817,9 +3962,10 @@ def build_detailed_observations(doc, vulns: list, poc_map: dict):
         _run(lc10.paragraphs[0], "Revalidation\nStatus", bold=True, size=FONT_SIZE)
         vc10.paragraphs[0].clear()
         no_space_para(vc10.paragraphs[0])
-        reval_color = RGBColor(0, 128, 0) if v["reval_status"] else None
-        _run(vc10.paragraphs[0], v["reval_status"] or "—",
-             size=FONT_SIZE, color=reval_color, bold=bool(v["reval_status"]))
+        _rs = v.get("reval_status") or ""
+        reval_color = RGBColor(0, 128, 0) if _rs else None
+        _run(vc10.paragraphs[0], _rs or "—",
+             size=FONT_SIZE, color=reval_color, bold=bool(_rs))
 
         # Add revalidation screenshot (from 'Screenshot' col, if any) — extra row
         reval_ss = v.get("ss1", "")  # revalidation screenshot
@@ -3892,7 +4038,7 @@ def build_document_from_scratch(vulns: list, poc_map: dict, cfg: dict) -> Docume
     doc.add_page_break()
 
     # ── DISCLAIMER ────────────────────────────────────────────────────────────
-    heading(doc, "© Copyright 2025 MitKat Advisory Services Private Limited", size=11)
+    heading(doc, "© Copyright 2026 MitKat Advisory Services Private Limited", size=11)
     heading(doc, "Disclaimer", size=11)
     body_para(doc, "All information contained in this document is confidential and "
               "proprietary to MitKat and Reproduction, disclosure or use of any "
@@ -4159,51 +4305,267 @@ def _mitkat_prepare_template_for_render(template_path: str) -> tuple[str, str | 
         return template_path, None
 
 
+def _mitkat_document_xml_is_well_formed(xml: str) -> bool:
+    """True if main document part can be parsed as well-formed XML (Word requires this)."""
+    try:
+        data = xml.encode("utf-8") if isinstance(xml, str) else xml
+        ET.fromstring(data)
+        return True
+    except Exception:
+        return False
+
+
+def _mitkat_extract_heading_entries_from_document_xml(doc_xml: str) -> list[tuple[int, str]]:
+    """
+    Extract (level, title) in document order from word/document.xml.
+    Relies on pStyle values Heading1/Heading2/Heading3 (or Heading 1/2/3).
+    Namespace-agnostic matching.
+    """
+    entries: list[tuple[int, str]] = []
+    # Paragraph blocks (best-effort, not a full XML parser; keeps perf predictable).
+    for pm in re.finditer(r"<\w*:?p\b[\s\S]*?</\w*:?p>", doc_xml):
+        pxml = pm.group(0)
+        sm = re.search(r'pStyle[^>]*\bval="([^"]+)"', pxml, re.IGNORECASE)
+        if not sm:
+            continue
+        style_val = (sm.group(1) or "").strip()
+        m = re.match(r"Heading\s*([1-3])$", style_val, re.IGNORECASE) or re.match(
+            r"Heading([1-3])$", style_val, re.IGNORECASE
+        )
+        if not m:
+            continue
+        lvl = int(m.group(1))
+        # Visible text for heading
+        ts = re.findall(r"<\w*:?t[^>]*>([^<]+)</\w*:?t>", pxml)
+        title = " ".join(t.strip() for t in ts if t and t.strip()).strip()
+        if not title:
+            continue
+        entries.append((lvl, title))
+    return entries
+
+
+def _mitkat_inject_static_toc_into_document_xml(doc_xml: str) -> str:
+    """
+    Populate the TOC SDT with visible entries (RXIL-style) built from Heading 1-3 paragraphs.
+    Inserts bookmarks for headings and creates TOC entries with hyperlinks + PAGEREF fields.
+    """
+    if not doc_xml:
+        return doc_xml
+
+    # Detect the main prefix used in this document (often ns0:)
+    mp = re.search(r"<(\w+):document\b", doc_xml)
+    w = (mp.group(1) + ":") if mp else "w:"
+
+    # Detect the relationship-id attribute prefix used in this document (often ns11:id)
+    rid_attr_m = re.search(r'(\w+):id="rId\d+"', doc_xml)
+    rid_ns = rid_attr_m.group(1) if rid_attr_m else "r"
+
+    entries = _mitkat_extract_heading_entries_from_document_xml(doc_xml)
+    if not entries:
+        return doc_xml
+
+    # 1) Add bookmarks to headings so TOC entries can hyperlink.
+    # Find max existing bookmark id
+    ids = [int(x) for x in re.findall(r'bookmarkStart[^>]*\b(?:%sid|w:id)="(\d+)"' % re.escape(w), doc_xml)]
+    next_bm_id = (max(ids) + 1) if ids else 1000
+
+    def _inject_bookmark_into_heading(pxml: str, bm_id: int, bm_name: str) -> str:
+        # Insert bookmarkStart after </pPr> if present else right after <p...>
+        # Insert bookmarkEnd before </p>
+        if re.search(r'bookmarkStart[^>]*name="%s"' % re.escape(bm_name), pxml):
+            return pxml
+        end_tag = f"</{w}p>"
+        if end_tag not in pxml:
+            return pxml
+        start_tag = f"<{w}bookmarkStart {w}id=\"{bm_id}\" {w}name=\"{bm_name}\"/>"
+        end_bm = f"<{w}bookmarkEnd {w}id=\"{bm_id}\"/>"
+        if f"</{w}pPr>" in pxml:
+            pxml2 = pxml.replace(f"</{w}pPr>", f"</{w}pPr>{start_tag}", 1)
+        else:
+            # After the opening <p ...>
+            pxml2 = re.sub(rf"(<{re.escape(w)}p\b[^>]*>)", r"\1" + start_tag, pxml, count=1)
+        pxml2 = pxml2.replace(end_tag, end_bm + end_tag, 1)
+        return pxml2
+
+    # Replace heading paragraphs in order, injecting bookmarks.
+    # We do a single pass replace using an iterator over matched <p> blocks to keep offsets stable.
+    out_parts: list[str] = []
+    last = 0
+    idx = 0
+    for pm in re.finditer(r"<\w*:?p\b[\s\S]*?</\w*:?p>", doc_xml):
+        pxml = pm.group(0)
+        sm = re.search(r'pStyle[^>]*\bval="([^"]+)"', pxml, re.IGNORECASE)
+        if not sm:
+            continue
+        style_val = (sm.group(1) or "").strip()
+        m = re.match(r"Heading\s*([1-3])$", style_val, re.IGNORECASE) or re.match(r"Heading([1-3])$", style_val, re.IGNORECASE)
+        if not m:
+            continue
+        # Extract heading title
+        ts = re.findall(r"<\w*:?t[^>]*>([^<]+)</\w*:?t>", pxml)
+        title = " ".join(t.strip() for t in ts if t and t.strip()).strip()
+        if not title:
+            continue
+        bm_name = f"_MitkatToc{idx+1}"
+        bm_id = next_bm_id + idx
+        pxml_new = _inject_bookmark_into_heading(pxml, bm_id, bm_name)
+        out_parts.append(doc_xml[last:pm.start()])
+        out_parts.append(pxml_new)
+        last = pm.end()
+        idx += 1
+    if idx:
+        out_parts.append(doc_xml[last:])
+        doc_xml = "".join(out_parts)
+
+    # 2) Build TOC SDT body paragraphs.
+    toc_paras: list[str] = []
+    tab_pos = 9350  # common default right tab pos in twips
+
+    def _toc_para(level: int, title: str, anchor: str) -> str:
+        toc_style = f"TOC{max(1, min(3, level))}"
+        safe_title = (
+            title.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        instr = f' PAGEREF {anchor} \\\\h '
+        return (
+            f"<{w}p>"
+            f"<{w}pPr>"
+            f"<{w}pStyle {w}val=\"{toc_style}\"/>"
+            f"<{w}tabs><{w}tab {w}val=\"right\" {w}leader=\"dot\" {w}pos=\"{tab_pos}\"/></{w}tabs>"
+            f"</{w}pPr>"
+            f"<{w}hyperlink {w}anchor=\"{anchor}\" {w}history=\"1\">"
+            f"<{w}r><{w}t>{safe_title}</{w}t></{w}r>"
+            f"</{w}hyperlink>"
+            f"<{w}r><{w}tab/></{w}r>"
+            f"<{w}r><{w}fldChar {w}fldCharType=\"begin\"/></{w}r>"
+            f"<{w}r><{w}instrText xml:space=\"preserve\">{instr}</{w}instrText></{w}r>"
+            f"<{w}r><{w}fldChar {w}fldCharType=\"separate\"/></{w}r>"
+            f"<{w}r><{w}t> </{w}t></{w}r>"
+            f"<{w}r><{w}fldChar {w}fldCharType=\"end\"/></{w}r>"
+            f"</{w}p>"
+        )
+
+    for i, (lvl, title) in enumerate(entries, 1):
+        toc_paras.append(_toc_para(lvl, title, f"_MitkatToc{i}"))
+
+    toc_body = "".join(toc_paras)
+
+    # 3) Replace the TOC SDT content with our paragraphs.
+    marker_m = re.search(r'docPartGallery\s[^>]*val="Table of Contents"', doc_xml)
+    if not marker_m:
+        return doc_xml
+    gi = marker_m.start()
+    sdt_m = re.search(r"<(\w*:?)sdtContent>", doc_xml[gi:])
+    if not sdt_m:
+        return doc_xml
+    si = gi + sdt_m.start()
+    prefix = sdt_m.group(1)
+    close_tag = f"</{prefix}sdtContent>"
+    ei = doc_xml.find(close_tag, si)
+    if ei == -1:
+        return doc_xml
+    open_tag = f"<{prefix}sdtContent>"
+    # Ensure we keep the sdtContent wrapper but replace inner content.
+    start_inner = si + len(open_tag)
+    new_xml = doc_xml[:start_inner] + toc_body + doc_xml[ei:]
+    return new_xml if _mitkat_document_xml_is_well_formed(new_xml) else doc_xml
+
+
 def _mitkat_clear_toc_field_result_xml(s: str) -> str:
     """
-    Remove cached TOC field result (nested HYPERLINK/PAGEREF blocks) so Word rebuilds the TOC
-    from Heading 1–3 outline levels on open/update. Targets the Table of Contents SDT only.
+    Remove cached TOC field result so Word can rebuild the TOC (Heading 1-3) on update.
+    Namespace-agnostic. Uses fldChar *stacking*: the TOC is one complex field; nested
+    PAGEREF/HYPERLINK fields have their own begin/end — we must not use the *last* end
+    in the sdt, which broke document.xml (Word would not open the file).
     """
-    marker = '<w:docPartGallery w:val="Table of Contents"/>'
-    gi = s.find(marker)
-    if gi == -1:
-        return s
-    si = s.find("<w:sdtContent>", gi)
-    if si == -1:
-        return s
-    ei = s.find("</w:sdtContent>", si)
-    if ei == -1:
-        return s
-    block = s[si:ei]
-    toc_instr = (
-        '<w:instrText xml:space="preserve"> TOC \\o &quot;1-3&quot; \\h \\z \\u </w:instrText>'
-    )
-    ti = block.find(toc_instr)
-    if ti == -1:
-        return s
-    after_instr = ti + len(toc_instr)
-    j = block.find('<w:fldChar w:fldCharType="separate"', after_instr)
-    if j == -1:
-        return s
-    k = block.find("/>", j)
-    if k == -1:
-        return s
-    pos_after_sep = k + 2
-    last_end = block.rfind('<w:fldChar w:fldCharType="end"')
-    if last_end == -1:
-        return s
-    rem_start_abs = si + pos_after_sep
-    keep_from_abs = si + last_end
-    if keep_from_abs <= rem_start_abs:
-        return s
-    return s[:rem_start_abs] + s[keep_from_abs:]
+    s_orig = s
+    try:
+        marker_m = re.search(r'docPartGallery\s[^>]*val="Table of Contents"', s)
+        if not marker_m:
+            return s
+        gi = marker_m.start()
+
+        sdt_m = re.search(r'<(\w*:?)sdtContent>', s[gi:])
+        if not sdt_m:
+            return s
+        si = gi + sdt_m.start()
+        prefix = sdt_m.group(1)
+        close_tag = f"</{prefix}sdtContent>"
+        ei = s.find(close_tag, si)
+        if ei == -1:
+            return s
+        block = s[si:ei]
+
+        instr_m = re.search(
+            r'<\w*:?instrText[^>]*>\s*TOC\s+\\o[\s\S]*?</\w*:?instrText>',
+            block,
+            re.IGNORECASE,
+        )
+        if not instr_m:
+            return s
+        after_instr = instr_m.end()
+
+        # First separate after the TOC instruction = start of cached TOC *body*
+        sep_m = re.search(
+            r'<\w*:?fldChar[^>]*fldCharType="separate"\s*/>', block[after_instr:]
+        )
+        if not sep_m:
+            return s
+        pos_after_toc_separate = after_instr + sep_m.end()
+        if pos_after_toc_separate >= len(block):
+            return s
+
+        # Last <fldChar begin> before the TOC <instrText> = outer TOC field open
+        begins_before = list(
+            re.finditer(
+                r'<\w*:?fldChar[^>]*fldCharType="begin"\s*/>',
+                block[: instr_m.start()],
+                re.IGNORECASE,
+            )
+        )
+        if not begins_before:
+            return s
+        toc_field_begin = begins_before[-1]
+        start_scan = toc_field_begin.end()
+
+        fld_m = re.compile(
+            r'<\w*:?fldChar[^>]*fldCharType="(begin|separate|end)"\s*/>',
+            re.IGNORECASE,
+        )
+        # Stack: after TOC's own "begin" we are inside the field; nested fields add levels.
+        stack = 1
+        closing_end_start = -1
+        for m in fld_m.finditer(block, start_scan):
+            kind = m.group(1).lower()
+            if kind == "begin":
+                stack += 1
+            elif kind == "separate":
+                pass
+            elif kind == "end":
+                stack -= 1
+                if stack == 0:
+                    closing_end_start = m.start()
+                    break
+
+        if closing_end_start < 0 or closing_end_start <= pos_after_toc_separate:
+            return s
+
+        s2 = s[: si + pos_after_toc_separate] + s[si + closing_end_start :]
+        if _mitkat_document_xml_is_well_formed(s2):
+            return s2
+    except Exception as e:
+        print(f"[WARNING] MitKat TOC cache clear failed (keeping original): {e}")
+    return s_orig
 
 
 def _mitkat_strip_toc_pageref_cache_xml(s: str) -> str:
     """Remove cached numeric results after PAGEREF instructions (fallback if TOC still shows stale digits)."""
     pat = re.compile(
-        r'(<w:instrText[^>]*>\s*PAGEREF _Toc\d+ \\h\s*</w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>)'
-        r'<w:r>(?:<w:rPr>[\s\S]*?</w:rPr>)?<w:t>\d+</w:t></w:r>',
+        r'(<\w*:?instrText[^>]*>\s*PAGEREF\s+_Toc\d+[^<]*</\w*:?instrText>'
+        r'</\w*:?r><\w*:?r><\w*:?fldChar\s[^/]*fldCharType="separate"\s*/>)'
+        r'(?:</\w*:?r><\w*:?r>(?:<\w*:?rPr>[\s\S]*?</\w*:?rPr>)?<\w*:?t[^>]*>\d+</\w*:?t></\w*:?r>)',
         re.IGNORECASE,
     )
     return pat.sub(r"\1", s)
@@ -4211,25 +4573,62 @@ def _mitkat_strip_toc_pageref_cache_xml(s: str) -> str:
 
 def _mitkat_fix_toc_field_empty_result_runs(s: str) -> str:
     """After clearing cached TOC, separate and end fldChars may sit in one run; split for Word field refresh."""
+    def _split_sep_end(m):
+        p = m.group(1)  # namespace prefix
+        return (f'<{p}fldChar {p}fldCharType="separate"/></{p}r>'
+                f'<{p}r><{p}fldChar {p}fldCharType="end"/></{p}r>')
     return re.sub(
-        r'<w:fldChar w:fldCharType="separate"/><w:fldChar w:fldCharType="end"/></w:r>',
-        '<w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>',
-        s,
+        r'<(\w*:?)fldChar\s[^/]*fldCharType="separate"\s*/>'
+        r'<\w*:?fldChar\s[^/]*fldCharType="end"\s*/></\w*:?r>',
+        _split_sep_end, s,
     )
 
 
 def _mitkat_ensure_settings_update_fields_xml(s: str) -> str:
-    """Ask Word to refresh fields (TOC, PAGE) when the document opens."""
-    if "w:updateFields" in s:
+    """
+    Default: strip w:updateFields from the saved file (template may still contain it) so
+    Word is less likely to show field-update prompts on open. Vulnerability data and
+    report layout are unchanged. Set MITKAT_WORD_UPDATE_FIELDS_ON_OPEN=1 to re-inject
+    the flag (auto-refresh fields on first open, including TOC page numbers if desired).
+    """
+    s = re.sub(
+        r"<\s*\w*:?updateFields\b[^>]*/\s*>",
+        "",
+        s,
+        flags=re.IGNORECASE,
+    )
+    val = (os.getenv("MITKAT_WORD_UPDATE_FIELDS_ON_OPEN", "") or "").strip().lower()
+    if val not in ("1", "true", "yes", "on"):
         return s
-    return re.sub(r"(<w:settings[^>]*>)", r'\1<w:updateFields w:val="true"/>', s, count=1)
+    m = re.search(r'<(\w*:?)settings[^>]*>', s)
+    if not m:
+        return s
+    prefix = m.group(1)
+    insert_after = m.end()
+    return s[:insert_after] + f'<{prefix}updateFields {prefix}val="true"/>' + s[insert_after:]
 
 
 def _mitkat_apply_footer_page_numbers(doc: Document) -> None:
-    """Right-aligned PAGE field in first-section footer; later sections link to the same footer."""
+    """
+    Right-aligned PAGE field in first-section footer; later sections link to the same footer.
+    Skips if the footer already contains a PAGE field (avoids duplicate footerReference entries
+    which cause Word to show double page numbers or refuse to open the file).
+    """
     sections = doc.sections
     if not sections:
         return
+
+    first = sections[0]
+    try:
+        ftr_xml = first.footer._element.xml if first.footer and first.footer._element is not None else ""
+    except Exception:
+        ftr_xml = ""
+    if re.search(r"PAGE", ftr_xml):
+        for i, section in enumerate(sections):
+            if i > 0:
+                section.footer.is_linked_to_previous = True
+        return
+
     for i, section in enumerate(sections):
         if i > 0:
             section.footer.is_linked_to_previous = True
@@ -4258,7 +4657,6 @@ def _mitkat_apply_footer_page_numbers(doc: Document) -> None:
         run._r.append(fld_end)
         try:
             for r in p.runs:
-                # Default footer background is white; dark text must be visible (white-on-white was invisible).
                 r.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
                 r.font.name = FONT_NAME
                 r.font.size = Pt(10)
@@ -4293,8 +4691,9 @@ def _mitkat_footer_xml_has_page_field(footer_xml: str) -> bool:
 
 def _mitkat_ensure_footer_zip_parts(parts: dict, order: list) -> None:
     """
-    Ensure default footer exists and contains a PAGE field (OOXML-level fallback if python-docx
-    did not persist a footer). Mutates parts and may append new part names to order.
+    Ensure exactly ONE default footer exists and contains a PAGE field.
+    Deduplicates footerReference elements inside sectPr (python-docx may add one,
+    and the template may already contain one, causing duplicate page numbers or Word errors).
     """
     doc_bytes = parts.get("word/document.xml")
     rels_path = "word/_rels/document.xml.rels"
@@ -4315,75 +4714,83 @@ def _mitkat_ensure_footer_zip_parts(parts: dict, order: list) -> None:
         if idm and tgm:
             rid_to_target[idm.group(1)] = tgm.group(2)
 
-    mref = re.search(r'<w:footerReference[^>]*w:type="default"[^>]*r:id="([^"]+)"', d)
-    if not mref:
-        mref = re.search(r'<w:footerReference[^>]*r:id="([^"]+)"', d)
-    footer_rid = mref.group(1) if mref else None
-    if footer_rid and footer_rid not in rid_to_target:
-        for m in re.finditer(r"<Relationship[^/]+/>", rels_txt):
-            rel = m.group(0)
-            if footer_rid not in rel or ftr_type not in rel:
-                continue
-            tgm = re.search(r'Target="([^"]+)"', rel)
-            if tgm:
-                rid_to_target[footer_rid] = tgm.group(1)
-                break
-
     def norm_footer_path(tgt: str) -> str:
         tgt = tgt.replace("\\", "/")
         if not tgt.startswith("word/"):
             tgt = "word/" + tgt.lstrip("/")
         return tgt
 
-    if footer_rid and footer_rid in rid_to_target:
-        fp = norm_footer_path(rid_to_target[footer_rid])
-        if fp not in parts:
-            parts[fp] = (
-                '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-                '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-                + _mitkat_footer_page_paragraph_xml()
-                + "</w:ftr>"
-            ).encode("utf-8")
-            order.append(fp)
-        else:
-            fx = parts[fp].decode("utf-8")
-            if not _mitkat_footer_xml_has_page_field(fx):
-                idx = fx.rfind("</w:ftr>")
-                if idx != -1:
-                    fx = fx[:idx] + _mitkat_footer_page_paragraph_xml() + fx[idx:]
-                    parts[fp] = fx.encode("utf-8")
-        return
+    # Collect all footerReference elements already in sectPr
+    existing_refs = re.findall(
+        r'<\w*:?footerReference[^>]*type="default"[^>]*(?:r:id|ns\d+:id)="(rId\d+)"[^/]*/>', d
+    )
+    if not existing_refs:
+        existing_refs = re.findall(
+            r'<\w*:?footerReference[^>]*(?:r:id|ns\d+:id)="(rId\d+)"[^/]*/>', d
+        )
 
-    new_num = _mitkat_max_r_id_from_rels(rels_txt) + 1
-    new_rid = "rId%d" % new_num
-    fp = "word/footer1.xml"
-    parts[fp] = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-        + _mitkat_footer_page_paragraph_xml()
-        + "</w:ftr>"
-    ).encode("utf-8")
-    if fp not in order:
-        order.append(fp)
-    frag = '<Relationship Id="%s" Type="%s" Target="footer1.xml"/>' % (new_rid, ftr_type)
-    rels_txt = rels_txt.replace("</Relationships>", frag + "</Relationships>")
-    parts[rels_path] = rels_txt.encode("utf-8")
-    ct_path = "[Content_Types].xml"
-    ct = parts.get(ct_path)
-    if ct:
-        ctt = ct.decode("utf-8")
-        if "/word/footer1.xml" not in ctt:
-            ov = (
-                '<Override PartName="/word/footer1.xml" '
-                'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'
-            )
-            ctt = ctt.replace("</Types>", ov + "</Types>")
-            parts[ct_path] = ctt.encode("utf-8")
-    ms = list(re.finditer(r"<w:sectPr>", d))
+    footer_rid = None
+    footer_path = None
+    for rid in existing_refs:
+        if rid in rid_to_target:
+            fp = norm_footer_path(rid_to_target[rid])
+            if fp in parts:
+                footer_rid = rid
+                footer_path = fp
+                break
+
+    if footer_rid and footer_path:
+        fx = parts[footer_path].decode("utf-8")
+        if not _mitkat_footer_xml_has_page_field(fx):
+            close = re.search(r"</\w*:?ftr>", fx)
+            if close:
+                fx = fx[: close.start()] + _mitkat_footer_page_paragraph_xml() + fx[close.start() :]
+                parts[footer_path] = fx.encode("utf-8")
+    else:
+        new_num = _mitkat_max_r_id_from_rels(rels_txt) + 1
+        footer_rid = "rId%d" % new_num
+        footer_path = "word/footer1.xml"
+        parts[footer_path] = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            + _mitkat_footer_page_paragraph_xml()
+            + "</w:ftr>"
+        ).encode("utf-8")
+        if footer_path not in order:
+            order.append(footer_path)
+        frag = '<Relationship Id="%s" Type="%s" Target="footer1.xml"/>' % (footer_rid, ftr_type)
+        rels_txt = rels_txt.replace("</Relationships>", frag + "</Relationships>")
+        parts[rels_path] = rels_txt.encode("utf-8")
+        ct_path = "[Content_Types].xml"
+        ct = parts.get(ct_path)
+        if ct:
+            ctt = ct.decode("utf-8")
+            if "/word/footer1.xml" not in ctt:
+                ov = (
+                    '<Override PartName="/word/footer1.xml" '
+                    'ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>'
+                )
+                ctt = ctt.replace("</Types>", ov + "</Types>")
+                parts[ct_path] = ctt.encode("utf-8")
+
+    # Detect the namespace prefix used for relationship "id" attribute in document.xml
+    # (e.g. "r:id", "ns11:id", etc.)
+    rid_attr_m = re.search(r'(\w+):id="rId\d+"', d)
+    rid_ns = rid_attr_m.group(1) if rid_attr_m else "r"
+
+    # Deduplicate: remove ALL footerReference(type=default) and re-add exactly one
+    d_new = re.sub(r"<\w*:?footerReference[^>]*type\s*=\s*\"default\"[^/]*/>\s*", "", d)
+    ms = list(re.finditer(r"<(\w*:?)sectPr[\s>]", d_new))
     if ms:
+        ns_prefix = ms[-1].group(1)
         pos = ms[-1].end()
-        d = d[:pos] + '<w:footerReference w:type="default" r:id="%s"/>' % new_rid + d[pos:]
-        parts["word/document.xml"] = d.encode("utf-8")
+        if d_new[pos - 1] != ">":
+            close = d_new.find(">", pos)
+            if close != -1:
+                pos = close + 1
+        ref_tag = f'<{ns_prefix}footerReference {ns_prefix}type="default" {rid_ns}:id="{footer_rid}"/>'
+        d_new = d_new[:pos] + ref_tag + d_new[pos:]
+    parts["word/document.xml"] = d_new.encode("utf-8")
 
 
 def _mitkat_normalize_footer_text_colors(parts: dict) -> None:
@@ -4402,7 +4809,10 @@ def _mitkat_normalize_footer_text_colors(parts: dict) -> None:
 
 
 def _mitkat_postprocess_report_docx_toc_settings(docx_path: str) -> None:
-    """Clear stale TOC cache, ensure footer PAGE field, strip PAGEREF digits, enable updateFields on open."""
+    """
+    Clear stale TOC cache (safe), tune footer; optional w:updateFields (see
+    _mitkat_ensure_settings_update_fields_xml). Does not change vulnerability/report data.
+    """
     try:
         with ZipFile(docx_path, "r") as zin:
             order = []
@@ -4413,10 +4823,15 @@ def _mitkat_postprocess_report_docx_toc_settings(docx_path: str) -> None:
                 order.append(item.filename)
         doc_xml = parts.get("word/document.xml")
         if doc_xml:
-            s = doc_xml.decode("utf-8")
-            s = _mitkat_clear_toc_field_result_xml(s)
-            s = _mitkat_fix_toc_field_empty_result_runs(s)
-            s = _mitkat_strip_toc_pageref_cache_xml(s)
+            s0 = doc_xml.decode("utf-8")
+            # Build a visible TOC from Heading 1–3 paragraphs (RXIL-style). This avoids
+            # relying on Word's field-update behavior to show TOC entries.
+            s = _mitkat_inject_static_toc_into_document_xml(s0)
+            if not _mitkat_document_xml_is_well_formed(s):
+                print(
+                    "[WARNING] MitKat: TOC/field post-process would break document.xml; using original body XML."
+                )
+                s = s0
             parts["word/document.xml"] = s.encode("utf-8")
         st = parts.get("word/settings.xml")
         if st:
@@ -4591,6 +5006,46 @@ def _mitkat_strip_template_stub_observations_block(doc: Document) -> None:
     for k in range(end_idx, start_idx - 1, -1):
         body.remove(children[k])
 
+def _mitkat_ensure_document_has_section(doc: Document) -> None:
+    """
+    python-docx requires at least one <w:sectPr> in the document.
+    Some MitKat templates store <w:sectPr> inside the last paragraph; when we strip the
+    template's stub Observations/End-of-Report block, that paragraph can be removed and
+    the document ends up with zero sections. This causes IndexError in doc.add_table().
+    """
+    try:
+        _ = doc.sections[0]
+        return
+    except Exception:
+        pass
+    try:
+        body = doc.element.body
+        sectPr = getattr(body, "sectPr", None)
+        if sectPr is None:
+            sectPr = OxmlElement("w:sectPr")
+            body.append(sectPr)
+        # Ensure page size / margins exist (Word defaults if absent, but be explicit)
+        if sectPr.find(qn("w:pgSz")) is None:
+            pgSz = OxmlElement("w:pgSz")
+            pgSz.set(qn("w:w"), "11906")   # A4 width in twips
+            pgSz.set(qn("w:h"), "16838")   # A4 height in twips
+            sectPr.append(pgSz)
+        if sectPr.find(qn("w:pgMar")) is None:
+            pgMar = OxmlElement("w:pgMar")
+            # 1 inch margins (1440 twips)
+            pgMar.set(qn("w:top"), "1440")
+            pgMar.set(qn("w:right"), "1440")
+            pgMar.set(qn("w:bottom"), "1440")
+            pgMar.set(qn("w:left"), "1440")
+            # header/footer/gutter defaults
+            pgMar.set(qn("w:header"), "720")
+            pgMar.set(qn("w:footer"), "720")
+            pgMar.set(qn("w:gutter"), "0")
+            sectPr.append(pgMar)
+    except Exception:
+        # Best-effort: if this fails, caller will error with a clear traceback.
+        pass
+
 
 def _mitkat_center_template_front_sections(doc: Document) -> None:
     """
@@ -4640,15 +5095,122 @@ def _mitkat_center_template_front_sections(doc: Document) -> None:
             continue
 
 
-def generate_report_with_template(vulns: list, poc_map: dict, cfg: dict,
-                                   template_path: str, output_path: str):
+def generate_report_with_template(
+    vulns: list,
+    poc_map: dict,
+    cfg: dict,
+    template_path: str,
+    output_path: str,
+    *,
+    vuln_excel_path: str | None = None,
+):
     """
     Use an existing docxtpl template for the boilerplate pages,
     then append the dynamic vulnerability sections.
     """
     tmp_tpl = None
     try:
-        from docxtpl import DocxTemplate
+        from docxtpl import DocxTemplate, RichText
+
+        def _rt_from_paragraphs(text: str) -> RichText:
+            rt = RichText()
+            blocks = [b.strip() for b in str(text or "").split("\n\n") if b.strip()]
+            if not blocks:
+                return rt
+            for i, b in enumerate(blocks):
+                if i:
+                    rt.add("\n")
+                    rt.add("\n")
+                rt.add(b)
+            return rt
+
+        def _counts_from_vulns(vulns_list: list) -> dict[str, int]:
+            out = {"critical": 0, "high": 0, "medium": 0, "low": 0, "informational": 0, "total": 0}
+            for v in (vulns_list or []):
+                sev = str((v or {}).get("severity") or "").strip().lower()
+                if sev in ("info", "informational"):
+                    sev = "informational"
+                if sev not in out:
+                    sev = "medium"
+                out[sev] += 1
+            out["total"] = sum(out[k] for k in ("critical", "high", "medium", "low", "informational"))
+            return out
+
+        def _mitkat_risk_legend_png() -> bytes:
+            """Deterministic risk legend graphic (PNG) for Risk Level & Description page."""
+            import io as _io
+            import matplotlib
+
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as _plt
+
+            labels = ["Critical", "High", "Medium", "Low", "Informational"]
+            ranges = ["9.0–10.0", "7.0–8.9", "4.0–6.9", "0.1–3.9", "0.0"]
+            colors = ["#800000", "#FF0000", "#FFC000", "#92D050", "#00B0F0"]
+
+            fig, ax = _plt.subplots(figsize=(7.4, 1.6))
+            ax.axis("off")
+            # draw colored boxes with text
+            x0 = 0.02
+            w = 0.19
+            for i, (lab, rng, col) in enumerate(zip(labels, ranges, colors, strict=False)):
+                xi = x0 + i * w
+                ax.add_patch(_plt.Rectangle((xi, 0.25), w - 0.01, 0.55, color=col, ec="#333333", lw=0.6))
+                ax.text(xi + (w - 0.01) / 2, 0.62, lab, ha="center", va="center", fontsize=9,
+                        color="#FFFFFF" if lab in ("Critical", "High", "Informational") else "#000000", fontweight="bold")
+                ax.text(xi + (w - 0.01) / 2, 0.40, rng, ha="center", va="center", fontsize=8,
+                        color="#FFFFFF" if lab in ("Critical", "High", "Informational") else "#000000")
+            buf = _io.BytesIO()
+            fig.tight_layout(pad=0.2)
+            fig.savefig(buf, format="png", dpi=170, transparent=True)
+            _plt.close(fig)
+            return buf.getvalue()
+
+        def _fallback_mitkat_conclusion(total_counts: dict | None) -> str:
+            """Deterministic conclusion when AI is disabled/unavailable."""
+            if not total_counts:
+                return (
+                    "The assessment was completed successfully. The findings in this report should be reviewed and "
+                    "tracked to closure based on risk.\n\n"
+                    "Continuous monitoring, timely patching, and periodic security testing are recommended to reduce "
+                    "the likelihood of similar issues reoccurring."
+                )
+            c = int(total_counts.get("critical", 0) or 0)
+            h = int(total_counts.get("high", 0) or 0)
+            m = int(total_counts.get("medium", 0) or 0)
+            l = int(total_counts.get("low", 0) or 0)
+            i = int(total_counts.get("informational", 0) or 0)
+            t = int(total_counts.get("total", c + h + m + l + i) or 0)
+            parts = []
+            if c: parts.append(f"{c} Critical")
+            if h: parts.append(f"{h} High")
+            if m: parts.append(f"{m} Medium")
+            if l: parts.append(f"{l} Low")
+            if i: parts.append(f"{i} Informational")
+            sev_str = ", ".join(parts) if parts else "no vulnerabilities"
+            return (
+                f"The assessment identified a total of {t} vulnerabilities ({sev_str}). "
+                "The identified vulnerabilities may be exploited to gain unauthorized access, expose sensitive data, "
+                "or disrupt services if left unaddressed.\n\n"
+                "MitKat recommends prioritizing remediation of Critical and High severity findings, followed by "
+                "Medium and Low findings. After remediation, a revalidation exercise should be performed to confirm "
+                "effective closure. Continuous monitoring, vulnerability patching, and secure configuration practices "
+                "should be maintained to reduce future risk."
+            )
+
+        def _mitkat_ai_exec_summary_enabled() -> bool:
+            raw = (os.getenv("MITKAT_AI_EXEC_SUMMARY") or "").strip().lower()
+            if raw in ("false", "0", "no", "off"):
+                return False
+            # Default on if an OpenAI key exists (same envs as exec_summary.py).
+            key = (
+                os.getenv("EXEC_SUMMARY_OPENAI_API_KEY")
+                or os.getenv("OPENAI_EXEC_SUMMARY_API_KEY")
+                or os.getenv("OPENAI_API_KEY")
+                or ""
+            ).strip()
+            return bool(key)
+
         cfg = _mitkat_filter_template_cfg(cfg)
         tpl_path, tmp_tpl = _mitkat_prepare_template_for_render(template_path)
         tpl = DocxTemplate(tpl_path)
@@ -4675,16 +5237,93 @@ def generate_report_with_template(vulns: list, poc_map: dict, cfg: dict,
             "TOOLS_SOFTWARE":         cfg.get("tools_software", []),
             "INTRODUCTION":           cfg.get("introduction", DEFAULT_INTRO),
         }
+
+        # ── Dynamic MitKat Executive Summary (OpenAI) ────────────────────────
+        # Rendered into the template via docxtpl placeholders (ES_*).
+        context.setdefault("ES_NARR", RichText())
+        context.setdefault("ES_PHASE1", [])
+        context.setdefault("ES_PHASE2", "")
+        context.setdefault("ES_CONCLUSION", "")
+        context.setdefault("ES_CHART", None)
+
+        _mitkat_es_chart_tmp: str | None = None
+        _mitkat_total_counts: dict | None = None
+
+        try:
+            if vuln_excel_path:
+                # Always compute counts from Excel so the 3D chart is dynamic even when AI is disabled.
+                from Automation.backend.exec_summary import (
+                    generate_exec_summary_with_counts_from_excel,
+                    mitkat_severity_3d_chart_png,
+                    mitkat_metadata_from_cfg,
+                )
+
+                meta = mitkat_metadata_from_cfg(
+                    {
+                        "client_name": cfg.get("client_name", ""),
+                        "report_title": cfg.get("report_title", ""),
+                        "report_to": cfg.get("report_to", ""),
+                    },
+                    cfg,
+                )
+
+                ai = None
+                total_counts = None
+                if _mitkat_ai_exec_summary_enabled():
+                    ai, total_counts = generate_exec_summary_with_counts_from_excel(
+                        excel_path=vuln_excel_path,
+                        report_type="mitkat",
+                        metadata=meta,
+                    )
+                else:
+                    # Parse counts without calling AI (best-effort, never break report).
+                    try:
+                        _, total_counts = generate_exec_summary_with_counts_from_excel(
+                            excel_path=vuln_excel_path,
+                            report_type="mitkat",
+                            metadata=meta,
+                            retries=0,
+                        )
+                    except Exception:
+                        total_counts = None
+
+                if ai:
+                    context["ES_NARR"] = _rt_from_paragraphs(ai.get("executive_narrative", ""))
+                    context["ES_PHASE1"] = ai.get("phase1_observations", []) or []
+                    context["ES_PHASE2"] = str(ai.get("phase2_summary", "") or "").strip()
+                    context["ES_CONCLUSION"] = str(ai.get("conclusion", "") or "").strip()
+
+                # Ensure conclusion always exists (AI or deterministic fallback).
+                if not str(context.get("ES_CONCLUSION") or "").strip():
+                    context["ES_CONCLUSION"] = _fallback_mitkat_conclusion(total_counts)
+
+                if total_counts:
+                    _mitkat_total_counts = dict(total_counts)
+                    png = mitkat_severity_3d_chart_png(total_counts)
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as _tmp_png:
+                        _tmp_png.write(png)
+                        _mitkat_es_chart_tmp = _tmp_png.name
+                    context["ES_CHART"] = InlineImage(tpl, _mitkat_es_chart_tmp, width=Inches(5.8))
+        except Exception as _exc:
+            # Best-effort: never break MitKat generation due to AI call.
+            pass
+
         tpl.render(context)
         with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
             tpl.save(tmp.name)
             tmp_path = tmp.name
 
+        # Keep ES chart temp PNG until after final save (we may need to inject it
+        # if docxtpl paragraph tags fail to render it for some Word versions).
+
         _mitkat_fix_cover_page_layout(tmp_path)
 
         doc = Document(tmp_path)
+        _mitkat_ensure_document_has_section(doc)
         _mitkat_center_template_front_sections(doc)
         _mitkat_strip_template_stub_observations_block(doc)
+        _mitkat_apply_heading_styles_to_template_sections(doc)
+        _mitkat_ensure_document_has_section(doc)
         os.unlink(tmp_path)
     except Exception as e:
         print(f"[WARNING] Template rendering failed ({e}), building from scratch.")
@@ -4701,6 +5340,35 @@ def generate_report_with_template(vulns: list, poc_map: dict, cfg: dict,
             except OSError:
                 pass
 
+    # Always insert Exec Summary chart + conclusion deterministically before Observations.
+    try:
+        from docx.shared import Inches as _Inches
+        # Prefer Excel-derived counts; otherwise compute from parsed vulns list.
+        total_counts = _mitkat_total_counts if isinstance(_mitkat_total_counts, dict) else _counts_from_vulns(vulns)
+
+        # Insert caption + chart (centered)
+        if _mitkat_es_chart_tmp and os.path.exists(_mitkat_es_chart_tmp):
+            p_cap = doc.add_paragraph()
+            p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _run(p_cap, "TOTAL VULNERABILITIES IDENTIFIED", bold=True, size=11)
+
+            p_img = doc.add_paragraph()
+            p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p_img.add_run()
+            run.add_picture(_mitkat_es_chart_tmp, width=_Inches(5.8))
+
+        # Insert conclusion (always, after chart)
+        p_h = doc.add_paragraph()
+        _run(p_h, "Conclusion", bold=True, size=11)
+        concl = str((context.get("ES_CONCLUSION") or "")).strip()
+        if not concl:
+            concl = _fallback_mitkat_conclusion(total_counts)
+        for block in [b.strip() for b in concl.split("\n\n") if b.strip()]:
+            p_c = doc.add_paragraph()
+            _run(p_c, block, size=11)
+    except Exception:
+        pass
+
     # Append dynamic sections (Heading styles so TOC \o "1-3" can list these sections)
     doc.add_page_break()
 
@@ -4709,14 +5377,40 @@ def generate_report_with_template(vulns: list, poc_map: dict, cfg: dict,
     _run(p_tc, "Test Case", bold=True, size=11)
     build_test_case_table(doc)
     spacer(doc)
-    build_overall_findings_table(doc, vulns)
+    build_overall_findings_table(doc, vulns, cfg)
     spacer(doc)
     build_vuln_list_table(doc, vulns)
     doc.add_page_break()
 
     _mitkat_section_heading(doc, "Risk Level & Description", level=1, size=13, color=RGBColor(0x1F, 0x3D, 0x6A))
-    body_para(doc, "The vulnerability ranging risk pattern below indicates the ratings "
-              "according to their respective CVSS3.1 Scores.")
+    body_para(doc, "The below vulnerability ranging risk pattern indicates the ratings "
+              "of the vulnerability according to their respective CVSS3.1 Score.")
+    _risk_img_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "risk_level_reference.jpeg")
+    if not os.path.exists(_risk_img_path):
+        _risk_img_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "risk_level_reference.png")
+    if os.path.exists(_risk_img_path):
+        p_img = doc.add_paragraph()
+        p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_img.paragraph_format.space_before = Pt(10)
+        p_img.paragraph_format.space_after = Pt(6)
+        p_img.add_run().add_picture(_risk_img_path, width=Inches(5.8))
+    else:
+        try:
+            png = _mitkat_risk_legend_png()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as _tmp_risk:
+                _tmp_risk.write(png)
+                _risk_path = _tmp_risk.name
+            p_img = doc.add_paragraph()
+            p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p_img.paragraph_format.space_before = Pt(10)
+            p_img.paragraph_format.space_after = Pt(6)
+            p_img.add_run().add_picture(_risk_path, width=Inches(5.8))
+            try:
+                os.unlink(_risk_path)
+            except OSError:
+                pass
+        except Exception as e:
+            print(f"[WARNING] Risk legend image failed: {e}")
     doc.add_page_break()
 
     _mitkat_section_heading(doc, "Detailed Observations", level=1, size=14, color=RGBColor(0x6A, 0x44, 0x9A))
@@ -4728,10 +5422,17 @@ def generate_report_with_template(vulns: list, poc_map: dict, cfg: dict,
     _run(p_end, "End of Report", bold=True, size=12,
          color=RGBColor(0x1F, 0x3D, 0x6A))
 
+    _mitkat_build_toc_entries(doc)
     _mitkat_apply_footer_page_numbers(doc)
+    _mitkat_force_font_everywhere(doc, FONT_NAME)
     doc.save(output_path)
     _mitkat_postprocess_report_docx_toc_settings(output_path)
     print(f"[OK] Report saved: {output_path}")
+    if _mitkat_es_chart_tmp and os.path.exists(_mitkat_es_chart_tmp):
+        try:
+            os.unlink(_mitkat_es_chart_tmp)
+        except OSError:
+            pass
     return output_path
 
 
@@ -5175,7 +5876,16 @@ def create_mitkat_observations_table(doc, vulnerabilities, poc_image_map):
         if idx < len(vulnerabilities):
             doc.add_page_break()
 
-def generate_mitkat_report(vulnerabilities, front_page_data, doc_control_data, template_path, output_path, poc_image_map=None):
+def generate_mitkat_report(
+    vulnerabilities,
+    front_page_data,
+    doc_control_data,
+    template_path,
+    output_path,
+    poc_image_map=None,
+    *,
+    vuln_excel_path: str | None = None,
+):
     """
     Generate MitKat report using inlined production-quality builder.
     """
@@ -5235,6 +5945,7 @@ def generate_mitkat_report(vulnerabilities, front_page_data, doc_control_data, t
                 cfg,
                 template_path,
                 output_path,
+                vuln_excel_path=vuln_excel_path,
             )
         else:
             doc = mitkat_rpt_build_document_from_scratch(rpt_vulns, normalized_poc_map, cfg)
@@ -5245,7 +5956,10 @@ def generate_mitkat_report(vulnerabilities, front_page_data, doc_control_data, t
         return output_path
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error generating MitKat report: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating MitKat report: {type(e).__name__}: {e}",
+        )
 
 def create_mitkat_overall_findings_table_per_asset(doc, asset, asset_vulns, sr_no, purpose="Web Application", status="Completed", overall_totals=None):
     """
@@ -5503,6 +6217,8 @@ async def convert_vapt_to_mitkat_excel(
     """
     temp_vapt_path = None
     temp_zip_extract_dir = None
+    temp_zip_path = None
+    org_converted_path = None
 
     try:
         if not vapt_file.filename:
@@ -5515,20 +6231,106 @@ async def convert_vapt_to_mitkat_excel(
         with open(temp_vapt_path, "wb") as f:
             f.write(await vapt_file.read())
 
-        poc_index = {}
         if poc_zip and poc_zip.filename:
             temp_zip_extract_dir = tempfile.mkdtemp()
             temp_zip_path = os.path.join(temp_zip_extract_dir, poc_zip.filename)
             with open(temp_zip_path, "wb") as f:
                 f.write(await poc_zip.read())
 
-            poc_root, extracted_tmp = mitkat_conv_extract_poc_root(temp_zip_path)
-            poc_index = mitkat_conv_index_poc_folder(poc_root)
-            if extracted_tmp:
-                temp_zip_extract_dir = extracted_tmp
+        # Dynamic conversion: accept arbitrary tracker and map into org 29-col first,
+        # then adapt to MitKat 30-col output.
+        from Automation.backend.excel_converter import convert_any_excel_to_format
 
-        df = mitkat_conv_read_vapt(temp_vapt_path)
-        out_df = mitkat_conv_transform(df, poc_index)
+        # Support both MitKat PoC layouts:
+        # - Preferred: "#N/stepN.png" (certin layout)
+        # - Alternate: "VUL-001/stepN.png" (web layout)
+        try:
+            org_converted_path, extracted_dir = convert_any_excel_to_format(
+            temp_vapt_path,
+            poc_zip_path=temp_zip_path,
+            poc_layout="certin",
+            )
+        except Exception:
+            # If ZIP doesn't match certin (#N), retry with web/VUL layout.
+            org_converted_path, extracted_dir = convert_any_excel_to_format(
+                temp_vapt_path,
+                poc_zip_path=temp_zip_path,
+                poc_layout="web",
+            )
+        if extracted_dir:
+            temp_zip_extract_dir = extracted_dir
+
+        org_df = pd.read_excel(org_converted_path, dtype=str)
+        org_df.columns = [str(c).strip() for c in org_df.columns]
+
+        def _col(df, name: str) -> str | None:
+            for c in df.columns:
+                if str(c).strip().lower() == name.strip().lower():
+                    return c
+            return None
+
+        def _v(row, col_name: str) -> str:
+            c = _col(org_df, col_name)
+            if not c:
+                return ""
+            val = row.get(c, "")
+            return "" if val is None or (isinstance(val, float) and pd.isna(val)) else str(val).strip()
+
+        def _v_sr(row) -> str:
+            s = _v(row, "Sr no.")
+            if not s:
+                return s
+            s2 = s.replace(",", "").strip()
+            try:
+                f = float(s2)
+                if abs(f - int(f)) < 1e-9:
+                    return str(int(f))
+            except (ValueError, TypeError, OverflowError):
+                pass
+            return s
+
+        rows = []
+        for _, row in org_df.iterrows():
+            ob = _v(row, "Observation")
+            tit = _v(row, "Observation/Vulnerability Title")
+            if not ob.strip() and tit.strip():
+                ob = tit
+            rows.append(
+                {
+                    "Asset/Hostname": _v(row, "Asset/Hostname"),
+                    "Instant purpose": _v(row, "Instant purpose"),
+                    "VAPT Status": _v(row, "VAPT Status"),
+                    "Critical": _v(row, "Critical"),
+                    "High": _v(row, "High"),
+                    "Medium": _v(row, "Medium"),
+                    "Low": _v(row, "Low"),
+                    "Informational": _v(row, "Informational"),
+                    "Total": _v(row, "Total"),
+                    "Tester_Name": _v(row, "Tester_Name"),
+                    "Project": _v(row, "Project"),
+                    "Sr no.": _v_sr(row),
+                    "Observation": ob,
+                    "Severity": _v(row, "Severity"),
+                    "Status": _v(row, "Status"),
+                    "New or Repeat Observation": _v(row, "New or Repeat Observation"),
+                    "CVE/CWE": _v(row, "CVE/CWE"),
+                    "CVSS": _v(row, "CVSS"),
+                    "CVSS Version Ref": _v(row, "CVSS Version Ref"),
+                    "Affected Asset i.e. IP/URL/Application etc.": _v(row, "Affected Asset i.e. IP/URL/Application etc."),
+                    "Observation/Vulnerability Title": tit,
+                    "Detailed Observation/ Vulnerable Point": _v(row, "Detailed Observation/ Vulnerable Point"),
+                    "Recommendation": _v(row, "Recommendation"),
+                    "Reference": _v(row, "Reference"),
+                    "Evidence / Proof of Concept": _v(row, "Evidence / Proof of Concept"),
+                    "Screenshot1": _v(row, "Screenshot1"),
+                    "Screenshot2": _v(row, "Screenshot2"),
+                    "Screenshot3": _v(row, "Screenshot3"),
+                    "Revalidation Status": _v(row, "Revalidation Status"),
+                    "Screenshot": _v(row, "Screenshot") if _col(org_df, "Screenshot") else "",
+                }
+            )
+
+        out_df = pd.DataFrame(rows, columns=MITKAT_CONV_COLUMNS)
 
         output_filename = f"Mitkat_CertIn_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         output_path = os.path.join(UPLOAD_DIR, output_filename)
@@ -5549,6 +6351,11 @@ async def convert_vapt_to_mitkat_excel(
         try:
             if temp_vapt_path and os.path.exists(temp_vapt_path):
                 os.remove(temp_vapt_path)
+        except Exception:
+            pass
+        try:
+            if org_converted_path and os.path.exists(org_converted_path):
+                os.remove(org_converted_path)
         except Exception:
             pass
         try:
@@ -5585,6 +6392,11 @@ async def generate_mitkat_report_endpoint(
         
         # Parse vulnerabilities
         vulnerabilities = parse_mitkat_vulnerabilities_excel(vuln_file_path)
+        if not vulnerabilities:
+            raise HTTPException(
+                status_code=400,
+                detail="No vulnerabilities found in the uploaded Excel. Ensure required columns are present and at least one row has an Observation/Vulnerability Title.",
+            )
         
         # Process POC ZIP if provided
         poc_image_map = {}
@@ -5640,7 +6452,15 @@ async def generate_mitkat_report_endpoint(
         output_filename = f"{client_name}_MitKat_Report_{datetime.now().strftime('%Y-%m-%d')}.docx"
         output_path = os.path.join(UPLOAD_DIR, output_filename)
         
-        generate_mitkat_report(vulnerabilities, front_data, doc_control, template_path, output_path, poc_image_map)
+        generate_mitkat_report(
+            vulnerabilities,
+            front_data,
+            doc_control,
+            template_path,
+            output_path,
+            poc_image_map,
+            vuln_excel_path=vuln_file_path,
+        )
         
         # Audit log
         try:
@@ -5668,7 +6488,8 @@ async def generate_mitkat_report_endpoint(
         
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        # Include a short message for client; full trace goes to server logs.
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {str(e)}")
     finally:
         try:
             if vuln_file_path and os.path.exists(vuln_file_path):
@@ -6416,3 +7237,12 @@ async def mitkat_form():
     </html>
     """
     return HTMLResponse(content=html_content)
+
+
+# IMPORTANT: include MitKat router after its routes are defined.
+# FastAPI copies routes at include time, so the early include_router(mitkat_router)
+# (near the top of the file) would otherwise miss these late-declared endpoints.
+try:
+    app.include_router(mitkat_router)
+except Exception:
+    pass

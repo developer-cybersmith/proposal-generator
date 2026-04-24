@@ -110,21 +110,34 @@ COLUMN_WIDTHS = {
 
 # ── Column aliases (Mode B / transformation only) ─────────────────────────────
 _COL_ALIASES = {
-    "asset_hostname":       ["Asset/Hostname", "Asset Hostname", "Hostname", "Asset", "IP Address", "IP", "Host", "Target", "Server"],
-    "instant_purpose":      ["Instant purpose", "Instant Purpose", "Purpose", "Audit Purpose", "Assessment Purpose", "Type"],
+    # AMCS / government tracker (e.g. "AMCS Route Planner" sheet) uses many non-standard headers; list them explicitly.
+    "asset_hostname":       [
+        "Asset/Hostname", "Asset Hostname", "Hostname", "Asset", "IP Address", "IP", "Host", "Target", "Server",
+        "Audited infrastructure details",
+    ],
+    "instant_purpose":      ["Instant purpose", "Instant Purpose", "Purpose", "Audit Purpose", "Assessment Purpose", "Type", "Type of Audit"],
     "vapt_status":          ["VAPT Status", "Assessment Status", "Audit Status"],
     "vuln_status":          ["Status", "Vuln Status", "Finding Status", "Vulnerability Status"],
     "tester_name":          ["Tester_Name", "Tester Name", "Tester", "Reported By", "Auditor", "Assessor", "Analyst"],
-    "project":              ["Project", "Project Name", "Engagement", "Client Project", "Assessment Name"],
-    "sr_no":                ["Sr no.", "Sr no", "Sr No", "Sr.No", "Sr. No.", "S.No", "Serial", "S. No", "SNo", "Sr", "VUL ID", "Vuln ID", "ID"],
-    "observation":          ["Observation"],
-    "severity":             ["Severity", "Risk", "Risk Level", "Risk(Severity)", "Criticality", "Priority"],
-    "new_repeat":           ["New or Repeat Observation", "New or Repeat", "New/Repeat", "Observation Type", "Type of Finding"],
-    "cve_cwe":              ["CVE/CWE", "CVE CWE", "CVE", "CWE", "CVE/CWE ID"],
+    "project":              ["Project", "Project Name", "Engagement", "Client Project", "Assessment Name", "Name of Auditee organization"],
+    "sr_no":                [
+        "Sr no.", "Sr no", "Sr No", "Sr.No", "Sr. No.", "S.No", "S.NO.", "S.No.",
+        "Serial", "S. No", "SNo", "Sr", "VUL ID", "Vuln ID", "ID",
+    ],
+    "observation":          ["Observation", "Name of Vulnerability / Security Issues as per CVE/CWE/Mitre DB Only"],
+    "severity":             ["Severity", "Severity of Issue", "Risk", "Risk Level", "Risk(Severity)", "Criticality", "Priority"],
+    "new_repeat":           [
+        "New or Repeat Observation", "New or Repeat", "New/Repeat", "Observation Type", "Type of Finding",
+        "Type of Audit Report(First Audit Report/Follow up Report)", "Type of Audit Report(First Audit Report/follow up Report)",
+    ],
+    "cve_cwe":              ["CVE/CWE", "CVE CWE", "CVE", "CWE", "CVE/CWE ID", "CVE/CWE Reference Number"],
     "cvss":                 ["CVSS", "CVSS Score", "Score", "CVSS Base Score"],
     "cvss_version":         ["CVSS Version Ref", "CVSS Version", "CVSS Ref", "CVSS Ver", "CVSS Vector", "CVSS String"],
-    "affected_asset":       ["Affected Asset i.e. IP/URL/Application etc.", "Affected Asset", "IP/URL/App", "Target IP", "Vulnerable URL", "URL", "Endpoint"],
-    "vuln_title":           ["Observation/Vulnerability Title", "Observation/ Vulnerability Title", "Vulnerability Title", "Vuln Title", "Finding Title", "Title", "Vulnerability Name", "Finding"],
+    "affected_asset":       ["Affected Asset i.e. IP/URL/Application etc.", "Affected Asset", "IP/URL/App", "Target IP", "Vulnerable URL", "URL", "Endpoint", "Vulnerable Parameter"],
+    "vuln_title":           [
+        "Observation/Vulnerability Title", "Observation/ Vulnerability Title", "Vulnerability Title", "Vuln Title", "Finding Title", "Title", "Vulnerability Name", "Finding",
+        "Name of Vulnerability / Security Issues as per CVE/CWE/Mitre DB Only",
+    ],
     "detailed_observation": ["Detailed Observation/ Vulnerable Point", "Detailed Observation/Vulnerable Point", "Detailed Observation", "Description", "Vulnerability Description", "Vulnerability Details", "Details"],
     "recommendation":       ["Recommendation", "Remediation", "Fix", "Solution", "Recommended Fix", "Mitigation"],
     "reference":            ["Reference", "References", "Reference Link", "Links"],
@@ -163,6 +176,21 @@ def _normalise_new_repeat(raw):
     return "Repeat" if ("repeat" in s or "follow" in s or "existing" in s) else "New"
 
 
+def _normalise_serial_cell(raw) -> str:
+    """Serial numbers from Excel often arrive as 1.0; normalise to '1' for org output."""
+    s = _clean(raw)
+    if not s:
+        return ""
+    s2 = s.replace(",", "").strip()
+    try:
+        f = float(s2)
+        if abs(f - int(f)) < 1e-9:
+            return str(int(f))
+    except (ValueError, TypeError, OverflowError):
+        pass
+    return s
+
+
 def _is_certin_obs(sr):
     return bool(re.fullmatch(r"#\d+", str(sr).strip()))
 
@@ -175,15 +203,25 @@ def _read_any_excel(path):
         return sum(1 for g in key_groups if _find_col(df, _COL_ALIASES[g]))
 
     best_df, best_score = None, -1
-    for hdr in (0, 1):
-        try:
-            d = pd.read_excel(path, header=hdr, dtype=str, sheet_name=0)
-            d.columns = [str(c).strip() for c in d.columns]
-            score = _score(d)
-            if score > best_score:
-                best_df, best_score = d, score
-        except Exception:
-            pass
+
+    # Try all sheets (some trackers use multiple tabs) and two common header rows.
+    sheet_names = [0]
+    try:
+        xls = pd.ExcelFile(path)
+        sheet_names = list(xls.sheet_names) or [0]
+    except Exception:
+        sheet_names = [0]
+
+    for sheet in sheet_names:
+        for hdr in (0, 1, 2):
+            try:
+                d = pd.read_excel(path, header=hdr, dtype=str, sheet_name=sheet)
+                d.columns = [str(c).strip() for c in d.columns]
+                score = _score(d)
+                if score > best_score:
+                    best_df, best_score = d, score
+            except Exception:
+                pass
 
     if best_df is None:
         raise ValueError("Could not read Excel file.")
@@ -200,7 +238,7 @@ def _is_org_format(df):
     exact_cols = {str(c).strip() for c in df.columns}
     matched = sum(1 for col in OUTPUT_COLUMNS if col in exact_cols)
     result = matched >= ORG_FORMAT_MIN_MATCH
-    print(f"[INFO] Org format check: {matched}/{len(OUTPUT_COLUMNS)} columns matched → {'PASSTHROUGH' if result else 'TRANSFORM'}")
+    print(f"[INFO] Org format check: {matched}/{len(OUTPUT_COLUMNS)} columns matched -> {'PASSTHROUGH' if result else 'TRANSFORM'}")
     return result
 
 
@@ -457,40 +495,76 @@ def _severity_counts_from_rows(df, asset_col, severity_col):
     return counts
 
 
+def _build_display_asset_keys(df, c: dict) -> list[str]:
+    """
+    One stable hostname/IP/org key per data row. Many trackers (e.g. AMCS) leave
+    'Audited infrastructure details' blank but fill org name; without this, asset is empty,
+    per-asset first-row logic breaks, and the output looks 'missing' in Excel.
+    """
+    hcol, ocol = c.get("asset_hostname"), c.get("project")
+    last_h, last_o = "", ""
+    keys: list[str] = []
+    for _, row in df.iterrows():
+        h = _clean(row[hcol]) if hcol else ""
+        o = _clean(row[ocol]) if ocol else ""
+        if h:
+            last_h = h
+        if o:
+            last_o = o
+        eff_h = h or last_h
+        eff_o = o or last_o
+        key = eff_h or eff_o or "Unknown"
+        keys.append(key)
+    return keys
+
+
+def _severity_counts_by_display_keys(df, c: dict, display_keys: list[str]) -> dict:
+    sevcol = c.get("severity")
+    counts: dict = {}
+    for i, (_, row) in enumerate(df.iterrows()):
+        a = display_keys[i]
+        sev = _normalise_severity(row[sevcol]) if sevcol else "Medium"
+        if a not in counts:
+            counts[a] = {s: 0 for s in SEVERITY_ORDER}
+        if sev in SEVERITY_ORDER:
+            counts[a][sev] += 1
+    for a in counts:
+        counts[a]["Total"] = sum(counts[a][s] for s in SEVERITY_ORDER)
+    return counts
+
+
 def _map_to_29_columns(df, poc_index, poc_layout):
     """Full transformation for external / unknown-format Excels."""
     c = {k: _find_col(df, v) for k, v in _COL_ALIASES.items()}
-    sev_counts = _severity_counts_from_rows(df, c["asset_hostname"], c["severity"])
-
-    asset_series = []
-    last = ""
-    for _, row in df.iterrows():
-        raw = _clean(row[c["asset_hostname"]]) if c["asset_hostname"] else ""
-        if raw:
-            last = raw
-        asset_series.append(last)
+    display_keys = _build_display_asset_keys(df, c)
+    sev_counts = _severity_counts_by_display_keys(df, c, display_keys)
 
     rows_out = []
     written_assets = set()
     ip_vuln_counter = defaultdict(int)
 
     for idx, (_, row) in enumerate(df.iterrows()):
-        sr_raw  = _clean(row[c["sr_no"]]) if c["sr_no"] else ""
+        sr_raw  = _normalise_serial_cell(_clean(row[c["sr_no"]]) if c["sr_no"] else "")
         obs_raw = _clean(row[c["observation"]]) if c["observation"] else ""
         _junk = {"sr no.", "sr no", "s.no", "serial", "observation", "nan", ""}
-        sr_raw  = "" if sr_raw.lower()  in _junk else sr_raw
+        sr_l = sr_raw.lower()
+        sr_raw = "" if sr_l in _junk or sr_l == "s.no." else sr_raw
         obs_raw = "" if obs_raw.lower() in _junk else obs_raw
 
         identifier = sr_raw or obs_raw
         if not identifier:
             continue
 
-        if _is_certin_obs(identifier):
-            out_sr_no, out_observation = "", identifier
+        if obs_raw and _is_certin_obs(obs_raw) and not sr_raw:
+            out_sr_no, out_observation = "", obs_raw
+        elif sr_raw and _is_certin_obs(sr_raw):
+            out_sr_no, out_observation = "", sr_raw
+        elif sr_raw:
+            out_sr_no, out_observation = _normalise_serial_cell(sr_raw), ""
         else:
-            out_sr_no, out_observation = identifier, ""
+            out_sr_no, out_observation = "", obs_raw
 
-        asset = asset_series[idx]
+        asset = display_keys[idx]
         sev   = _normalise_severity(row[c["severity"]]) if c["severity"] else "Medium"
 
         # Screenshot lookup
@@ -525,21 +599,25 @@ def _map_to_29_columns(df, poc_index, poc_layout):
         vuln_status = _clean(row[c["vuln_status"]]) if c["vuln_status"] else "Open"
         vapt_status = _clean(row[c["vapt_status"]]) if c["vapt_status"] else "Completed"
         vuln_title  = _clean(row[c["vuln_title"]]) if c["vuln_title"] else ""
+        # Many trackers (AMCS) put the finding title in one column; org format also uses "Observation".
+        observation_col = out_observation or vuln_title
+        proj_val = _clean(row[c["project"]]) if c["project"] else ""
+        inst_val = _clean(row[c["instant_purpose"]]) if c["instant_purpose"] else "Web Application"
 
         out = {
-            "Asset/Hostname":   asset if first_for_asset else "",
-            "Instant purpose":  (_clean(row[c["instant_purpose"]]) if c["instant_purpose"] else "Web Application") if first_for_asset else "",
-            "VAPT Status":      vapt_status if first_for_asset else "",
+            "Asset/Hostname":   asset,
+            "Instant purpose":  inst_val,
+            "VAPT Status":      vapt_status,
             "Critical":         sc.get("Critical", 0) if first_for_asset else "",
             "High":             sc.get("High", 0)     if first_for_asset else "",
             "Medium":           sc.get("Medium", 0)   if first_for_asset else "",
             "Low":              sc.get("Low", 0)      if first_for_asset else "",
             "Informational":    sc.get("Informational", 0) if first_for_asset else "",
             "Total":            sc.get("Total", 0)    if first_for_asset else "",
-            "Tester_Name":      (_clean(row[c["tester_name"]]) if c["tester_name"] else "") if first_for_asset else "",
-            "Project":          (_clean(row[c["project"]]) if c["project"] else "")         if first_for_asset else "",
+            "Tester_Name":      _clean(row[c["tester_name"]]) if c["tester_name"] else "",
+            "Project":          proj_val,
             "Sr no.":           out_sr_no,
-            "Observation":      out_observation,
+            "Observation":      observation_col,
             "Severity":         sev,
             "Status":           vuln_status or "Open",
             "New or Repeat Observation": _normalise_new_repeat(row[c["new_repeat"]] if c["new_repeat"] else ""),
@@ -639,10 +717,10 @@ def convert_any_excel_to_format(input_path, poc_zip_path=None, poc_layout="ip"):
             poc_index = {}
 
     if _is_org_format(df):
-        print("[INFO] Org format detected — using PASSTHROUGH mode")
+        print("[INFO] Org format detected - using PASSTHROUGH mode")
         rows = _passthrough_org_format(df, poc_index, poc_layout)
     else:
-        print("[INFO] External format detected — using TRANSFORMATION mode")
+        print("[INFO] External format detected - using TRANSFORMATION mode")
         rows = _map_to_29_columns(df, poc_index, poc_layout)
 
     if not rows:

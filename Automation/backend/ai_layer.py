@@ -311,7 +311,9 @@ def _call_openai_for_row(client: OpenAI, row_payload: dict[str, str], image_path
     model = os.getenv("OPENAI_MODEL", "gpt-4o").strip() or "gpt-4o"
     response = client.chat.completions.create(
         model=model,
-        temperature=0.2,
+        # Deterministic settings to reduce hallucination
+        temperature=0.0,
+        max_tokens=1200,
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},

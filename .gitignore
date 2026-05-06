@@ -20,6 +20,7 @@ Automation/backend/data.db
 uploads/
 Automation/backend/uploads/
 Automation/backend/generated_reports/
+Automation/backend/closure_base_cache/
 
 # Logs
 nohup.out

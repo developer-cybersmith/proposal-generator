@@ -224,19 +224,20 @@
             <p style="color:#4CAF50;">Available - Generate completed Excel sheets with AI-assisted narrative content</p>
         </div>
 
-        <div class="report-section">
+          <div class="report-section">
             <h2 style="display: flex; align-items: center; justify-content: space-between;">
-                Executive Summary Generator
-                <button onclick="window.location.href='/exec-summary/'" style="background-color: #00b050; color: white; border: none; padding: 6px 14px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-left: 10px;">Open Generator</button>
+              Type6 Closure Report Generator
+              <button onclick="window.location.href='/type6/'" style="background-color: #00b050; color: white; border: none; padding: 6px 14px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-left: 10px;">Open Generator</button>
             </h2>
             <ul>
-                <li>Upload any of the standard VAPT Excel formats (IP / Web / Cert-IN / MitKat column layout)</li>
-                <li>One OpenAI call produces plain-English narrative for executives (observations, recommendations, conclusion)</li>
-                <li>Deterministic sections: cover, disclaimer, TOC, objectives table, severity chart, risk assessment table</li>
-                <li>Downloads a branded Word document (<code>.docx</code>) ready for leadership review</li>
+              <li>Upload initial report in PDF/DOCX format</li>
+              <li>Upload closure template Excel (XLSX/XLS)</li>
+              <li>Upload screenshot evidence ZIP</li>
+              <li>AI-generated closure narrative with remediation status mapping</li>
+              <li>Downloads final closure report as DOCX</li>
             </ul>
-            <p style="color:#4CAF50;">Available - AI-assisted Executive Summary Word report</p>
-        </div>
+            <p style="color:#4CAF50;">Available - Generate closure reports from report + excel + screenshots zip</p>
+          </div>
 
     <!-- Cert-IN Report Generator Modal -->
     <div id="certinModal" class="modal" style="display: none;">

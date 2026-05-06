@@ -6502,6 +6502,190 @@ async def generate_mitkat_report_endpoint(
         except Exception:
             pass
 
+# ===== CERTIN TEST AUTOMATION REPORT GENERATOR =====
+@mitkat_router.post("/mitkat/certin-test-automation/")
+async def certin_test_automation_report(
+    request: Request,
+    client_name: str = Form(...),
+    test_scope: str = Form(...),
+    test_type: str = Form(...),
+    vulnerabilities_file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a CertIN Test Automation Report
+    
+    Args:
+        client_name: Name of the client/organization
+        test_scope: Scope of testing (Web, Infrastructure, API, etc.)
+        test_type: Type of test (VAPT, API Security, etc.)
+        vulnerabilities_file: Excel file with vulnerability data
+        
+    Returns:
+        Generated CertIN report as DOCX file
+    """
+    from openpyxl import load_workbook
+    from datetime import datetime
+    import tempfile
+    
+    try:
+        # Validate inputs
+        if not client_name or not test_scope or not test_type:
+            raise HTTPException(status_code=400, detail="Client name, test scope, and test type are required")
+        
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_file:
+            content = await vulnerabilities_file.read()
+            tmp_file.write(content)
+            tmp_vulnerabilities_path = tmp_file.name
+        
+        # Parse vulnerabilities from Excel
+        try:
+            wb = load_workbook(tmp_vulnerabilities_path)
+            ws = wb.active
+            
+            vulnerabilities = []
+            for row_idx, row in enumerate(ws.iter_rows(values_only=True), 1):
+                if row_idx == 1:  # Skip header
+                    continue
+                if row[0]:  # If first column has data
+                    vulnerabilities.append({
+                        'sr_no': row_idx - 1,
+                        'title': str(row[0] or ''),
+                        'severity': str(row[1] or 'Medium'),
+                        'description': str(row[2] or ''),
+                        'impact': str(row[3] or ''),
+                        'remediation': str(row[4] or ''),
+                        'status': str(row[5] or 'Open')
+                    })
+            
+            if not vulnerabilities:
+                raise HTTPException(status_code=400, detail="No vulnerabilities found in uploaded file")
+                
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Error parsing Excel file: {str(e)}")
+        
+        # Create CertIN report document
+        from docx import Document
+        from docx.shared import Pt, Inches, RGBColor
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        
+        doc = Document()
+        
+        # Add title
+        title = doc.add_paragraph()
+        title_run = title.add_run("CertIN Test Automation Report")
+        title_run.font.size = Pt(24)
+        title_run.font.bold = True
+        title_run.font.color.rgb = RGBColor(105, 35, 208)  # Purple
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Add metadata
+        doc.add_paragraph()
+        meta_table = doc.add_table(rows=5, cols=2)
+        meta_table.style = 'Light Grid Accent 1'
+        
+        meta_data = [
+            ("Client Name", client_name),
+            ("Test Scope", test_scope),
+            ("Test Type", test_type),
+            ("Report Date", datetime.now().strftime("%Y-%m-%d")),
+            ("Total Vulnerabilities", str(len(vulnerabilities)))
+        ]
+        
+        for idx, (key, value) in enumerate(meta_data):
+            meta_table.rows[idx].cells[0].text = key
+            meta_table.rows[idx].cells[1].text = value
+        
+        # Add vulnerabilities section
+        doc.add_heading("Vulnerabilities Found", level=2)
+        
+        vuln_table = doc.add_table(rows=len(vulnerabilities) + 1, cols=5)
+        vuln_table.style = 'Light Grid Accent 1'
+        
+        # Header row
+        headers = ["S.No", "Vulnerability Title", "Severity", "Status", "Impact"]
+        header_cells = vuln_table.rows[0].cells
+        for idx, header in enumerate(headers):
+            header_cells[idx].text = header
+        
+        # Data rows
+        for idx, vuln in enumerate(vulnerabilities, 1):
+            row = vuln_table.rows[idx]
+            row.cells[0].text = str(vuln['sr_no'])
+            row.cells[1].text = vuln['title']
+            row.cells[2].text = vuln['severity']
+            row.cells[3].text = vuln['status']
+            row.cells[4].text = vuln['impact']
+        
+        # Add summary
+        doc.add_page_break()
+        doc.add_heading("Executive Summary", level=2)
+        
+        severity_count = {}
+        for vuln in vulnerabilities:
+            severity = vuln['severity']
+            severity_count[severity] = severity_count.get(severity, 0) + 1
+        
+        summary_text = f"""
+        This CertIN Test Automation report documents the security testing performed for {client_name}.
+        
+        Testing Scope: {test_scope}
+        Testing Type: {test_type}
+        
+        Vulnerability Summary:
+        """
+        doc.add_paragraph(summary_text)
+        
+        for severity, count in severity_count.items():
+            doc.add_paragraph(f"• {severity}: {count} finding(s)", style='List Bullet')
+        
+        # Save document
+        output_dir = os.path.join(UPLOAD_DIR, "certin_reports")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        filename = f"CertIN_Report_{client_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
+        output_path = os.path.join(output_dir, filename)
+        doc.save(output_path)
+        
+        # Audit log
+        try:
+            user = request.session.get('user') or {}
+            db.add(AuditLog(
+                user_email=user.get('email'),
+                user_name=user.get('name'),
+                action='generate-certin-test-report',
+                metadata_json=json.dumps({
+                    'client_name': client_name,
+                    'test_scope': test_scope,
+                    'test_type': test_type,
+                    'vulnerability_count': len(vulnerabilities)
+                }),
+                ip_address=request.client.host if request.client else None,
+                user_agent=request.headers.get('user-agent')
+            ))
+            db.commit()
+        except Exception:
+            pass
+        
+        return FileResponse(
+            path=output_path,
+            filename=filename,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error generating report: {str(e)}")
+    finally:
+        try:
+            if tmp_vulnerabilities_path and os.path.exists(tmp_vulnerabilities_path):
+                os.remove(tmp_vulnerabilities_path)
+        except Exception:
+            pass
+
 @mitkat_router.get("/mitkat/", response_class=HTMLResponse)
 async def mitkat_form():
     """Serve the MitKat report generator form"""
@@ -6809,6 +6993,75 @@ async def mitkat_form():
                 </div>
             </form>
 
+            <hr class="step-divider" style="margin-top: 40px;">
+
+            <!-- CERTIN TEST AUTOMATION REPORT SECTION -->
+            <div class="step-title" style="margin-top: 20px;">Step 3 — CertIN Test Automation</div>
+            <h3 style="color:#6923d0;margin-top:8px;">🧪 Generate CertIN Test Automation Report</h3>
+            <p style="color:#888;font-size:0.9em;margin-top:0;">Create a quick CertIN Test Automation report for security testing documentation. Upload your vulnerability Excel file.</p>
+
+            <form id="certinTestForm" style="margin-top: 20px;">
+                <div class="form-section">
+                    <h3>📋 Test Automation Information</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="certin_client_name">Client Name/Organization *</label>
+                            <input type="text" id="certin_client_name" name="certin_client_name" placeholder="e.g., ABC Corp" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="certin_test_scope">Test Scope *</label>
+                            <select id="certin_test_scope" name="certin_test_scope" required>
+                                <option value="">Select Scope</option>
+                                <option value="Web Application">Web Application</option>
+                                <option value="Infrastructure">Infrastructure</option>
+                                <option value="API">API</option>
+                                <option value="Mobile Application">Mobile Application</option>
+                                <option value="Full Stack">Full Stack</option>
+                                <option value="Cloud Infrastructure">Cloud Infrastructure</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="certin_test_type">Test Type *</label>
+                            <select id="certin_test_type" name="certin_test_type" required>
+                                <option value="">Select Test Type</option>
+                                <option value="VAPT">VAPT (Vulnerability Assessment & Penetration Testing)</option>
+                                <option value="API Security">API Security Testing</option>
+                                <option value="Cloud Security">Cloud Security Assessment</option>
+                                <option value="Web Security">Web Application Security</option>
+                                <option value="Infrastructure Security">Infrastructure Security</option>
+                                <option value="Secure Code Review">Secure Code Review</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="certin_vulnerabilities_file">Upload Vulnerabilities Excel (.xlsx) *</label>
+                            <input type="file" id="certin_vulnerabilities_file" name="certin_vulnerabilities_file" accept=".xlsx" required>
+                            <small style="color:#888;display:block;margin-top:5px;">Excel should contain columns: Title, Severity, Description, Impact, Remediation, Status</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="text-align: center; margin-top: 20px;">
+                    <button type="button" class="btn btn-success" style="font-size: 18px; padding: 15px 30px;" onclick="generateCertinReport()">
+                        🚀 Generate CertIN Test Report
+                    </button>
+                </div>
+            </form>
+
+            <div class="progress" id="certinProgress" style="display:none;">
+                <div style="background-color: #f0f0f0; border-radius: 4px; padding: 10px;">
+                    <div id="certinProgressText">Processing...</div>
+                    <div class="progress-bar" id="certinProgressBar"></div>
+                </div>
+            </div>
+
+            <div class="result" id="certinResult"></div>
+
             <div class="progress" id="progress">
                 <div style="background-color: #f0f0f0; border-radius: 4px; padding: 10px;">
                     <div id="progressText">Processing...</div>
@@ -6820,6 +7073,53 @@ async def mitkat_form():
         </div>
 
         <script>
+            // CertIN Test Automation Report Generator
+            async function generateCertinReport() {
+                const clientName = document.getElementById('certin_client_name').value;
+                const testScope = document.getElementById('certin_test_scope').value;
+                const testType = document.getElementById('certin_test_type').value;
+                const vulnerabilitiesFile = document.getElementById('certin_vulnerabilities_file').files[0];
+                
+                if (!clientName || !testScope || !testType || !vulnerabilitiesFile) {
+                    alert('Please fill in all required fields');
+                    return;
+                }
+                
+                const formData = new FormData();
+                formData.append('client_name', clientName);
+                formData.append('test_scope', testScope);
+                formData.append('test_type', testType);
+                formData.append('vulnerabilities_file', vulnerabilitiesFile);
+                
+                document.getElementById('certinProgress').style.display = 'block';
+                document.getElementById('certinResult').innerHTML = '';
+                
+                try {
+                    const response = await fetch('/mitkat/certin-test-automation/', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `CertIN_Report_${clientName}_${new Date().toISOString().slice(0,10)}.docx`;
+                        link.click();
+                        
+                        document.getElementById('certinResult').innerHTML = '<div class="result success">✓ Report generated successfully!</div>';
+                    } else {
+                        const errorText = await response.text();
+                        document.getElementById('certinResult').innerHTML = `<div class="result error">✗ Error: ${errorText}</div>`;
+                    }
+                } catch (error) {
+                    document.getElementById('certinResult').innerHTML = `<div class="result error">✗ Error: ${error.message}</div>`;
+                } finally {
+                    document.getElementById('certinProgress').style.display = 'none';
+                }
+            }
+
             // Get CSRF token
             let CSRF_TOKEN = null;
             let CSRF_TOKEN_READY = false;

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, APIRouter
+from fastapi import FastAPI, Request
 from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from fastapi.responses import RedirectResponse
@@ -8,14 +8,6 @@ from Automation.backend.type3 import app as type3_app
 from Automation.backend.type4 import app as type4_app
 from Automation.backend.type5 import app as type5_app
 from Automation.backend.ai_layer import app as ai_layer_app
-
-# Import type6 with fallback - it may not be available in all deployments
-try:
-    from Automation.backend.type6 import router as type6_router
-except (ImportError, ModuleNotFoundError) as e:
-    print(f"[WARNING] type6 module not available: {e}")
-    type6_router = APIRouter()  # Empty fallback router
-
 from dashboard import dashboard_app
 from auth import router as auth_router
 from session_security import SessionSecurityMiddleware
@@ -139,7 +131,6 @@ app.mount("/type4", type4_app)
 app.mount("/type5", type5_app)
 app.mount("/ai-layer", ai_layer_app)
 app.mount("/dashboard", dashboard_app)
-app.include_router(type6_router)
 
 # Include MitKat routes from main.py
 from Automation.backend.main import mitkat_router

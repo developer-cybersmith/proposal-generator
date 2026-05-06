@@ -8,20 +8,29 @@ from Automation.backend.type3 import app as type3_app
 from Automation.backend.type4 import app as type4_app
 from Automation.backend.type5 import app as type5_app
 from Automation.backend.ai_layer import app as ai_layer_app
+from Automation.backend.exec_summary import app as exec_summary_app
 from dashboard import dashboard_app
 from auth import router as auth_router
 from session_security import SessionSecurityMiddleware
 import os
+from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 from db import init_db, get_db
 from sqlalchemy.orm import Session
 
-# Load .env file from the correct location
+# Load .env file from the correct location (override=True so Automation/backend/.env wins over stale shell env)
 env_path = os.path.join(os.path.dirname(__file__), "Automation", "backend", ".env")
-load_dotenv(env_path)
-TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
+load_dotenv(env_path, override=True)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = (os.getenv(name) or ("true" if default else "false")).strip().lower()
+    return raw in ("true", "1", "yes", "on")
+
+
+TEST_MODE = _env_bool("TEST_MODE", False)
 
 def _env_int(name: str, default: int) -> int:
     try:
@@ -130,6 +139,7 @@ app.mount("/type4", type4_app)
 # Mount the Type-5 (Nessus CSV to Excel) app at /type5
 app.mount("/type5", type5_app)
 app.mount("/ai-layer", ai_layer_app)
+app.mount("/exec-summary", exec_summary_app)
 app.mount("/dashboard", dashboard_app)
 
 # Include MitKat routes from main.py
@@ -183,11 +193,12 @@ async def dashboard(request: Request):
 
 @app.on_event("startup")
 def on_startup():
+    print(f"\n[config] TEST_MODE={TEST_MODE} (from Automation/backend/.env)\n")
     if TEST_MODE:
         print(
-            "\n[TEST_MODE] Session middleware will NOT block /type1-/type5 or /mitkat/ for missing login. "
-            "Use TEST_MODE=false in production.\n"
-            "Open the app in your browser at: http://127.0.0.1:8000  or  http://localhost:8000\n"
+            "[TEST_MODE] Session + CSRF checks are bypassed for all routes (including /exec-summary/). "
+            "Set TEST_MODE=false in production.\n"
+            "Open the app at: http://127.0.0.1:8000  or  http://localhost:8000\n"
             "(Do not use http://0.0.0.0:8000 — browsers show ERR_ADDRESS_INVALID.)\n"
         )
     else:
@@ -197,6 +208,26 @@ def on_startup():
                 "\n[WARNING] SESSION_SECRET_KEY is not set or uses the default. "
                 "Set a strong SESSION_SECRET_KEY in Railway (or your host) for production.\n"
             )
+        api_key = (
+            os.getenv("EXEC_SUMMARY_OPENAI_API_KEY")
+            or os.getenv("OPENAI_EXEC_SUMMARY_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+            or ""
+        ).strip()
+        if not api_key:
+            print(
+                "\n[WARNING] No OpenAI API key. Set OPENAI_API_KEY or EXEC_SUMMARY_OPENAI_API_KEY "
+                "in Railway so Executive Summary and AI Layer can call OpenAI.\n"
+            )
+
+    _root = Path(__file__).resolve().parent
+    _exec_template = _root / "Automation" / "backend" / "exec_summary_template.docx"
+    if not _exec_template.is_file():
+        print(
+            f"\n[WARNING] Executive Summary template missing: {_exec_template}\n"
+            "Commit Automation/backend/exec_summary_template.docx or run build_exec_template.py.\n"
+        )
+
     # Ensure DB is initialized
     init_db()
     # Ensure minimal static file exists for tests

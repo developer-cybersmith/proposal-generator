@@ -21,12 +21,17 @@ def _load_backend_env() -> None:
 
         p = Path(__file__).resolve().parent / "Automation" / "backend" / ".env"
         if p.is_file():
-            load_dotenv(p, override=False)
+            # override=True: local .env must win over empty/wrong TEST_MODE in the shell
+            load_dotenv(p, override=True)
     except Exception:
         pass
 
 
 _load_backend_env()
+
+
+def _is_test_mode() -> bool:
+    return (os.getenv("TEST_MODE", "false").strip().lower() in ("true", "1", "yes", "on"))
 
 class SessionSecurityMiddleware(BaseHTTPMiddleware):
     """Middleware for session security with timeout and CSRF protection"""
@@ -37,13 +42,12 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
         self.csrf_timeout = csrf_timeout
     
     async def dispatch(self, request: Request, call_next):
-        # Skip security checks for certain paths
-        if self._should_skip_security(request):
+        # Local dev: must run first — bypass session + CSRF for every route when TEST_MODE is set in .env.
+        if _is_test_mode():
             return await call_next(request)
 
-        # Local dev: bypass session + CSRF for all routes (login/report hub still enforce in their own handlers).
-        # Set TEST_MODE=false in Automation/backend/.env for production.
-        if os.getenv("TEST_MODE", "false").lower() == "true":
+        # Skip security checks for certain paths
+        if self._should_skip_security(request):
             return await call_next(request)
 
         # Check session validity
@@ -86,11 +90,14 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
             # /csrf-token is not skipped so GET with a logged-in session refreshes idle timers (sliding session).
             "/csrf-refresh",
         ]
-        if os.getenv("TEST_MODE", "false").lower() == "true":
-            skip_paths.extend([
-                "/auth/test-login",
-                "/__test/set-session",
-            ])
+        if _is_test_mode():
+            skip_paths.extend(
+                [
+                    "/auth/test-login",
+                    "/__test/set-session",
+                    "/exec-summary",
+                ]
+            )
         return any(request.url.path.startswith(path) for path in skip_paths)
     
     def _is_protected_endpoint(self, request: Request) -> bool:
@@ -102,6 +109,7 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
             "/type4/",
             "/type5/",
             "/ai-layer/",
+            "/exec-summary",
             "/mitkat/",
             "/dashboard",
             "/report_formats.html",
@@ -125,8 +133,7 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
         
         # Skip fingerprint check in TEST_MODE to avoid local-dev session invalidation
         # caused by header differences between Azure callback and subsequent browser requests
-        test_mode = os.getenv("TEST_MODE", "false").lower() == "true"
-        if test_mode:
+        if _is_test_mode():
             return True
         
         # Check session fingerprint (production only)
@@ -147,9 +154,9 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
     def _is_csrf_valid(self, request: Request) -> bool:
         """Check CSRF token validity"""
         # Skip CSRF checks entirely in TEST_MODE for easier local development
-        if os.getenv("TEST_MODE", "false").lower() == "true":
+        if _is_test_mode():
             return True
-        
+
         # Skip CSRF for certain endpoints
         if request.url.path in ["/auth/login", "/auth/callback"]:
             return True

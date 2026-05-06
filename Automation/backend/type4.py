@@ -25,6 +25,13 @@ import hashlib
 import re
 import base64
 
+# Shared dynamic section inserters (risk table + charts)
+from .report_insert_sections import (
+    insert_overall_vulnerabilities_charts,
+    insert_overall_vulnerabilities_charts_3d,
+    insert_risk_assessment_analysis_table,
+)
+
 # Try to import PIL for image processing, but don't fail if it's not available
 try:
     from PIL import Image
@@ -459,6 +466,40 @@ def parse_vulnerabilities_excel(file_path):
         print(f"Error parsing vulnerability Excel: {e}")
         return [], {'engagement_url': engagement_url}
 
+def _normalize_asset_key_from_url(raw_url: str) -> str:
+    """
+    Build a stable asset key for web findings. Prefer full URL-ish keys (host + path)
+    so the framework table matches the style used in the reference report.
+    """
+    raw = (raw_url or "").strip()
+    if not raw:
+        return "Unknown"
+    try:
+        # Ensure urllib can parse host even if scheme is missing.
+        if "://" not in raw:
+            raw_for_parse = "https://" + raw.lstrip("/")
+        else:
+            raw_for_parse = raw
+        parsed = urllib.parse.urlsplit(raw_for_parse)
+        host = (parsed.netloc or "").strip()
+        path = (parsed.path or "").strip()
+        if host:
+            key = host + (path if path and path != "/" else "")
+            return key.rstrip("/").strip() or host
+    except Exception:
+        pass
+    return raw.rstrip("/").strip()
+
+
+def group_vulnerabilities_by_asset_web(vulnerabilities: list[dict]) -> dict[str, list[dict]]:
+    """Group Type-4 vulnerabilities by URL/asset key for Overall Findings + charts."""
+    grouped: dict[str, list[dict]] = {}
+    for v in vulnerabilities:
+        key = _normalize_asset_key_from_url(str(v.get("vulnerable_url") or ""))
+        grouped.setdefault(key, []).append(v)
+    return grouped
+
+
 # Function to parse the fixed document control file
 def parse_doc_control_excel(file_path):
     """
@@ -665,6 +706,65 @@ def create_summary_table(doc, vulnerabilities):
     parent = placeholder_paragraph._p.getparent()
     parent.insert(parent.index(placeholder_paragraph._p), table._element)
     parent.remove(placeholder_paragraph._p)
+
+
+def insert_test_case_table(doc) -> None:
+    """
+    Insert the Encora-style Test Case table at _TEST_CASE_TABLE_PLACEHOLDER_.
+    Default rows match the manual reference report (all Completed).
+    """
+    placeholder = "_TEST_CASE_TABLE_PLACEHOLDER_"
+    placeholder_paragraph = None
+    for p in doc.paragraphs:
+        if placeholder in p.text:
+            placeholder_paragraph = p
+            break
+    if not placeholder_paragraph:
+        print(f"Warning: Placeholder {placeholder} not found in the template.")
+        return
+
+    headers = ["Sr. No.", "Test Case", "Status"]
+    rows = [
+        ("1", "Business Logic Testing", "Completed"),
+        ("2", "Service Disruption Analysis", "Completed"),
+        ("3", "OWASP Top 10", "Completed"),
+        ("4", "Framework Based Vulnerability", "Completed"),
+        ("5", "Database Pentest", "Completed"),
+    ]
+
+    table = doc.add_table(rows=1 + len(rows), cols=3)
+    table.style = "Table Grid"
+    table.columns[0].width = Inches(0.8)
+    table.columns[1].width = Inches(5.4)
+    table.columns[2].width = Inches(1.4)
+
+    hdr_cells = table.rows[0].cells
+    for i, header_text in enumerate(headers):
+        cell = hdr_cells[i]
+        p = cell.paragraphs[0]
+        p.text = header_text
+        if p.runs:
+            run = p.runs[0]
+        else:
+            run = p.add_run(header_text)
+        run.font.bold = True
+        run.font.color.rgb = RGBColor(255, 255, 255)
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        shading_elm = parse_xml(f'<w:shd {nsdecls("w")} w:fill="6A449A"/>')
+        cell._element.get_or_add_tcPr().append(shading_elm)
+
+    for r_idx, (no, tc, status) in enumerate(rows, 1):
+        row_cells = table.rows[r_idx].cells
+        row_cells[0].text = no
+        row_cells[1].text = tc
+        row_cells[2].text = status
+        row_cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        row_cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    parent = placeholder_paragraph._p.getparent()
+    parent.insert(parent.index(placeholder_paragraph._p), table._element)
+    parent.remove(placeholder_paragraph._p)
+
 
 def set_cell_text_preserve_format(cell, text):
     """
@@ -1084,7 +1184,17 @@ def generate_word_report(
             tmp_path = tmp.name
         # Open with python-docx for dynamic PoC steps/images
         doc = Document(tmp_path)
-        # Update the risk assessment table counts
+        # Insert dynamic sections (Overall Findings framework table, test cases, vulnerability charts)
+        vulnerabilities_by_asset = group_vulnerabilities_by_asset_web(vulnerabilities)
+        insert_risk_assessment_analysis_table(doc, vulnerabilities_by_asset)
+        insert_test_case_table(doc)
+        chart_style = (os.getenv("WEB_REPORT_CHART_STYLE") or "combined").strip().lower()
+        if chart_style == "3d":
+            insert_overall_vulnerabilities_charts_3d(doc, vulnerabilities_by_asset)
+        else:
+            insert_overall_vulnerabilities_charts(doc, vulnerabilities_by_asset)
+
+        # Backward-compatible fallback: update an existing pre-built risk table if present in template
         severity_counts = count_vulnerabilities_by_severity(vulnerabilities)
         update_risk_assessment_table(doc, severity_counts)
         # Sort vulnerabilities by severity before creating any tables

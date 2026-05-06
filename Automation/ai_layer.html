@@ -188,6 +188,27 @@
         const progressLabel = document.getElementById('progressLabel');
         const resultBox = document.getElementById('resultBox');
 
+        let CSRF_TOKEN = null;
+        (async () => {
+            try {
+                const res = await fetch('/csrf-token', { credentials: 'same-origin' });
+                if (res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    CSRF_TOKEN = data.csrf_token || data.token || data.csrf || null;
+                }
+            } catch (_) {}
+        })();
+
+        async function refreshCsrf() {
+            try {
+                const res = await fetch('/csrf-token', { credentials: 'same-origin' });
+                if (res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    CSRF_TOKEN = data.csrf_token || data.token || data.csrf || CSRF_TOKEN;
+                }
+            } catch (_) {}
+        }
+
         const generatorLinks = {
             ip: '/Automation/test.html',
             web: '/type4/',
@@ -207,10 +228,16 @@
                 return;
             }
 
+            await refreshCsrf();
+
             const formData = new FormData();
             formData.append('report_type', reportType);
             formData.append('excel_file', excelFile);
             formData.append('poc_zip', pocZip);
+            if (CSRF_TOKEN) formData.append('csrf_token', CSRF_TOKEN);
+
+            const headers = {};
+            if (CSRF_TOKEN) headers['X-CSRF-Token'] = CSRF_TOKEN;
 
             generateBtn.disabled = true;
             progressWrap.style.display = 'block';
@@ -221,6 +248,8 @@
             try {
                 const response = await fetch('/ai-layer/generate-excel/', {
                     method: 'POST',
+                    credentials: 'same-origin',
+                    headers,
                     body: formData
                 });
 

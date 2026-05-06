@@ -1,13 +1,28 @@
+import os
+import sys
+
+# Project root (user_use-main) for db, excel_parser, Automation.*
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
+# Windows consoles can default to cp1252; emoji/debug prints from this module and
+# imported modules should never crash request handling because of encoding errors.
+for _stream_name in ("stdout", "stderr"):
+    _stream = getattr(sys, _stream_name, None)
+    if _stream and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request, Depends
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-import os
-import sys
 import pandas as pd
 from docxtpl import DocxTemplate
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
+from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from datetime import datetime
 import traceback
@@ -20,8 +35,6 @@ import io
 from sqlalchemy.orm import Session
 from db import get_db, AuditLog, CertINReport
 
-# Add parent directory to path to import excel_parser
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 from excel_parser import parse_excel_data, format_for_template
 
 # Shared Excel converter (any-format -> feature-format)
@@ -339,6 +352,13 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
     from docx.oxml import parse_xml
     from docx.oxml.ns import nsdecls, qn
 
+    def _clear_cell(cell):
+        """Remove extra paragraphs and clear the first paragraph safely."""
+        for p in cell.paragraphs[1:]:
+            p._element.getparent().remove(p._element)
+        cell.paragraphs[0].clear()
+        return cell.paragraphs[0]
+
     # Get severity colors
     severity = safe_str(vulnerability_section.get('severity', 'Medium')).strip()
     severity_colors = {
@@ -354,7 +374,8 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
     table = doc.add_table(rows=2, cols=3)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
-    # Set total table width to page width (A4 with margins ~16.5cm usable)
+
+    # Set total table width to page width
     tbl_elem = table._tbl
     tblPr_elem = tbl_elem.tblPr if tbl_elem.tblPr is not None else parse_xml(f'<w:tblPr {nsdecls("w")}/>')
     tblW = parse_xml(f'<w:tblW {nsdecls("w")} w:w="9350" w:type="dxa"/>')
@@ -362,7 +383,8 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
     if existing_tblW is not None:
         tblPr_elem.remove(existing_tblW)
     tblPr_elem.append(tblW)
-    # Set column widths: 40% | 30% | 30% of 9350 twips
+
+    # Set column widths
     col_widths_twips = [3740, 2805, 2805]
     for i, col in enumerate(table.columns):
         for cell in col.cells:
@@ -373,7 +395,7 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
             if existing is not None:
                 tcPr.remove(existing)
             tcPr.append(tcW)
-    
+
     # Set light gray border color for the table
     tbl = table._tbl
     tblPr = tbl.tblPr if tbl.tblPr is not None else parse_xml(f'<w:tblPr {nsdecls("w")}/>')
@@ -391,11 +413,10 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
 
     # ---------- Row 1: Observation | Severity | Status ----------
     row1 = table.rows[0]
-    
+
     # Observation cell
     cell_obs = row1.cells[0]
-    cell_obs.text = ''
-    p = cell_obs.paragraphs[0]
+    p = _clear_cell(cell_obs)
     run = p.add_run(f"Observation: #{vulnerability_section.get('observation_number', '1')}")
     run.font.name = 'Altone Trial'
     run.font.size = Pt(11)
@@ -403,8 +424,7 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
 
     # Severity cell with colored background
     cell_sev = row1.cells[1]
-    cell_sev.text = ''
-    p = cell_sev.paragraphs[0]
+    p = _clear_cell(cell_sev)
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = p.add_run(f"Severity: {severity}")
     run.font.name = 'Altone Trial'
@@ -413,10 +433,9 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
     run.font.color.rgb = RGBColor(255, 255, 255) if colors['text'] == 'FFFFFF' else RGBColor(0, 0, 0)
     cell_sev._element.get_or_add_tcPr().append(parse_xml(f'<w:shd {nsdecls("w")} w:fill="{colors["bg"]}"/>'))
 
-    # Status cell (yellow/orange)
+    # Status cell
     cell_status = row1.cells[2]
-    cell_status.text = ''
-    p = cell_status.paragraphs[0]
+    p = _clear_cell(cell_status)
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run = p.add_run(f"Status: {safe_str(vulnerability_section.get('status', 'Open'))}")
     run.font.name = 'Altone Trial'
@@ -424,13 +443,12 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
     run.font.bold = True
     cell_status._element.get_or_add_tcPr().append(parse_xml(f'<w:shd {nsdecls("w")} w:fill="FFD966"/>'))
 
-    # ---------- Row 2: New/Repeat | CVE/CWE (2 columns) ----------
+    # ---------- Row 2: New/Repeat | CVE/CWE ----------
     row2 = table.rows[1]
-    
+
     # New or Repeat Observation cell
     cell_nor = row2.cells[0]
-    cell_nor.text = ''
-    p = cell_nor.paragraphs[0]
+    p = _clear_cell(cell_nor)
     run = p.add_run("New or Repeat Observation: ")
     run.font.name = 'Altone Trial'
     run.font.size = Pt(10)
@@ -442,8 +460,7 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
     # CVE/CWE cell (merge cells 1 and 2)
     cell_cve = row2.cells[1]
     cell_cve.merge(row2.cells[2])
-    cell_cve.text = ''
-    p = cell_cve.paragraphs[0]
+    p = _clear_cell(cell_cve)
     run = p.add_run("CVE/CWE: ")
     run.font.name = 'Altone Trial'
     run.font.size = Pt(10)
@@ -452,26 +469,24 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
     run.font.name = 'Altone Trial'
     run.font.size = Pt(10)
 
-    # ---------- Content rows (each as separate row for proper layout) ----------
-    
+    # ---------- Content rows ----------
     def add_content_row(label, value, is_url=False):
-        """Add a single-cell merged row with label: value"""
         if not value:
             return
         row = table.add_row()
         cell = row.cells[0]
         cell.merge(row.cells[1])
         cell.merge(row.cells[2])
-        cell.text = ''
-        p = cell.paragraphs[0]
+
+        p = _clear_cell(cell)
         p.paragraph_format.space_before = Pt(3)
         p.paragraph_format.space_after = Pt(3)
-        
+
         run = p.add_run(label)
         run.font.name = 'Altone Trial'
         run.font.size = Pt(10)
         run.font.bold = True
-        
+
         run = p.add_run(safe_str(value))
         run.font.name = 'Altone Trial'
         run.font.size = Pt(10)
@@ -481,12 +496,12 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
 
     # CVSS row
     add_content_row("CVSS: ", vulnerability_section.get('cvss'))
-    
+
     # CVSS Version Ref row
     add_content_row("CVSS Version Ref: ", vulnerability_section.get('cvss_vector'))
 
     # Affected Asset row
-    add_content_row("Affected Asset i.e. IP/URL/Application etc.: ", 
+    add_content_row("Affected Asset i.e. IP/URL/Application etc.: ",
                     vulnerability_section.get('affected_asset'), is_url=True)
 
     # Observation/Vulnerability Title row
@@ -502,16 +517,16 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
         cell = row.cells[0]
         cell.merge(row.cells[1])
         cell.merge(row.cells[2])
-        cell.text = ''
-        p = cell.paragraphs[0]
+
+        p = _clear_cell(cell)
         p.paragraph_format.space_before = Pt(3)
         p.paragraph_format.space_after = Pt(3)
-        
+
         run = p.add_run("Recommendation:")
         run.font.name = 'Altone Trial'
         run.font.size = Pt(10)
         run.font.bold = True
-        
+
         for i, rec in enumerate(recommendations, 1):
             rec_p = cell.add_paragraph()
             rec_p.paragraph_format.space_before = Pt(0)
@@ -527,16 +542,16 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
         cell = row.cells[0]
         cell.merge(row.cells[1])
         cell.merge(row.cells[2])
-        cell.text = ''
-        p = cell.paragraphs[0]
+
+        p = _clear_cell(cell)
         p.paragraph_format.space_before = Pt(3)
         p.paragraph_format.space_after = Pt(3)
-        
+
         run = p.add_run("Reference:")
         run.font.name = 'Altone Trial'
         run.font.size = Pt(10)
         run.font.bold = True
-        
+
         ref_p = cell.add_paragraph()
         run = ref_p.add_run(safe_str(reference))
         run.font.name = 'Altone Trial'
@@ -551,39 +566,36 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
         cell = row.cells[0]
         cell.merge(row.cells[1])
         cell.merge(row.cells[2])
-        cell.text = ''
-        p = cell.paragraphs[0]
+
+        p = _clear_cell(cell)
         p.paragraph_format.space_before = Pt(3)
         p.paragraph_format.space_after = Pt(3)
-        
+
         run = p.add_run("Evidence / Proof of Concept:")
         run.font.name = 'Altone Trial'
         run.font.size = Pt(10)
         run.font.bold = True
 
         for poc_img in poc_images:
-            # Step description
             step_p = cell.add_paragraph()
             step_p.paragraph_format.space_before = Pt(6)
             step_p.paragraph_format.space_after = Pt(3)
-            
+
             step_text = f"Step {poc_img.get('step_number', '')}: "
             if poc_img.get('description'):
                 step_text += safe_str(poc_img['description'])
-            
+
             run = step_p.add_run(step_text)
             run.font.name = 'Altone Trial'
             run.font.size = Pt(10)
             run.font.bold = False
 
-            # Add the image if present - constrained to fit inside the cell
             img_path = poc_img.get('path') or poc_img.get('filename')
             if img_path and os.path.exists(img_path):
                 img_p = cell.add_paragraph()
                 img_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 img_run = img_p.add_run()
                 try:
-                    # Max width = full table width minus small padding (4.5 inches fits A4 margins)
                     img_run.add_picture(img_path, width=Inches(4.5))
                 except Exception as e:
                     err_p = cell.add_paragraph(f"[Image error: {os.path.basename(img_path)}: {e}]")
@@ -598,12 +610,30 @@ def create_landscape_vulnerability_box(doc, vulnerability_section):
 def create_asset_findings_table(doc, vulnerability_data):
     """Create the Asset/Hostname findings table with vulnerability counts"""
     from docx.oxml import parse_xml
-    from docx.oxml.ns import nsdecls
+    from docx.oxml.ns import nsdecls, qn
     from docx.enum.table import WD_TABLE_ALIGNMENT
-    
+
     if not vulnerability_data:
         return None
-    
+
+    def _clear_cell(cell):
+        """Remove extra paragraphs and clear the first paragraph safely."""
+        for p in cell.paragraphs[1:]:
+            p._element.getparent().remove(p._element)
+        cell.paragraphs[0].clear()
+        return cell.paragraphs[0]
+
+    def _set_cell_text(cell, text, bold=False, center=False, font_size=10, color=None):
+        p = _clear_cell(cell)
+        if center:
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(str(text))
+        run.font.name = 'Altone Trial'
+        run.font.size = Pt(font_size)
+        run.font.bold = bold
+        if color:
+            run.font.color.rgb = color
+
     # Aggregate data by asset
     asset_data = {}
     for vuln in vulnerability_data:
@@ -611,7 +641,7 @@ def create_asset_findings_table(doc, vulnerability_data):
         purpose = safe_str(vuln.get('purpose', '')) or safe_str(vuln.get('vapt_status', ''))
         status = safe_str(vuln.get('vapt_status', '')) or safe_str(vuln.get('status', 'Open'))
         severity = safe_str(vuln.get('severity', 'Medium')).lower()
-        
+
         if asset not in asset_data:
             asset_data[asset] = {
                 'purpose': purpose,
@@ -622,19 +652,18 @@ def create_asset_findings_table(doc, vulnerability_data):
                 'low': 0,
                 'informational': 0
             }
-        
-        # Count by severity
-        if severity in ['critical']:
+
+        if severity == 'critical':
             asset_data[asset]['critical'] += 1
-        elif severity in ['high']:
+        elif severity == 'high':
             asset_data[asset]['high'] += 1
-        elif severity in ['medium']:
+        elif severity == 'medium':
             asset_data[asset]['medium'] += 1
-        elif severity in ['low']:
+        elif severity == 'low':
             asset_data[asset]['low'] += 1
         elif severity in ['informational', 'info']:
             asset_data[asset]['informational'] += 1
-    
+
     # Calculate totals
     overall = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'informational': 0}
     for asset, counts in asset_data.items():
@@ -645,111 +674,69 @@ def create_asset_findings_table(doc, vulnerability_data):
         overall['low'] += counts['low']
         overall['informational'] += counts['informational']
     overall['total'] = overall['critical'] + overall['high'] + overall['medium'] + overall['low'] + overall['informational']
-    
-    # Create table with header row + data rows + overall row (no page break - handled by caller)
+
+    # Correct direct table creation
     num_rows = 1 + len(asset_data) + 1  # header + assets + overall
-    table = doc.add_table(rows=num_rows, cols=9)
-    table.style = 'Table Grid'
-    
-    # Column headers
-    headers = ['Sr.\nNo.', 'Asset/Hostname', 'Instant\npurpose', 'VAPT\nStatus', 'Critical', 'High', 'Medium', 'Low', 'Informational', 'Total']
-    
-    # Actually we need 10 columns
-    # Recreate table with correct columns
-    for row in table.rows:
-        for cell in row.cells:
-            pass
-    
-    # Remove old table and create new one
-    table._element.getparent().remove(table._element)
     table = doc.add_table(rows=num_rows, cols=10)
     table.style = 'Table Grid'
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
-    # Set total table width and column widths (9350 twips = ~16.5cm, A4 usable width)
+
+    # Set total table width and column widths
     tbl_elem = table._tbl
     tblPr_elem = tbl_elem.tblPr if tbl_elem.tblPr is not None else parse_xml(f'<w:tblPr {nsdecls("w")}/>')
-    tblW_elem = parse_xml(f'<w:tblW {nsdecls("w")} w:w="9350" w:type="dxa"/>')
-    existing_tblW = tblPr_elem.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tblW')
+    # Keep findings table visually full-width like other report tables.
+    tblW_elem = parse_xml(f'<w:tblW {nsdecls("w")} w:w="5000" w:type="pct"/>')
+    existing_tblW = tblPr_elem.find(qn('w:tblW'))
     if existing_tblW is not None:
         tblPr_elem.remove(existing_tblW)
     tblPr_elem.append(tblW_elem)
-    # Column widths in twips: Sr(500) | Asset(2000) | Purpose(1200) | Status(1000) | Crit(600) | High(600) | Med(600) | Low(600) | Info(800) | Total(450)
-    col_widths = [500, 2000, 1200, 1000, 600, 600, 600, 600, 800, 450]
+
+    col_widths = [650, 2400, 1450, 1200, 750, 750, 850, 750, 1000, 800]
     for col_i, col in enumerate(table.columns):
         for cell in col.cells:
             tc = cell._tc
             tcPr = tc.get_or_add_tcPr()
             tcW = parse_xml(f'<w:tcW {nsdecls("w")} w:w="{col_widths[col_i]}" w:type="dxa"/>')
-            existing = tcPr.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tcW')
+            existing = tcPr.find(qn('w:tcW'))
             if existing is not None:
                 tcPr.remove(existing)
             tcPr.append(tcW)
 
-    # Header row styling
+    # Header row
     header_row = table.rows[0]
     headers = ['Sr.\nNo.', 'Asset/Hostname', 'Instant\npurpose', 'VAPT\nStatus', 'Critical', 'High', 'Medium', 'Low', 'Informational', 'Total']
-    
-    severity_colors = {
-        4: '800000',  # Critical - Dark Red/Maroon
-        5: 'FF0000',  # High - Red
-        6: 'FFC000',  # Medium - Orange
-        7: '92D050',  # Low - Green
-        8: '00B0F0',  # Informational - Blue
-        9: '7030A0'   # Total - Purple
-    }
-    
-    # Header colors: first 4 columns purple, then severity colors for each column
+
     header_colors = {
-        0: '6923D0',  # Sr. No. - Purple
-        1: '6923D0',  # Asset/Hostname - Purple
-        2: '6923D0',  # Instant purpose - Purple
-        3: '6923D0',  # VAPT Status - Purple
-        4: '800000',  # Critical - Dark Red
-        5: 'FF0000',  # High - Red
-        6: 'FFC000',  # Medium - Orange
-        7: '92D050',  # Low - Green
-        8: '00B0F0',  # Informational - Blue
-        9: '7030A0'   # Total - Purple
+        0: '6923D0',
+        1: '6923D0',
+        2: '6923D0',
+        3: '6923D0',
+        4: '800000',
+        5: 'FF0000',
+        6: 'FFC000',
+        7: '92D050',
+        8: '00B0F0',
+        9: '7030A0'
     }
-    
+
     for idx, header_text in enumerate(headers):
         cell = header_row.cells[idx]
-        cell.text = ''
-        p = cell.paragraphs[0]
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = p.add_run(header_text)
-        run.font.name = 'Altone Trial'
-        run.font.size = Pt(9)
-        run.font.bold = True
-        run.font.color.rgb = RGBColor(255, 255, 255)
-        
-        # Apply color based on column
+        _set_cell_text(cell, header_text, bold=True, center=True, font_size=9, color=RGBColor(255, 255, 255))
         color = header_colors.get(idx, '6923D0')
         shading = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{color}"/>')
         cell._element.get_or_add_tcPr().append(shading)
-    
+
     # Data rows
     row_idx = 1
     for sr_no, (asset, counts) in enumerate(asset_data.items(), 1):
         row = table.rows[row_idx]
-        
-        # Sr. No.
-        row.cells[0].text = str(sr_no) + '.'
-        row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-        # Asset/Hostname
-        row.cells[1].text = asset
-        
-        # Instant purpose
-        row.cells[2].text = counts['purpose']
-        row.cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-        # VAPT Status
-        row.cells[3].text = counts['status']
-        row.cells[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
-        # Severity counts with colored backgrounds
+
+        _set_cell_text(row.cells[0], f"{sr_no}.", center=True)
+        _set_cell_text(row.cells[1], asset, center=True)
+        _set_cell_text(row.cells[2], counts['purpose'], center=True)
+        _set_cell_text(row.cells[3], counts['status'], center=True)
+
         severity_vals = [
             (4, counts['critical'], '800000'),
             (5, counts['high'], 'FF0000'),
@@ -758,30 +745,26 @@ def create_asset_findings_table(doc, vulnerability_data):
             (8, counts['informational'], '00B0F0'),
             (9, counts['total'], '7030A0')
         ]
-        
+
         for col_idx, val, color in severity_vals:
             cell = row.cells[col_idx]
-            cell.text = str(val)
-            cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-            for run in cell.paragraphs[0].runs:
-                run.font.bold = True
-                run.font.color.rgb = RGBColor(255, 255, 255)
+            _set_cell_text(cell, val, bold=True, center=True, color=RGBColor(255, 255, 255))
             shading = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{color}"/>')
             cell._element.get_or_add_tcPr().append(shading)
-        
+
         row_idx += 1
-    
+
     # Overall Findings row
     overall_row = table.rows[row_idx]
-    
-    # Merge first 4 cells for "Overall Findings"
+
+    # Merge first 4 cells FIRST
+    overall_row.cells[0].merge(overall_row.cells[1])
+    overall_row.cells[0].merge(overall_row.cells[2])
     overall_row.cells[0].merge(overall_row.cells[3])
-    overall_row.cells[0].text = 'Overall Findings'
-    overall_row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-    for run in overall_row.cells[0].paragraphs[0].runs:
-        run.font.bold = True
-    
-    # Overall severity counts
+
+    # Then set text
+    _set_cell_text(overall_row.cells[0], 'Overall Findings', bold=True, center=True)
+
     overall_vals = [
         (4, overall['critical'], '800000'),
         (5, overall['high'], 'FF0000'),
@@ -790,26 +773,13 @@ def create_asset_findings_table(doc, vulnerability_data):
         (8, overall['informational'], '00B0F0'),
         (9, overall['total'], '7030A0')
     ]
-    
+
     for col_idx, val, color in overall_vals:
         cell = overall_row.cells[col_idx]
-        cell.text = str(val)
-        cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        for run in cell.paragraphs[0].runs:
-            run.font.bold = True
-            run.font.color.rgb = RGBColor(255, 255, 255)
+        _set_cell_text(cell, val, bold=True, center=True, color=RGBColor(255, 255, 255))
         shading = parse_xml(f'<w:shd {nsdecls("w")} w:fill="{color}"/>')
         cell._element.get_or_add_tcPr().append(shading)
-    
-    # Apply font styling to all cells
-    for row in table.rows:
-        for cell in row.cells:
-            for para in cell.paragraphs:
-                for run in para.runs:
-                    run.font.name = 'Altone Trial'
-                    if run.font.size is None:
-                        run.font.size = Pt(10)
-    
+
     return table
 
 
@@ -904,18 +874,82 @@ def _certin_insert_page_break_before_risk_level_section(doc: Document) -> None:
     run.add_break(WD_BREAK.PAGE)
 
 
+def _drop_empty_items(items):
+    """Remove fully empty dict/list records to avoid blank table rows in template loops."""
+    cleaned = []
+    for item in items or []:
+        if isinstance(item, dict):
+            has_value = any(str(v or "").strip() for v in item.values())
+            if has_value:
+                cleaned.append(item)
+            continue
+        if isinstance(item, (list, tuple)):
+            has_value = any(str(v or "").strip() for v in item)
+            if has_value:
+                cleaned.append(item)
+            continue
+        if str(item or "").strip():
+            cleaned.append(item)
+    return cleaned
+
+
+def _certin_remove_empty_rows_and_normalize_borders(doc: Document) -> None:
+    """
+    Fix front-matter tables that often render with blank spacer rows and broken lines.
+    Keeps content intact while removing empty rows and forcing connected grid borders.
+    """
+    from docx.oxml import OxmlElement
+
+    def _set_border(node, edge, val="single", sz="8", color="000000"):
+        el = OxmlElement(f"w:{edge}")
+        el.set(qn("w:val"), val)
+        el.set(qn("w:sz"), sz)
+        el.set(qn("w:space"), "0")
+        el.set(qn("w:color"), color)
+        node.append(el)
+
+    def _normalize_table_grid(table):
+        tbl_pr = table._tbl.tblPr
+        if tbl_pr is None:
+            return
+
+        # Replace table-level borders to keep all lines connected.
+        for old in tbl_pr.findall(qn("w:tblBorders")):
+            tbl_pr.remove(old)
+        tbl_borders = OxmlElement("w:tblBorders")
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            _set_border(tbl_borders, edge)
+        tbl_pr.append(tbl_borders)
+
+    # Remove fully-empty rows from all non-vulnerability tables.
+    for table in doc.tables:
+        header_text = _certin_template_table_header_text(table)
+        if "asset/hostname" in header_text:
+            # Programmatic findings table is handled separately.
+            continue
+
+        # Remove blank rows (except first/header row).
+        for ridx in range(len(table.rows) - 1, 0, -1):
+            row = table.rows[ridx]
+            row_text = "".join((c.text or "").strip() for c in row.cells)
+            if not row_text:
+                table._tbl.remove(row._tr)
+
+        _normalize_table_grid(table)
+
+
 def generate_certin_report_from_form(data, template_path, output_path, vulnerability_data=None, poc_mapping=None):
     """Generate Cert-IN report from form data and template"""
     try:
         safe_template_path = _sanitize_docx_jinja_placeholders(template_path)
         doc = DocxTemplate(safe_template_path)
         
-        document_change_history = json.loads(data.get('document_change_history', '[]'))
-        distribution_list = json.loads(data.get('distribution_list', '[]'))
-        engagement_scope = json.loads(data.get('engagement_scope', '[]'))
-        auditing_team = json.loads(data.get('auditing_team', '[]'))
-        audit_activities = json.loads(data.get('audit_activities', '[]'))
-        tools_software = json.loads(data.get('tools_software', '[]'))
+        document_change_history = _drop_empty_items(json.loads(data.get('document_change_history', '[]')))
+        distribution_list = _drop_empty_items(json.loads(data.get('distribution_list', '[]')))
+        engagement_scope = _drop_empty_items(json.loads(data.get('engagement_scope', '[]')))
+        auditing_team = _drop_empty_items(json.loads(data.get('auditing_team', '[]')))
+        audit_activities = _drop_empty_items(json.loads(data.get('audit_activities', '[]')))
+        tools_software = _drop_empty_items(json.loads(data.get('tools_software', '[]')))
         
         vulnerability_sections = []
         client_name_from_excel = ''
@@ -930,6 +964,7 @@ def generate_certin_report_from_form(data, template_path, output_path, vulnerabi
         
         # Use form data as primary, fall back to Excel data
         final_client_name = data.get('client_name', '') or client_name_from_excel
+        final_company_name = data.get('company_name', '') or final_client_name
         final_report_name = data.get('report_name', '') or project_name_from_excel
         
         print(f"📝 Form client_name: '{data.get('client_name', '')}', Final: '{final_client_name}'")
@@ -937,13 +972,19 @@ def generate_certin_report_from_form(data, template_path, output_path, vulnerabi
         
         context = {
             'CLIENT_NAME': final_client_name,
+            'COMPANY_NAME': final_company_name,
             'REPORT_NAME': final_report_name,
             # Also add variations in case template uses different format
+            'TITLE': data.get('document_title', ''),
+            'REPORT_TITLE': data.get('document_title', ''),
             'CLIENT__NAME': final_client_name,
+            'COMPANY__NAME': final_company_name,
             'REPORT__NAME': final_report_name,
             'CLIENT_NAME_': final_client_name,
+            'COMPANY_NAME_': final_company_name,
             'REPORT_NAME_': final_report_name,
             '_CLIENT_NAME': final_client_name,
+            '_COMPANY_NAME': final_company_name,
             '_REPORT_NAME': final_report_name,
             'REPORT_RELEASE_DATE': data.get('report_release_date', ''),
             'TYPE_OF_AUDIT': data.get('type_of_audit', ''),
@@ -979,29 +1020,40 @@ def generate_certin_report_from_form(data, template_path, output_path, vulnerabi
         doc = Document(tmp_path)
         _certin_center_template_front_sections(doc)
         _certin_insert_page_break_before_risk_level_section(doc)
+        _certin_remove_empty_rows_and_normalize_borders(doc)
         
+        # In generate_certin_report_from_form(), replace lines 985-1005 with:
+
         if vulnerability_sections:
-            # Find where "Total Vulnerabilities" graph starts
-            graph_idx = None
-            for i, para in enumerate(doc.paragraphs):
-                if 'Total Vulnerabilities' in para.text:
-                    graph_idx = i
-                    break
-            
-            # Create the table
             table = create_asset_findings_table(doc, vulnerability_data)
-            
-            if table is not None and graph_idx is not None:
-                # Add a page break paragraph before the table to ensure it starts on a fresh page
-                from docx.oxml import parse_xml
-                from docx.oxml.ns import nsdecls
-                
-                graph_para = doc.paragraphs[graph_idx]._element
-                
-                # Remove table from end and insert before graph
+
+            if table is not None:
+                # Keep this table immediately below the "Total Vulnerabilities" graph block
+                # and before "Detailed Observations".
+                table.alignment = WD_TABLE_ALIGNMENT.CENTER
                 table._element.getparent().remove(table._element)
-                graph_para.addprevious(table._element)
-            
+                inserted = False
+                for para in doc.paragraphs:
+                    txt = " ".join((para.text or "").split()).strip().lower()
+                    if txt == "total vulnerabilities" or "total vulnerabilities" in txt:
+                        spacer_before = doc.add_paragraph()
+                        spacer_before.paragraph_format.space_before = Pt(6)
+                        spacer_before.paragraph_format.space_after = Pt(6)
+                        para._element.addnext(spacer_before._element)
+                        spacer_before._element.addnext(table._element)
+                        spacer_after = doc.add_paragraph()
+                        spacer_after.paragraph_format.space_before = Pt(6)
+                        spacer_after.paragraph_format.space_after = Pt(6)
+                        table._element.addnext(spacer_after._element)
+                        inserted = True
+                        break
+                if not inserted:
+                    # Fallback: append right before Detailed Observations section creation.
+                    doc.element.body.append(table._element)
+                    spacer_after = doc.add_paragraph()
+                    spacer_after.paragraph_format.space_before = Pt(6)
+                    spacer_after.paragraph_format.space_after = Pt(6)
+
             # Detailed Observations heading on new page
             doc.add_page_break()
             vuln_heading = doc.add_paragraph()
@@ -1011,13 +1063,13 @@ def generate_certin_report_from_form(data, template_path, output_path, vulnerabi
             vuln_run.font.size = Pt(18)
             vuln_run.font.bold = True
             vuln_run.font.color.rgb = RGBColor(106, 68, 154)
-            
+
             for i, vuln_section in enumerate(vulnerability_sections):
                 create_landscape_vulnerability_box(doc, vuln_section)
-                
+
                 if i < len(vulnerability_sections) - 1:
                     doc.add_page_break()
-        
+
         doc.save(output_path)
         os.remove(tmp_path)
         
@@ -1192,8 +1244,17 @@ async def root():
                             <input type="text" id="client_name" name="client_name" required>
                         </div>
                         <div class="form-group">
+                            <label for="company_name">Company Name *</label>
+                            <input type="text" id="company_name" name="company_name" required>
+                        </div>
+                        <div class="form-group">
                             <label for="report_name">Web/Network Initial Report Name *</label>
-                            <input type="text" id="report_name" name="report_name" required>
+                            <select id="report_name" name="report_name" required>
+                                <option value="">Select Initial Report Name</option>
+                                <option value="Web Application">Web Application</option>
+                                <option value="Network">Network</option>
+                                <option value="Web and Network">Web and Network</option>
+                            </select>
                         </div>
                     </div>
                     <div class="form-row">
@@ -1868,6 +1929,20 @@ async def root():
     """
     return HTMLResponse(content=html_content)
 
+@app.get("/csrf-token")
+async def csrf_token():
+    """
+    Compatibility endpoint for UI flows expecting a CSRF token route.
+    This standalone service does not enforce CSRF validation.
+    """
+    return {"csrf_token": None}
+
+@app.get("/type3/csrf-token")
+async def csrf_token_type3():
+    """Alias route for prefixed deployments."""
+    return {"csrf_token": None}
+
+@app.post("/type3/convert-excel/")
 @app.post("/convert-excel/")
 async def certin_convert_excel(
     vapt_file: UploadFile = File(...),
@@ -1931,6 +2006,7 @@ async def certin_convert_excel(
             pass
 
 
+@app.post("/type3/generate-report/")
 @app.post("/generate-report/")
 async def generate_report(
     request: Request,
@@ -2106,4 +2182,4 @@ async def list_reports(request: Request, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8003)
+    uvicorn.run(app, host="localhost", port=8003)

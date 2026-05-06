@@ -8,6 +8,7 @@ from Automation.backend.type3 import app as type3_app
 from Automation.backend.type4 import app as type4_app
 from Automation.backend.type5 import app as type5_app
 from Automation.backend.ai_layer import app as ai_layer_app
+
 from dashboard import dashboard_app
 from auth import router as auth_router
 from session_security import SessionSecurityMiddleware

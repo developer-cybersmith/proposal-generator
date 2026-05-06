@@ -20,6 +20,7 @@ Automation/backend/data.db
 uploads/
 Automation/backend/uploads/
 Automation/backend/generated_reports/
+Automation/backend/closure_base_cache/
 
 # Logs
 nohup.out
@@ -40,3 +41,9 @@ testsprite_tests/tmp/
 
 # Old AWS workflow (not needed for Railway)
 .github/
+
+# Ignore specific files
+Automation/backend/1.docx
+Automation/backend/AdvantageGo_Closure_Base_Template.docx
+Automation/backend/type6.py
+env

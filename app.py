@@ -138,6 +138,11 @@ app.include_router(type6_router)
 from Automation.backend.main import mitkat_router
 app.include_router(mitkat_router)
 
+# Include MitKat2 routes (CertIN Test Automation - Report Generator & Tracker Converter)
+from Automation.backend.mitkat2 import mitkat2_router
+if mitkat2_router:
+    app.include_router(mitkat2_router)
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/Automation", StaticFiles(directory="Automation"), name="automation-static")
 @app.get("/static/files/test.css", response_class=HTMLResponse)

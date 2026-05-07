@@ -69,6 +69,7 @@ import re
 import sys
 import json
 import time
+from datetime import datetime
 import shutil
 import logging
 import tempfile
@@ -331,7 +332,7 @@ class ReportMeta:
 
     @property
     def report_date(self) -> str:
-        return self.get("report_date", "")
+        return self.get("report_date", _default_report_date())
 
     @property
     def assessment_code(self) -> str:
@@ -1237,6 +1238,10 @@ def _set_update_fields_on_open(doc: _DocxDocument) -> None:
         settings.append(upd)
 
 
+def _default_report_date() -> str:
+    return datetime.now().strftime("%d-%m-%Y")
+
+
 _HEADING_STYLE_NAMES: Dict[int, str] = {
     1: "Heading 1",
     2: "Heading 2",
@@ -1398,7 +1403,58 @@ def build_base_document(meta: ReportMeta) -> _DocxDocument:
 # Static cover-page prepend helper
 # ---------------------------------------------------------------------------
 
-def _prepend_static_cover_page(report_path: Path) -> None:
+def _iter_doc_paragraphs(doc: _DocxDocument) -> Iterator[Any]:
+    for p in doc.paragraphs:
+        yield p
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    yield p
+
+
+def _replace_cover_placeholders(doc: _DocxDocument, values: Dict[str, str]) -> None:
+    if not values:
+        return
+    normalized = {str(k).strip().lower(): str(v) for k, v in values.items()}
+    placeholder_re = re.compile(r"\{\{\s*([^}]+?)\s*\}\}|\{([^}]+?)\}")
+    for p in _iter_doc_paragraphs(doc):
+        if not p.text:
+            continue
+        new_text = p.text
+        for match in placeholder_re.finditer(p.text):
+            key = (match.group(1) or match.group(2) or "").strip().lower()
+            if key and key in normalized:
+                new_text = new_text.replace(match.group(0), normalized[key])
+        if new_text == p.text:
+            continue
+        if p.runs:
+            p.runs[0].text = new_text
+            for r in p.runs[1:]:
+                r.text = ""
+        else:
+            p.add_run(new_text)
+
+
+def _replace_first_date_token(doc: _DocxDocument, date_text: str) -> None:
+    if not date_text:
+        return
+    date_re = re.compile(r"\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b")
+    for p in _iter_doc_paragraphs(doc):
+        if not p.text:
+            continue
+        if date_re.search(p.text):
+            new_text = date_re.sub(date_text, p.text, count=1)
+            if p.runs:
+                p.runs[0].text = new_text
+                for r in p.runs[1:]:
+                    r.text = ""
+            else:
+                p.add_run(new_text)
+            break
+
+
+def _prepend_static_cover_page(report_path: Path, meta: ReportMeta) -> None:
     """Prepend ``page 1.docx`` as a standalone cover page before the report.
 
     Strategy:
@@ -1426,6 +1482,15 @@ def _prepend_static_cover_page(report_path: Path) -> None:
 
         # ---- 1. Open the cover doc as master ----
         cover_doc = Document(str(COVER_PAGE_1_PATH))
+        cover_values = {
+            "report_title": meta.report_title,
+            "client_name": meta.client_name,
+            "report_date": meta.report_date,
+            "assessment_code": meta.assessment_code,
+            "date": meta.report_date,
+        }
+        _replace_cover_placeholders(cover_doc, cover_values)
+        _replace_first_date_token(cover_doc, meta.report_date)
 
         # ---- 2. Clone the cover's own sectPr to create a section-break paragraph ----
         # In OOXML, a section break between two sections is stored as a
@@ -1485,6 +1550,11 @@ def _prepend_static_cover_page(report_path: Path) -> None:
 
         # ---- 5. Save ----
         composer.save(str(report_path))
+
+        # Ensure the merged document updates fields on open (TOC page numbers).
+        merged = Document(str(report_path))
+        _set_update_fields_on_open(merged)
+        merged.save(str(report_path))
         log.info("Static cover page prepended from %s", COVER_PAGE_1_PATH)
 
     except Exception as exc:
@@ -2910,7 +2980,7 @@ def generate_report(xlsx_path: str | os.PathLike,
         doc.save(str(out))
 
         # Prepend the static 1.docx cover page to the front of the saved report.
-        _prepend_static_cover_page(out)
+        _prepend_static_cover_page(out, data.meta)
 
         refreshed = _try_refresh_word_fields(out)
 

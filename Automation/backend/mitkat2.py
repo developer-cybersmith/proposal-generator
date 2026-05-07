@@ -2653,6 +2653,10 @@ def _render_poc_steps_in_cell(cell, poc_text: str, images: List[Path],
     for i in range(n_steps):
         step_text = text_lines[i] if i < len(text_lines) else ""
         has_image = i < len(images)
+
+        # Avoid duplicated labels when Excel text already starts with "Step N:"
+        if step_text:
+            step_text = re.sub(r"^\s*step\s*\d+\s*:\s*", "", step_text, flags=re.IGNORECASE)
         
         log.debug("[POC_RENDER] Step %d: text_avail=%s image_avail=%s", 
                   i + 1, bool(step_text), has_image)

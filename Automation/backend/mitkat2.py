@@ -738,19 +738,27 @@ def _index_poc_folders(poc_root: Path) -> Dict[str, List[Path]]:
     """
     out: Dict[str, List[Path]] = {}
     if not poc_root.exists():
+        log.warning("POC root path does not exist: %s", poc_root)
         return out
     total_images = 0
-    for entry in sorted(poc_root.iterdir()):
+    all_dirs = [e for e in sorted(poc_root.iterdir()) if e.is_dir()]
+    log.info("[POC_INDEX] Scanning %d directories in: %s", len(all_dirs), poc_root)
+    for entry in all_dirs:
         if not entry.is_dir():
             continue
         imgs: List[Path] = []
-        for f in entry.iterdir():
+        all_items = list(entry.iterdir())
+        log.debug("[POC_INDEX] Folder '%s': %d items inside", entry.name, len(all_items))
+        for f in all_items:
             if not f.is_file():
                 continue
             if f.suffix.lower() not in ALLOWED_IMAGE_EXT:
+                log.debug("[POC_INDEX]   Skip: %s (ext=%s not in %s)", f.name, f.suffix, ALLOWED_IMAGE_EXT)
                 continue
+            log.debug("[POC_INDEX]   Image found: %s", f.name)
             imgs.append(f)
         if not imgs:
+            log.info("[POC_INDEX] Folder '%s': NO IMAGES - SKIPPED", entry.name)
             continue
         # Numeric-ish sort: split into (numeric_prefix, lower_name)
         def _key(p: Path):
@@ -770,6 +778,7 @@ def _index_poc_folders(poc_root: Path) -> Dict[str, List[Path]]:
                 entry.name, n_img,
             )
         out[entry.name] = imgs
+        log.info("[POC_INDEX] Folder '%s' INDEXED with %d images", entry.name, len(imgs))
         prev_total = total_images
         total_images += len(imgs)
         if prev_total < RL_SOFT_WARN_TOTAL_IMAGES <= total_images:
@@ -796,12 +805,22 @@ def load_poc_archive(zip_path: str | os.PathLike, work_dir: str | os.PathLike) -
     w = Path(work_dir)
     if not z.exists():
         raise Mitkat2Error(f"POC zip not found: {z}")
+    log.info("Loading POC archive from: %s", z)
     extracted = w / "_poc_extracted"
     if extracted.exists():
         shutil.rmtree(extracted)
     _safe_extract_zip(z, extracted)
+    log.debug("Extracted to: %s", extracted)
     root = _find_poc_root(extracted)
+    log.info("POC root: %s", root)
     folders = _index_poc_folders(root)
+    total_imgs = sum(len(v) for v in folders.values())
+    log.info("[FINAL] POC archive loaded: %d POC folders, %d total images", len(folders), total_imgs)
+    if folders:
+        for fname in sorted(folders.keys()):
+            log.info("[FINAL]   - Folder '%s': %d images", fname, len(folders[fname]))
+    else:
+        log.warning("[FINAL] WARNING: No POC folders with images found!")
     return PocArchive(root=root, folders=folders)
 
 
@@ -987,6 +1006,7 @@ def safe_image_for_docx(src: Path, work_dir: Path,
     If Pillow is available, copy/resize the image to a JPEG inside `work_dir`.
     On any failure, returns None (caller substitutes a placeholder paragraph).
     """
+    log.debug("safe_image_for_docx: src=%s, PIL=%s", src.name, _PIL_OK)
     if not src.exists():
         return None
     if not _PIL_OK:
@@ -2615,11 +2635,15 @@ def _render_poc_steps_in_cell(cell, poc_text: str, images: List[Path],
     """
     text_lines = [ln.strip() for ln in (poc_text or "").split("\n") if ln.strip()]
     n_steps = max(len(text_lines), len(images))
+    
+    log.debug("[POC_RENDER] Rendering %d steps (text_lines=%d, images=%d)",
+              n_steps, len(text_lines), len(images))
 
     first_para = cell.paragraphs[0]
     first_para.text = ""
 
     if n_steps == 0:
+        log.debug("[POC_RENDER] No steps - showing placeholder")
         _add_text_run(first_para, "(No proof-of-concept supplied)",
                       italic=True, color_hex="7F7F7F",
                       size_pt=10, font_name=BODY_FONT_NAME)
@@ -2628,31 +2652,123 @@ def _render_poc_steps_in_cell(cell, poc_text: str, images: List[Path],
     use_first = True
     for i in range(n_steps):
         step_text = text_lines[i] if i < len(text_lines) else ""
+        has_image = i < len(images)
+        
+        log.debug("[POC_RENDER] Step %d: text_avail=%s image_avail=%s", 
+                  i + 1, bool(step_text), has_image)
+        
         target = first_para if use_first else cell.add_paragraph()
         use_first = False
         _add_text_run(target, f"Step {i + 1}: ", bold=True,
                       size_pt=BODY_FONT_PT, font_name=BODY_FONT_NAME)
-        _add_text_run(target, step_text or "(see screenshot below)",
-                      size_pt=BODY_FONT_PT, font_name=BODY_FONT_NAME)
+        
+        if step_text:
+            _add_text_run(target, step_text,
+                          size_pt=BODY_FONT_PT, font_name=BODY_FONT_NAME)
+        elif has_image:
+            _add_text_run(target, "(see screenshot below)",
+                          size_pt=BODY_FONT_PT, font_name=BODY_FONT_NAME)
+        else:
+            _add_text_run(target, "(no content)",
+                          italic=True, color_hex="7F7F7F",
+                          size_pt=BODY_FONT_PT, font_name=BODY_FONT_NAME)
 
-        if i < len(images):
+        if has_image:
             img = images[i]
+            log.debug("[POC_RENDER] Step %d: Processing image %s", i + 1, img.name)
             prepared = safe_image_for_docx(img, work_dir)
             ip = cell.add_paragraph()
             ip.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
             if prepared is None:
-                _add_text_run(ip, f"[Screenshot not embedded: {img.name}]",
+                log.warning("[POC_RENDER] Step %d: Image prep failed: %s", i + 1, img.name)
+                _add_text_run(ip, f"[Image could not be embedded: {img.name}]",
                               italic=True, color_hex="C00000", size_pt=10,
                               font_name=BODY_FONT_NAME)
             else:
                 try:
+                    log.debug("[POC_RENDER] Step %d: Adding picture: %s", i + 1, prepared.name)
                     run = ip.add_run()
                     run.add_picture(str(prepared), width=Inches(image_width_in))
+                    log.debug("[POC_RENDER] Step %d: Picture added successfully", i + 1)
                 except Exception as ex:
-                    log.warning("add_picture failed for %s: %s", img.name, ex)
-                    _add_text_run(ip, f"[Failed to embed: {img.name}]",
+                    log.warning("[POC_RENDER] Step %d: add_picture failed: %s", i + 1, ex)
+                    _add_text_run(ip, f"[Failed to add picture: {img.name}]",
                                   italic=True, color_hex="C00000", size_pt=10,
                                   font_name=BODY_FONT_NAME)
+            
+            # Add spacing between steps
+            if i < n_steps - 1:
+                spacing = cell.add_paragraph()
+                spacing.paragraph_format.space_after = Pt(6)
+
+
+def _parse_expected_files(expected_files: str) -> List[str]:
+    if not expected_files:
+        return []
+    raw = re.split(r"[\n,;]+", expected_files)
+    return [x.strip() for x in raw if x.strip()]
+
+
+def _find_poc_map_entry(v: Vulnerability, poc_map: List[PocMapEntry]) -> Optional[PocMapEntry]:
+    if not poc_map:
+        return None
+    v_sno = (v.sno or "").strip()
+    v_name = (v.vuln_name or "").strip().lower()
+    for entry in poc_map:
+        if v_sno and (entry.sno or "").strip() == v_sno:
+            return entry
+    for entry in poc_map:
+        if v_name and (entry.vuln_name or "").strip().lower() == v_name:
+            return entry
+    return None
+
+
+def _resolve_poc_images(v: Vulnerability, poc_map: List[PocMapEntry], poc: PocArchive) -> List[Path]:
+    entry = _find_poc_map_entry(v, poc_map)
+
+    # Folder mapping priority:
+    # 1) POC_MAP.poc_folder (explicit)
+    # 2) VULNS.poc_folder (explicit)
+    # 3) S.No based folder (001, 002, ...)
+    folder = (entry.poc_folder or "").strip() if entry else ""
+    source = "POC_MAP" if folder else ""
+    if not folder and v.poc_folder:
+        folder = v.poc_folder.strip()
+        source = "VULNS"
+    if not folder and v.sno:
+        try:
+            folder = str(int(v.sno)).zfill(3)
+        except Exception:
+            folder = v.sno.strip()
+        source = "SNO"
+    if not folder:
+        return []
+
+    images = poc.images_for(folder)
+    if not images and source == "SNO":
+        # Also try raw S.No without zero padding if 001 not present.
+        alt = v.sno.strip() if v.sno else ""
+        if alt and alt != folder:
+            images = poc.images_for(alt)
+            if images:
+                folder = alt
+    if not images:
+        log.warning("POC images not found for folder '%s' (source=%s)", folder, source)
+        return []
+
+    # If POC_MAP expected_files is provided, force exact order by filenames.
+    if entry and entry.expected_files:
+        wanted = _parse_expected_files(entry.expected_files)
+        if wanted:
+            by_name = {p.name.lower(): p for p in images}
+            selected = [by_name[n.lower()] for n in wanted if n.lower() in by_name]
+            if selected:
+                missing = [n for n in wanted if n.lower() not in by_name]
+                if missing:
+                    log.warning("POC expected files missing in '%s': %s", folder, missing)
+                return selected
+    return images
 
 
 def build_detail_report(doc, data: ReportData, poc: PocArchive,
@@ -2699,8 +2815,8 @@ def build_detail_report(doc, data: ReportData, poc: PocArchive,
         #   11 References (Optional)
         #   12 Additional observations
         #
-        # (We implement as 12 rows with the vulnerable-point block consuming 3.)
-        table = doc.add_table(rows=12, cols=3)
+        # (We implement as 13 rows with the vulnerable-point block consuming 3 and severity row.)
+        table = doc.add_table(rows=13, cols=3)
         try:
             table.style = "Table Grid"
         except KeyError:
@@ -2768,10 +2884,18 @@ def build_detail_report(doc, data: ReportData, poc: PocArchive,
         vcell = _merge_value_cols(1)
         _set_value_cell(vcell, v.vuln_name or "")
 
-        # Rows 2-4: Vulnerable Point / Error Location (merge main label vertically)
-        main = table.cell(2, 0)
-        main2 = table.cell(3, 0)
-        main3 = table.cell(4, 0)
+        # Row 2: Severity
+        _set_label_cell(table.cell(2, 0), "Severity")
+        vcell = _merge_value_cols(2)
+        severity_display = v.severity if v.severity else "Not Specified"
+        _set_value_cell(vcell, severity_display)
+        if v.severity in SEVERITY_COLOR:
+            _set_cell_shading(vcell, SEVERITY_COLOR[v.severity])
+
+        # Rows 3-5: Vulnerable Point / Error Location (merge main label vertically)
+        main = table.cell(3, 0)
+        main2 = table.cell(4, 0)
+        main3 = table.cell(5, 0)
         main.merge(main2).merge(main3)
         _set_label_cell(main, "Vulnerable Point /\nError Location")
         _set_cell_v_align(main, "center")
@@ -2782,50 +2906,58 @@ def build_detail_report(doc, data: ReportData, poc: PocArchive,
             ("Vulnerable Parameter",       v.vuln_parameter or "NA"),
         ]
         for off, (sl, sv) in enumerate(sub_rows):
-            r = 2 + off
+            r = 3 + off
             _set_sub_label_cell(table.cell(r, 1), sl)
             _set_value_cell(table.cell(r, 2), sv)
 
-        # Row 5: CVE/CWE
-        _set_label_cell(table.cell(5, 0), "CVE/CWE")
-        vcell = _merge_value_cols(5)
+        # Merge vulnerable point label cells vertically
+        for vp_row in range(3, 6):
+            _set_cell_borders(table.cell(vp_row, 0))
+
+        # Row 6: CVE/CWE
+        _set_label_cell(table.cell(6, 0), "CVE/CWE")
+        vcell = _merge_value_cols(6)
         _set_value_cell(vcell, v.cve_cwe or "")
 
-        # Row 6: CVSS / EPSS Score
-        _set_label_cell(table.cell(6, 0), "CVSS / EPSS\nScore")
-        vcell = _merge_value_cols(6)
+        # Row 7: CVSS / EPSS Score
+        _set_label_cell(table.cell(7, 0), "CVSS / EPSS\nScore")
+        vcell = _merge_value_cols(7)
         _set_value_cell(vcell, _detail_value(v, "_cvss_epss_combined_", idx=idx))
 
-        # Row 7: Description (can split)
-        _set_label_cell(table.cell(7, 0), "Description")
-        vcell = _merge_value_cols(7)
+        # Row 8: Description (can split)
+        _set_label_cell(table.cell(8, 0), "Description")
+        vcell = _merge_value_cols(8)
         _set_value_cell(vcell, v.description or "")
 
-        # Row 8: Proof of concept and Steps to Reproduce (can split)
-        _set_label_cell(table.cell(8, 0), "Proof of concept and\nSteps to Reproduce")
-        vcell = _merge_value_cols(8)
-        images = poc.images_for(v.poc_folder) if v.poc_folder else []
+        # Row 9: Proof of concept and Steps to Reproduce (can split)
+        _set_label_cell(table.cell(9, 0), "Proof of concept and\nSteps to Reproduce")
+        vcell = _merge_value_cols(9)
+        images = _resolve_poc_images(v, data.poc_map, poc)
+        if v.poc_folder:
+            log.debug("Vuln %d: poc_folder='%s', found %d images", idx, v.poc_folder, len(images))
+            if not images:
+                log.warning("Vuln %d: poc_folder '%s' found but no images. Available: %s", idx, v.poc_folder, list(poc.folders.keys()))
         _render_poc_steps_in_cell(vcell, v.poc_steps_text, images, work_dir / "_img")
         _set_cell_borders(vcell)
         _set_cell_shading(vcell, TABLE_BODY_FILL)
 
-        # Row 9: Workaround / Solutions / Recommendations
-        _set_label_cell(table.cell(9, 0), "Workaround /\nSolutions /\nRecommendations")
-        vcell = _merge_value_cols(9)
+        # Row 10: Workaround / Solutions / Recommendations
+        _set_label_cell(table.cell(10, 0), "Workaround /\nSolutions /\nRecommendations")
+        vcell = _merge_value_cols(10)
         _set_value_cell(vcell, v.workaround or "")
 
-        # Row 10: References (Optional)
-        _set_label_cell(table.cell(10, 0), "References\n(Optional)")
-        vcell = _merge_value_cols(10)
+        # Row 11: References (Optional)
+        _set_label_cell(table.cell(11, 0), "References\n(Optional)")
+        vcell = _merge_value_cols(11)
         _set_value_cell(vcell, v.references or "")
 
-        # Row 11: Additional observations
-        _set_label_cell(table.cell(11, 0), "Additional\nobservations")
-        vcell = _merge_value_cols(11)
+        # Row 12: Additional observations
+        _set_label_cell(table.cell(12, 0), "Additional\nobservations")
+        vcell = _merge_value_cols(12)
         _set_value_cell(vcell, v.additional_obs or "")
 
         # Row splitting rules: keep short rows together; allow Description/PoC to split.
-        SPLIT_ALLOWED_ROWS = {7, 8}
+        SPLIT_ALLOWED_ROWS = {8, 9}
         for ri, row in enumerate(table.rows):
             if ri not in SPLIT_ALLOWED_ROWS:
                 _set_cant_split(row)

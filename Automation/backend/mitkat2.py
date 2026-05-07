@@ -3014,6 +3014,7 @@ def _mitkat2_web_page_html() -> str:
   var statusEl = document.getElementById("status");
   var outEl = document.getElementById("out");
   var metaEl = document.getElementById("meta");
+    var CSRF_TOKEN = null;
 
   function setStatus(msg, ok) {
     statusEl.textContent = msg || "";
@@ -3027,6 +3028,20 @@ def _mitkat2_web_page_html() -> str:
     metaEl.appendChild(span);
     if (extra) metaEl.appendChild(document.createTextNode(" " + extra));
   }
+
+    async function ensureCsrfToken() {
+        if (CSRF_TOKEN) return CSRF_TOKEN;
+        try {
+            var res = await fetch("/csrf-token", { credentials: "same-origin" });
+            if (res.ok) {
+                var data = await res.json();
+                CSRF_TOKEN = data.csrf_token || data.token || data.csrf || null;
+            }
+        } catch (e) {
+            // No-op: CSRF token may be unavailable in some test contexts.
+        }
+        return CSRF_TOKEN;
+    }
 
   document.getElementById("btnHealth").onclick = async function() {
     setStatus("Loading…", undefined); showMeta(undefined, "");
@@ -3045,13 +3060,22 @@ def _mitkat2_web_page_html() -> str:
   document.getElementById("btnVal").onclick = async function() {
     var f = document.getElementById("excel").files[0];
     if (!f) { alert("Choose an Excel file."); return; }
+        await ensureCsrfToken();
     var fd = new FormData();
     fd.append("excel", f);
     var p = document.getElementById("poc").files[0];
     if (p) fd.append("poc", p);
+        if (CSRF_TOKEN) fd.append("csrf_token", CSRF_TOKEN);
     setStatus("Validating…", undefined); showMeta(undefined, "");
     try {
-      var r = await fetch(PREFIX + "/validate", { method: "POST", body: fd });
+            var headers = {};
+            if (CSRF_TOKEN) headers["X-CSRF-Token"] = CSRF_TOKEN;
+            var r = await fetch(PREFIX + "/validate", {
+                method: "POST",
+                body: fd,
+                headers: headers,
+                credentials: "same-origin"
+            });
       var txt = await r.text();
       try { outEl.textContent = JSON.stringify(JSON.parse(txt), null, 2); }
       catch (_) { outEl.textContent = txt; }
@@ -3068,14 +3092,23 @@ def _mitkat2_web_page_html() -> str:
   document.getElementById("btnGen").onclick = async function() {
     var f = document.getElementById("excel").files[0];
     if (!f) { alert("Choose an Excel file."); return; }
+        await ensureCsrfToken();
     var fd = new FormData();
     fd.append("excel", f);
     var p = document.getElementById("poc").files[0];
     if (p) fd.append("poc", p);
     fd.append("include_instructions", document.getElementById("instr").checked ? "1" : "0");
+        if (CSRF_TOKEN) fd.append("csrf_token", CSRF_TOKEN);
     setStatus("Generating Word…", undefined); showMeta(undefined, "");
     try {
-      var r = await fetch(PREFIX + "/generate", { method: "POST", body: fd });
+            var headers = {};
+            if (CSRF_TOKEN) headers["X-CSRF-Token"] = CSRF_TOKEN;
+            var r = await fetch(PREFIX + "/generate", {
+                method: "POST",
+                body: fd,
+                headers: headers,
+                credentials: "same-origin"
+            });
       if (!r.ok) {
         var errTxt = await r.text();
         try { outEl.textContent = JSON.stringify(JSON.parse(errTxt), null, 2); }

@@ -1,7 +1,15 @@
+import os
+import sys
 from fastapi import FastAPI, Request
 from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from fastapi.responses import RedirectResponse
+
+# Ensure project root is on sys.path for package imports in deployment environments.
+_root_dir = os.path.dirname(__file__)
+if _root_dir not in sys.path:
+    sys.path.insert(0, _root_dir)
+
 from Automation.backend.main import app as type1_app
 from Automation.backend.type2 import app as type2_app
 from Automation.backend.type3 import app as type3_app
@@ -9,10 +17,10 @@ from Automation.backend.type4 import app as type4_app
 from Automation.backend.type5 import app as type5_app
 from Automation.backend.ai_layer import app as ai_layer_app
 from Automation.backend.type6 import router as type6_router
+
 from dashboard import dashboard_app
 from auth import router as auth_router
 from session_security import SessionSecurityMiddleware
-import os
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
@@ -137,6 +145,14 @@ app.include_router(type6_router)
 # Include MitKat routes from main.py
 from Automation.backend.main import mitkat_router
 app.include_router(mitkat_router)
+
+# Include MitKat2 routes (CertIN Test Automation - Report Generator & Tracker Converter)
+try:
+    from Automation.backend.mitkat2 import mitkat2_router
+    if mitkat2_router:
+        app.include_router(mitkat2_router)
+except (ImportError, ModuleNotFoundError) as e:
+    print(f"[WARNING] mitkat2 module not available: {e}")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/Automation", StaticFiles(directory="Automation"), name="automation-static")

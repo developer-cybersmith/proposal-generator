@@ -42,8 +42,7 @@ testsprite_tests/tmp/
 # Old AWS workflow (not needed for Railway)
 .github/
 
-# Ignore specific files
+# Ignore specific backup/cache files only
 Automation/backend/1.docx
 Automation/backend/AdvantageGo_Closure_Base_Template.docx
-Automation/backend/type6.py
 env

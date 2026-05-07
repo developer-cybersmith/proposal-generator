@@ -73,6 +73,14 @@ app.mount("/type1", type1_app)
 # Mount the Type-2 (type2.py) app at /type2, protected by SSO
 app.mount("/type2", type2_app)
 
+# Include MitKat2 routes (CertIN Test Automation - Report Generator & Tracker Converter)
+try:
+    from Automation.backend.mitkat2 import mitkat2_router
+    if mitkat2_router:
+        app.include_router(mitkat2_router)
+except (ImportError, ModuleNotFoundError) as e:
+    print(f"[WARNING] mitkat2 module not available: {e}")
+
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/Automation", StaticFiles(directory="Automation"), name="automation-static")

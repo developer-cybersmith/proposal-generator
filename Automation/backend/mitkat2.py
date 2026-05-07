@@ -1102,6 +1102,38 @@ def _add_field(paragraph, instr: str, default_text: str = "") -> None:
     run._r.append(fld_end)
 
 
+def _add_date_field(paragraph, format_code: str = "DD-MM-YYYY",
+                     italic: bool = False, size_pt: int = BODY_FONT_PT) -> None:
+    """Append a dynamic DATE field to a paragraph.
+
+    The date field updates automatically when the document is opened or refreshed,
+    even in view mode. Format codes: 'D' (default), 'DD-MM-YYYY', 'MMMM D, YYYY', etc.
+    """
+    run = paragraph.add_run()
+    if italic:
+        run.italic = True
+    if size_pt:
+        run.font.size = Pt(size_pt)
+    run.font.name = BODY_FONT_NAME
+
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+    run._r.append(fld_begin)
+
+    instr_text = OxmlElement("w:instrText")
+    instr_text.set(qn("xml:space"), "preserve")
+    instr_text.text = f"DATE \\@ \"{format_code}\""
+    run._r.append(instr_text)
+
+    fld_sep = OxmlElement("w:fldChar")
+    fld_sep.set(qn("w:fldCharType"), "separate")
+    run._r.append(fld_sep)
+
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+    run._r.append(fld_end)
+
+
 def _add_bookmark(paragraph, name: str, bookmark_id: int) -> None:
     """Wrap the paragraph's content with a bookmark range.
 
@@ -1774,6 +1806,8 @@ def build_cover(doc: _DocxDocument, meta: ReportMeta,
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         _add_text_run(p, meta.report_date, italic=True, size_pt=14,
                       color_hex="595959", font_name=BODY_FONT_NAME)
+        # Inject a DATE field so the date updates dynamically even in view mode
+        _add_date_field(p, format_code="DD-MM-YYYY", italic=True, size_pt=14)
     if meta.assessment_code:
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -2849,15 +2883,19 @@ def _try_refresh_word_fields(doc_path: Path) -> bool:
     Disable with ``MITKAT2_SKIP_WORD_COM=1`` if automation is undesirable.
     """
     if os.environ.get("MITKAT2_SKIP_WORD_COM", "").strip().lower() in {"1", "true", "yes"}:
+        log.info("Word COM refresh disabled via MITKAT2_SKIP_WORD_COM=1")
         return False
     if sys.platform != "win32":
+        log.info("Word COM field refresh not available on non-Windows platform (%s)", sys.platform)
         return False
     try:
         import win32com.client  # type: ignore
     except ImportError:
         log.info(
             "Optional: ``pip install pywin32`` so TOC PAGEREF fields refresh "
-            "automatically after generation (requires Microsoft Word)."
+            "automatically after generation (requires Microsoft Word on Windows). "
+            "TOC will still be visible when opened in Word, but page numbers may show as 1 "
+            "until user enables editing or opens in Print Preview."
         )
         return False
 
@@ -2871,16 +2909,18 @@ def _try_refresh_word_fields(doc_path: Path) -> bool:
         wd_doc = word.Documents.Open(
             abs_path, ConfirmConversions=False, ReadOnly=False, AddToRecentFiles=False)
         try:
+            # Force print layout view for pagination
             wd_doc.ActiveWindow.View.Type = 3  # wdPrintView
         except Exception:
             pass
+        # Repaginate and update ALL fields (including PAGEREF)
         wd_doc.Repaginate()
         wd_doc.Fields.Update()
         wd_doc.Save()
-        log.info("Word refreshed fields / pagination: %s", doc_path.name)
+        log.info("✓ Word refreshed TOC page numbers and fields: %s", doc_path.name)
         return True
     except Exception as ex:
-        log.warning("Word COM field refresh skipped: %s", ex)
+        log.warning("⚠ Word COM field refresh failed (TOC page numbers may show 1 until user opens in edit/print preview): %s", ex)
         return False
     finally:
         try:
@@ -2982,7 +3022,10 @@ def generate_report(xlsx_path: str | os.PathLike,
         # Prepend the static 1.docx cover page to the front of the saved report.
         _prepend_static_cover_page(out, data.meta)
 
-        refreshed = _try_refresh_word_fields(out)
+        # Force Word field updates TWICE: once for initial doc, once after cover prepend
+        # (page numbers change after cover is prepended).
+        refreshed1 = _try_refresh_word_fields(out)
+        refreshed = refreshed1
 
         elapsed = time.time() - started
 

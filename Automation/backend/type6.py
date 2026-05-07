@@ -501,7 +501,7 @@ def _materialize_base_template(p: Path) -> Path:
     if p.suffix.lower() != ".pdf":
         return p
     try:
-        from pdf2docx import Converter
+        from pdf2docx import Converter  # type: ignore[import-not-found]
     except ImportError as exc:
         raise FileNotFoundError(
             f"Base template is a PDF ({p.name}) but pdf2docx is not installed. "
@@ -600,12 +600,21 @@ def bar_chart(counts):
     # Camera angle for best 3D perspective
     ax.view_init(elev=28, azim=-55)
     ax.set_facecolor("white")
-    ax.xaxis.pane.fill = False
-    ax.yaxis.pane.fill = False
-    ax.zaxis.pane.fill = False
-    ax.xaxis.pane.set_edgecolor("#E0E0E0")
-    ax.yaxis.pane.set_edgecolor("#E0E0E0")
-    ax.zaxis.pane.set_edgecolor("#E0E0E0")
+    x_pane = getattr(ax.xaxis, "pane", None)
+    y_pane = getattr(ax.yaxis, "pane", None)
+    z_pane = getattr(ax.zaxis, "pane", None)
+    if x_pane is not None:
+        x_pane.fill = False
+    if y_pane is not None:
+        y_pane.fill = False
+    if z_pane is not None:
+        z_pane.fill = False
+    if x_pane is not None:
+        x_pane.set_edgecolor("#E0E0E0")
+    if y_pane is not None:
+        y_pane.set_edgecolor("#E0E0E0")
+    if z_pane is not None:
+        z_pane.set_edgecolor("#E0E0E0")
     ax.grid(axis="z", linestyle="--", alpha=0.3)
 
     plt.tight_layout(pad=0.8)
@@ -2319,7 +2328,7 @@ def _convert_pdf_to_docx(pdf_path: str) -> str:
     not contain those tables even after conversion.
     """
     try:
-        from pdf2docx import Converter
+        from pdf2docx import Converter  # type: ignore[import-not-found]
     except ImportError as exc:
         raise SystemExit(
             "PDF input requires pdf2docx. Install: pip install pdf2docx"

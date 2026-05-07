@@ -76,7 +76,7 @@ import zipfile
 import traceback
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any, Iterable, Iterator, List, Dict, Optional, Tuple, Set, Sequence
+from typing import Any, Iterable, Iterator, List, Dict, Optional, Tuple, Set, Sequence, cast
 
 # Word
 from docx import Document
@@ -96,6 +96,7 @@ from openpyxl.utils import get_column_letter
 try:
     from PIL import Image  # type: ignore
     _PIL_OK = True
+    _PIL_RESAMPLE_LANCZOS = getattr(Image, "LANCZOS", 3)
 except Exception:  # pragma: no cover
     _PIL_OK = False
 
@@ -104,12 +105,17 @@ except Exception:  # pragma: no cover
 try:
     from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
     from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
-    from starlette.responses import RedirectResponse
+    from starlette.responses import RedirectResponse, Response
     _FASTAPI_OK = True
 except Exception:  # pragma: no cover
     _FASTAPI_OK = False
-    HTMLResponse = None  # type: ignore[misc, assignment]
-    RedirectResponse = None  # type: ignore[misc, assignment]
+    class _DummyResponse:  # pragma: no cover
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+    HTMLResponse = _DummyResponse  # type: ignore[assignment]
+    RedirectResponse = _DummyResponse  # type: ignore[assignment]
+    Response = _DummyResponse  # type: ignore[assignment]
 
 
 __version__ = "0.1.0"
@@ -993,7 +999,7 @@ def safe_image_for_docx(src: Path, work_dir: Path,
             w, h = im.size
             if w > max_width_px:
                 new_h = int(h * (max_width_px / float(w)))
-                im = im.resize((max_width_px, new_h), Image.LANCZOS)
+                im = im.resize((max_width_px, new_h), _PIL_RESAMPLE_LANCZOS)
             work_dir.mkdir(parents=True, exist_ok=True)
             out = work_dir / (src.stem + "_compressed.jpg")
             im.save(out, format="JPEG", quality=82, optimize=True)
@@ -1180,7 +1186,7 @@ def _add_text_run(paragraph, text: str, *, bold: bool = False, italic: bool = Fa
 
 
 def _set_default_font(doc: _DocxDocument) -> None:
-    style = doc.styles["Normal"]
+    style = cast(Any, doc.styles["Normal"])
     style.font.name = BODY_FONT_NAME
     style.font.size = Pt(BODY_FONT_PT)
     rpr = style.element.get_or_add_rPr()
@@ -1207,7 +1213,7 @@ def _configure_heading(doc: _DocxDocument, level: int, size_pt: int, color_hex: 
     name = f"Heading {level}"
     if name not in doc.styles:
         return
-    style = doc.styles[name]
+    style = cast(Any, doc.styles[name])
     style.font.name = BODY_FONT_NAME
     style.font.size = Pt(size_pt)
     style.font.bold = True
@@ -1301,7 +1307,9 @@ def _substitute_header_client_name(doc: _DocxDocument, client_name: str) -> None
     if not client_name:
         return
     candidates = ("Silbern", "{client_name}", "CLIENT NAME")
-    pkg = doc.part.package
+    pkg = getattr(doc.part, "package", None)
+    if pkg is None:
+        return
     for part in pkg.iter_parts():
         partname = str(getattr(part, "partname", ""))
         if not (partname.startswith("/word/header") or partname.startswith("/word/footer")):
@@ -3108,12 +3116,12 @@ def _mitkat2_web_page_html() -> str:
 if _FASTAPI_OK:
     mitkat2_router = APIRouter(prefix="/mitkat2", tags=["mitkat2"])
 
-    @mitkat2_router.get("/ui", response_class=HTMLResponse)
-    async def mitkat2_test_ui() -> HTMLResponse:
+    @mitkat2_router.get("/ui", response_class=HTMLResponse)  # type: ignore[arg-type]
+    async def mitkat2_test_ui() -> Any:
         """Embedded browser tester — open `/mitkat2/ui` when using `--serve`."""
         return HTMLResponse(content=_mitkat2_web_page_html())
 
-    @mitkat2_router.get("/", response_class=RedirectResponse)
+    @mitkat2_router.get("/", response_class=RedirectResponse)  # type: ignore[arg-type]
     async def mitkat2_router_root_redirect():
         return RedirectResponse(url="/mitkat2/ui")
 

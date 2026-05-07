@@ -1,7 +1,15 @@
+import os
+import sys
 from fastapi import FastAPI, Request
 from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from fastapi.responses import RedirectResponse
+
+# Ensure project root is on sys.path for package imports in deployment environments.
+_root_dir = os.path.dirname(__file__)
+if _root_dir not in sys.path:
+    sys.path.insert(0, _root_dir)
+
 from Automation.backend.main import app as type1_app
 from Automation.backend.type2 import app as type2_app
 from Automation.backend.type3 import app as type3_app
@@ -13,7 +21,6 @@ from Automation.backend.type6 import router as type6_router
 from dashboard import dashboard_app
 from auth import router as auth_router
 from session_security import SessionSecurityMiddleware
-import os
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv

@@ -2893,8 +2893,6 @@ def build_detail_report(doc, data: ReportData, poc: PocArchive,
         vcell = _merge_value_cols(2)
         severity_display = v.severity if v.severity else "Not Specified"
         _set_value_cell(vcell, severity_display)
-        if v.severity in SEVERITY_COLOR:
-            _set_cell_shading(vcell, SEVERITY_COLOR[v.severity])
 
         # Rows 3-5: Vulnerable Point / Error Location (merge main label vertically)
         main = table.cell(3, 0)
@@ -2966,17 +2964,6 @@ def build_detail_report(doc, data: ReportData, poc: PocArchive,
             if ri not in SPLIT_ALLOWED_ROWS:
                 _set_cant_split(row)
 
-        # extra metadata footer line
-        meta_bits = []
-        if v.status:
-            meta_bits.append(f"Status: {v.status}")
-        if v.new_or_repeat:
-            meta_bits.append(f"Type: {v.new_or_repeat}")
-        if meta_bits:
-            mp = doc.add_paragraph()
-            _add_text_run(mp, "  •  ".join(meta_bits), italic=True,
-                          color_hex="595959", size_pt=10,
-                          font_name=BODY_FONT_NAME)
 
 
 def build_poc_map_section(doc, data: ReportData,

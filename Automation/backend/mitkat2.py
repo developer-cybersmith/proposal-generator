@@ -247,8 +247,8 @@ def _env_bool(key: str, default: bool = False) -> bool:
     return str(v).strip().lower() in {"1", "true", "yes", "on"}
 
 
-RL_MAX_EXCEL_BYTES = _env_int("MITKAT2_MAX_EXCEL_BYTES", 50 * 1024 * 1024)            # 50 MB
-RL_MAX_ZIP_BYTES = _env_int("MITKAT2_MAX_ZIP_BYTES", 200 * 1024 * 1024)               # 200 MB
+RL_MAX_EXCEL_BYTES = _env_int("MITKAT2_MAX_EXCEL_BYTES", 200 * 1024 * 1024)           # 200 MB
+RL_MAX_ZIP_BYTES = _env_int("MITKAT2_MAX_ZIP_BYTES", 500 * 1024 * 1024)               # 500 MB
 RL_MAX_UNZIP_BYTES = _env_int("MITKAT2_MAX_UNZIP_BYTES", 1024 * 1024 * 1024)          # 1 GB unpacked
 RL_MAX_ZIP_RATIO = _env_int("MITKAT2_MAX_ZIP_RATIO", 200)                             # uncompressed/compressed
 # POC images: no artificial cap on legitimate engagement scale — defaults are huge.

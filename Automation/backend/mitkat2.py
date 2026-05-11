@@ -258,6 +258,10 @@ RL_TRUNCATE_POC_IMAGES = _env_bool("MITKAT2_TRUNCATE_POC_IMAGES", False)
 RL_MAX_TOTAL_IMAGES = _env_int("MITKAT2_MAX_TOTAL_IMAGES", 10**9)
 RL_SOFT_WARN_TOTAL_IMAGES = _env_int("MITKAT2_SOFT_WARN_TOTAL_IMAGES", 50000)
 RL_MAX_IMAGE_WIDTH_PX = _env_int("MITKAT2_MAX_IMAGE_WIDTH_PX", 1200)
+RL_LOG_POC_FOLDERS = _env_bool("MITKAT2_LOG_POC_FOLDERS", False)
+RL_FAST_IMAGE_PASSTHROUGH_THRESHOLD = _env_int(
+    "MITKAT2_FAST_IMAGE_PASSTHROUGH_THRESHOLD", 300
+)
 RL_GENERATE_TIMEOUT_S = _env_int("MITKAT2_GENERATE_TIMEOUT_S", 600)                   # 10 min (document only)
 RL_INSERT_INSTRUCTIONS_AS_ANNEX = bool(int(os.environ.get("MITKAT2_INCLUDE_INSTRUCTIONS", "0")))
 
@@ -758,7 +762,7 @@ def _index_poc_folders(poc_root: Path) -> Dict[str, List[Path]]:
             log.debug("[POC_INDEX]   Image found: %s", f.name)
             imgs.append(f)
         if not imgs:
-            log.info("[POC_INDEX] Folder '%s': NO IMAGES - SKIPPED", entry.name)
+            log.debug("[POC_INDEX] Folder '%s': NO IMAGES - SKIPPED", entry.name)
             continue
         # Numeric-ish sort: split into (numeric_prefix, lower_name)
         def _key(p: Path):
@@ -778,7 +782,7 @@ def _index_poc_folders(poc_root: Path) -> Dict[str, List[Path]]:
                 entry.name, n_img,
             )
         out[entry.name] = imgs
-        log.info("[POC_INDEX] Folder '%s' INDEXED with %d images", entry.name, len(imgs))
+        log.debug("[POC_INDEX] Folder '%s' INDEXED with %d images", entry.name, len(imgs))
         prev_total = total_images
         total_images += len(imgs)
         if prev_total < RL_SOFT_WARN_TOTAL_IMAGES <= total_images:
@@ -816,11 +820,11 @@ def load_poc_archive(zip_path: str | os.PathLike, work_dir: str | os.PathLike) -
     folders = _index_poc_folders(root)
     total_imgs = sum(len(v) for v in folders.values())
     log.info("[FINAL] POC archive loaded: %d POC folders, %d total images", len(folders), total_imgs)
-    if folders:
+    if not folders:
+        log.warning("[FINAL] WARNING: No POC folders with images found!")
+    elif RL_LOG_POC_FOLDERS:
         for fname in sorted(folders.keys()):
             log.info("[FINAL]   - Folder '%s': %d images", fname, len(folders[fname]))
-    else:
-        log.warning("[FINAL] WARNING: No POC folders with images found!")
     return PocArchive(root=root, folders=folders)
 
 
@@ -1000,7 +1004,8 @@ def validate_report(data: ReportData, poc: Optional[PocArchive] = None) -> List[
 # ---------------------------------------------------------------------------
 
 def safe_image_for_docx(src: Path, work_dir: Path,
-                        max_width_px: int = RL_MAX_IMAGE_WIDTH_PX) -> Optional[Path]:
+                        max_width_px: int = RL_MAX_IMAGE_WIDTH_PX,
+                        *, fast_mode: bool = False) -> Optional[Path]:
     """Return a Path the docx writer can safely embed.
 
     If Pillow is available, copy/resize the image to a JPEG inside `work_dir`.
@@ -1009,6 +1014,8 @@ def safe_image_for_docx(src: Path, work_dir: Path,
     log.debug("safe_image_for_docx: src=%s, PIL=%s", src.name, _PIL_OK)
     if not src.exists():
         return None
+    if fast_mode:
+        return src if src.suffix.lower() in ALLOWED_IMAGE_EXT else None
     if not _PIL_OK:
         # No Pillow: pass through, but only if format matches docx's needs.
         return src if src.suffix.lower() in ALLOWED_IMAGE_EXT else None
@@ -1027,7 +1034,7 @@ def safe_image_for_docx(src: Path, work_dir: Path,
             return out
     except Exception as ex:
         log.warning("Image processing failed for %s: %s", src, ex)
-        return None
+        return src if src.suffix.lower() in ALLOWED_IMAGE_EXT else None
 
 
 # ---------------------------------------------------------------------------
@@ -2622,7 +2629,8 @@ def _render_vulnerable_point_block_in_cell(cell, v: Vulnerability) -> None:
 
 def _render_poc_steps_in_cell(cell, poc_text: str, images: List[Path],
                               work_dir: Path,
-                              *, image_width_in: float = 3.6) -> None:
+                              *, image_width_in: float = 3.6,
+                              fast_mode: bool = False) -> None:
     """Render the PoC value cell as numbered ``Step N: <text> <image>`` blocks.
 
     * Step text comes from the workbook's ``poc_steps_text`` column, split
@@ -2680,7 +2688,7 @@ def _render_poc_steps_in_cell(cell, poc_text: str, images: List[Path],
         if has_image:
             img = images[i]
             log.debug("[POC_RENDER] Step %d: Processing image %s", i + 1, img.name)
-            prepared = safe_image_for_docx(img, work_dir)
+            prepared = safe_image_for_docx(img, work_dir, fast_mode=fast_mode)
             ip = cell.add_paragraph()
             ip.alignment = WD_ALIGN_PARAGRAPH.CENTER
             
@@ -2793,6 +2801,17 @@ def build_detail_report(doc, data: ReportData, poc: PocArchive,
         _add_para(doc, "No detailed vulnerability findings.",
                   italic=True, color_hex="595959")
         return
+
+    total_images = sum(len(v) for v in poc.folders.values()) if poc.folders else 0
+    fast_mode = (
+        RL_FAST_IMAGE_PASSTHROUGH_THRESHOLD > 0
+        and total_images >= RL_FAST_IMAGE_PASSTHROUGH_THRESHOLD
+    )
+    if fast_mode:
+        log.info(
+            "POC fast image mode enabled (total_images=%d, threshold=%d)",
+            total_images, RL_FAST_IMAGE_PASSTHROUGH_THRESHOLD,
+        )
 
     for idx, v in enumerate(data.vulnerabilities, start=1):
         # Per user request: no Heading-2 per vulnerability (S. No. in table is enough).
@@ -2939,7 +2958,13 @@ def build_detail_report(doc, data: ReportData, poc: PocArchive,
             log.debug("Vuln %d: poc_folder='%s', found %d images", idx, v.poc_folder, len(images))
             if not images:
                 log.warning("Vuln %d: poc_folder '%s' found but no images. Available: %s", idx, v.poc_folder, list(poc.folders.keys()))
-        _render_poc_steps_in_cell(vcell, v.poc_steps_text, images, work_dir / "_img")
+        _render_poc_steps_in_cell(
+            vcell,
+            v.poc_steps_text,
+            images,
+            work_dir / "_img",
+            fast_mode=fast_mode,
+        )
         _set_cell_borders(vcell)
         _set_cell_shading(vcell, TABLE_BODY_FILL)
 

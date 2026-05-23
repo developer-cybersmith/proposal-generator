@@ -8,7 +8,7 @@ Does not modify app.py or any other project files. Run directly:
     python css_proposal_generator.py --build-template   # rebuild base .docx from source
 
 Assets expected in the same folder as this script:
-    CSS_Proposal_Source.docx       (original template)
+    CSS_Proposal_Source.docx       (original template; replace and run --build-template to update)
     CSS_Proposal_Base_Template.docx (prepared docxtpl template; auto-built if missing)
     default_logo.png               (optional fallback logo)
 """
@@ -56,14 +56,22 @@ UPLOAD_DIR = HERE / "uploads" / "css_proposal"
 VERSION = "1.2.0"
 DEFAULT_PORT = 8010
 
-# Approximate content paragraphs per printed page (calibrated: paras 0–58 → pages 1–12).
-PARAS_PER_PAGE = 59.0 / 12.0
+# Layout-based page estimation (lines per printed page; tuned for A4 proposal layout).
+LINES_PER_PAGE = 38.0
+CHARS_PER_LINE = 82
+PARAS_PER_PAGE = LINES_PER_PAGE  # backwards compatibility for callers
 CONTENTS_HEADING = "Contents"
 CONCLUSION_TOC_PREFIX = "Conclusion & Pricing"
 
 # Default Contents page numbers for the unchanged intro block (from base template).
-DEFAULT_STATIC_TOC_PAGES: tuple[int, ...] = (3, 4, 4, 5, 7, 8, 8)
+DEFAULT_STATIC_TOC_PAGES: tuple[int, ...] = (3, 4, 4, 5, 7, 8)
 DEFAULT_FIRST_ANNEXURE_PAGE = 13
+TERMS_MARKER = "Terms & Conditions"
+TERMS_TOC_LABEL = "Terms & Conditions"
+# Compact Contents spacing (twips): keeps all TOC lines on one page.
+TOC_LINE_BEFORE_TWIPS = "40"       # ~2pt between entries
+TOC_FIRST_LINE_BEFORE_TWIPS = "100"  # ~5pt after "Contents" heading
+TOC_TAB_POS = "9887"
 STATIC_TOC_ANCHORS: tuple[tuple[str, int], ...] = (
     ("INTRODUCTION", 37),
     ("OUR UNDERSTANDING OF YOUR REQUIREMENT", 37),
@@ -71,10 +79,18 @@ STATIC_TOC_ANCHORS: tuple[tuple[str, int], ...] = (
     ("VULNERABILITY ASSESSMENT METHODOLOGY", 37),
     ("PROPOSED TIMELINES & PROJECT MANAGEMENT", 47),
     ("TEAM OVERVIEW", 55),
-    ("Terms & Conditions", 55),
 )
 
 TRAILER_MARKER = "Conclusion & Pricing"
+CLIENT_NAME_LITERALS: tuple[str, ...] = ("XYZ LLC", "Company name")
+
+# Default Conclusion pricing-table cells for known assessments (quantity, frequency, duration).
+PRICING_ROW_DEFAULTS: dict[str, tuple[str, str, str]] = {
+    "post_breach": ("1 Web Application", "One Time", ""),
+    "active_directory": ("2 Web Application", "Three Time", ""),
+    "web_app_pt": ("5 Web Applications", "One Time", ""),
+    "mobile_app_pt": ("Android - 6, IoS - 3", "One Time", ""),
+}
 ANNEXURE_HEADING_RE = re.compile(r"^Annexure\s+(\d+)\s*:\s*(.+)$", re.IGNORECASE)
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -222,6 +238,94 @@ def _find_trailer_start(doc: Document, section_start: int, section_end: int) -> 
     return section_end
 
 
+def _find_terms_heading_indices(doc: Document, section_start: int, section_end: int) -> list[int]:
+    hits: list[int] = []
+    for i in range(section_start, min(section_end, len(doc.paragraphs))):
+        if (doc.paragraphs[i].text or "").strip() == TERMS_MARKER:
+            hits.append(i)
+    return hits
+
+
+def _split_annexure13_tail(doc: Document, section_start: int, section_end: int) -> tuple[int, int, int]:
+    """Return (annexure_content_end, new_terms_start, trailer_start) within annexure 13."""
+    terms_hits = _find_terms_heading_indices(doc, section_start, section_end)
+    trailer_start = _find_trailer_start(doc, section_start, section_end)
+    first_terms = terms_hits[0] if terms_hits else trailer_start
+    new_terms = terms_hits[1] if len(terms_hits) >= 2 else first_terms
+    return first_terms, new_terms, trailer_start
+
+
+def _replace_client_literals_in_elements(elements, company_name: str) -> None:
+    replacements = {old: company_name for old in CLIENT_NAME_LITERALS}
+    for el in elements:
+        for node in el.iter(qn("w:t")):
+            if not node.text:
+                continue
+            text = node.text
+            for old, new in replacements.items():
+                text = text.replace(old, new)
+            node.text = text
+
+
+def _set_table_cell_text(tc, text: str) -> None:
+    paras = tc.findall(qn("w:p"))
+    if not paras:
+        paras = [OxmlElement("w:p")]
+        tc.append(paras[0])
+    _set_paragraph_text(paras[0], text)
+    for extra in paras[1:]:
+        _set_paragraph_text(extra, "")
+
+
+def _find_assessment_pricing_table(root) -> Any:
+    for tbl in root.iter(qn("w:tbl")):
+        rows = tbl.findall(qn("w:tr"))
+        if not rows:
+            continue
+        header_text = " ".join(_paragraph_text(tc) for tc in rows[0].findall(qn("w:tc")))
+        if "Assessment Type" in header_text:
+            return tbl
+    return None
+
+
+def _update_conclusion_pricing_table(elements, ordered_keys: list[str]) -> None:
+    """Rebuild the Conclusion pricing table Assessment Type rows from selected annexures."""
+    tbl = None
+    for el in elements:
+        tbl = _find_assessment_pricing_table(el)
+        if tbl is not None:
+            break
+    if tbl is None:
+        return
+
+    rows = tbl.findall(qn("w:tr"))
+    if len(rows) < 2:
+        return
+
+    template_row = copy.deepcopy(rows[1])
+    for row in rows[1:-1]:
+        tbl.remove(row)
+    total_row = tbl.findall(qn("w:tr"))[-1]
+
+    for slot, key in enumerate(ordered_keys, start=1):
+        item = CATALOG_BY_KEY[key]
+        row_copy = copy.deepcopy(template_row)
+        cells = row_copy.findall(qn("w:tc"))
+        qty, freq, dur = PRICING_ROW_DEFAULTS.get(key, ("", "One Time", ""))
+        if len(cells) >= 1:
+            _set_table_cell_text(cells[0], str(slot))
+        if len(cells) >= 2:
+            _set_table_cell_text(cells[1], str(item["title"]))
+        if len(cells) >= 3:
+            _set_table_cell_text(cells[2], qty)
+        if len(cells) >= 4:
+            _set_table_cell_text(cells[3], freq)
+        if len(cells) >= 5:
+            _set_table_cell_text(cells[4], dur)
+        _strip_yellow_from_element(row_copy)
+        total_row.addprevious(row_copy)
+
+
 def _paragraph_text(p_element) -> str:
     parts: list[str] = []
     for node in p_element.iter(qn("w:t")):
@@ -332,43 +436,122 @@ def _remove_paragraphs_from(doc: Document, start_index: int) -> None:
         _remove_paragraph_at(doc, i)
 
 
-def _find_contents_region(doc: Document) -> tuple[int | None, int | None, int | None]:
-    """Return (contents_heading_idx, first_assessment_toc_idx, conclusion_toc_idx)."""
+def _find_contents_region(doc: Document) -> tuple[int | None, int | None, int | None, int | None]:
+    """Return (contents_heading_idx, first_assessment_toc_idx, terms_toc_idx, conclusion_toc_idx)."""
     boundaries = _find_annexure_boundaries(doc)
     first_annexure_idx = boundaries[0][0] if boundaries else len(doc.paragraphs)
     contents_idx: int | None = None
     first_assessment_idx: int | None = None
+    terms_idx: int | None = None
     conclusion_idx: int | None = None
 
     for i in range(first_annexure_idx):
         text = (doc.paragraphs[i].text or "").strip()
         if text == CONTENTS_HEADING:
             contents_idx = i
-        elif text.startswith("Terms & Conditions") and "\t" in text:
+        elif text.startswith("TEAM OVERVIEW") and "\t" in text:
             first_assessment_idx = i + 1
+        elif text.startswith(TERMS_TOC_LABEL) and "\t" in text:
+            terms_idx = i
         elif text.startswith(CONCLUSION_TOC_PREFIX) and "\t" in text:
             conclusion_idx = i
 
     if first_assessment_idx is None and contents_idx is not None:
-        for i in range(contents_idx + 1, first_annexure_idx):
-            text = (doc.paragraphs[i].text or "").strip()
-            if "\t" in text and not text.startswith(CONCLUSION_TOC_PREFIX):
-                if text.startswith("INTRODUCTION") or text.startswith("OUR UNDERSTANDING"):
-                    continue
-                if text.startswith("Antivirus") or text.startswith("Active Directory Post"):
-                    first_assessment_idx = i
-                    break
+        first_assessment_idx = contents_idx + 1 + len(STATIC_TOC_ANCHORS)
 
-    return contents_idx, first_assessment_idx, conclusion_idx
+    if terms_idx is None and conclusion_idx is not None and conclusion_idx > 0:
+        prev = (doc.paragraphs[conclusion_idx - 1].text or "").strip()
+        if prev.startswith(TERMS_TOC_LABEL) and "\t" in prev:
+            terms_idx = conclusion_idx - 1
+
+    return contents_idx, first_assessment_idx, terms_idx, conclusion_idx
 
 
-def _set_toc_line(p_element, title: str, page: int) -> None:
-    """Rebuild a Contents line as ``Title<TAB>Page`` preserving paragraph properties."""
-    p_pr = p_element.find(qn("w:pPr"))
+_TOC_PPR_CACHE: Any = None
+
+
+def _reference_toc_ppr() -> Any:
+    """Cached paragraph properties from a template Contents line (incl. dot leaders)."""
+    global _TOC_PPR_CACHE
+    if _TOC_PPR_CACHE is not None:
+        return _TOC_PPR_CACHE
+    if not BASE_TEMPLATE.is_file():
+        return None
+    ref = Document(str(BASE_TEMPLATE))
+    _, first_assessment_idx, _, _ = _find_contents_region(ref)
+    sample_idx = min(first_assessment_idx or 25, len(ref.paragraphs) - 1)
+    ppr = ref.paragraphs[sample_idx]._element.find(qn("w:pPr"))
+    _TOC_PPR_CACHE = copy.deepcopy(ppr) if ppr is not None else None
+    return _TOC_PPR_CACHE
+
+
+def _sanitize_toc_ppr(ppr) -> None:
+    """Remove layout/highlight artifacts copied from the template TOC lines."""
+    for tag in (qn("w:pageBreakBefore"), qn("w:keepNext"), qn("w:pageBreakAfter")):
+        node = ppr.find(tag)
+        if node is not None:
+            ppr.remove(node)
+    rpr = ppr.find(qn("w:rPr"))
+    if rpr is not None:
+        highlight = rpr.find(qn("w:highlight"))
+        if highlight is not None:
+            rpr.remove(highlight)
+        if not len(rpr):
+            ppr.remove(rpr)
+
+
+def _apply_compact_toc_ppr(p_element, *, first_line: bool = False) -> None:
+    """Apply compact Contents paragraph formatting with right-aligned dot leader tab."""
+    existing = p_element.find(qn("w:pPr"))
+    if existing is not None:
+        p_element.remove(existing)
+
+    ref = _reference_toc_ppr()
+    if ref is not None:
+        ppr = copy.deepcopy(ref)
+        _sanitize_toc_ppr(ppr)
+    else:
+        ppr = OxmlElement("w:pPr")
+        tabs = OxmlElement("w:tabs")
+        tab = OxmlElement("w:tab")
+        tab.set(qn("w:val"), "right")
+        tab.set(qn("w:leader"), "dot")
+        tab.set(qn("w:pos"), TOC_TAB_POS)
+        tabs.append(tab)
+        ppr.append(tabs)
+
+    spacing = ppr.find(qn("w:spacing"))
+    if spacing is None:
+        spacing = OxmlElement("w:spacing")
+        ppr.append(spacing)
+    spacing.set(qn("w:before"), TOC_FIRST_LINE_BEFORE_TWIPS if first_line else TOC_LINE_BEFORE_TWIPS)
+    spacing.set(qn("w:after"), "0")
+    spacing.set(qn("w:line"), "240")
+    spacing.set(qn("w:lineRule"), "auto")
+
+    _sanitize_toc_ppr(ppr)
+
+    # Ensure dot-leader tab stop is present.
+    tabs_el = ppr.find(qn("w:tabs"))
+    if tabs_el is None:
+        tabs_el = OxmlElement("w:tabs")
+        ppr.append(tabs_el)
+    if not tabs_el.findall(qn("w:tab")):
+        tab = OxmlElement("w:tab")
+        tab.set(qn("w:val"), "right")
+        tab.set(qn("w:leader"), "dot")
+        tab.set(qn("w:pos"), TOC_TAB_POS)
+        tabs_el.append(tab)
+
+    p_element.insert(0, ppr)
+
+
+def _set_toc_line(p_element, title: str, page: int, *, first_line: bool = False) -> None:
+    """Rebuild a Contents line as ``Title<TAB>Page`` with compact layout."""
+    _apply_compact_toc_ppr(p_element, first_line=first_line)
     for child in list(p_element):
-        p_element.remove(child)
-    if p_pr is not None:
-        p_element.append(p_pr)
+        if child.tag != qn("w:pPr"):
+            p_element.remove(child)
 
     r_title = OxmlElement("w:r")
     t_title = OxmlElement("w:t")
@@ -388,12 +571,138 @@ def _set_toc_line(p_element, title: str, page: int) -> None:
     p_element.append(r_page)
 
 
+def _parse_toc_line(text: str) -> tuple[str, int]:
+    parts = (text or "").split("\t")
+    title = parts[0].strip() if parts else ""
+    page_raw = parts[1].strip() if len(parts) > 1 else "1"
+    page_digits = re.sub(r"[^\d]", "", page_raw)
+    return title, int(page_digits) if page_digits else 1
+
+
+def _find_introduction_body_idx(doc: Document) -> int | None:
+    """Return paragraph index of the body INTRODUCTION heading (not the Contents line)."""
+    _, _, _, conclusion_idx = _find_contents_region(doc)
+    if conclusion_idx is None:
+        return None
+    for i in range(conclusion_idx + 1, len(doc.paragraphs)):
+        text = (doc.paragraphs[i].text or "").strip()
+        if text == "INTRODUCTION" and "\t" not in text:
+            return i
+    return None
+
+
+def _ensure_page_break_before_introduction(doc: Document) -> None:
+    """Start the Introduction section on the page after Contents."""
+    intro_idx = _find_introduction_body_idx(doc)
+    if intro_idx is None:
+        return
+
+    if intro_idx > 0:
+        prev_el = doc.paragraphs[intro_idx - 1]._element
+        if _is_page_break_only_paragraph(prev_el) or _has_page_break(prev_el):
+            return
+
+    intro_el = doc.paragraphs[intro_idx]._element
+    ppr = intro_el.find(qn("w:pPr"))
+    if ppr is not None and ppr.find(qn("w:pageBreakBefore")) is not None:
+        return
+
+    _insert_paragraph_before(doc, intro_idx, _make_page_break_paragraph())
+
+
+def _normalize_contents_section(doc: Document) -> None:
+    """Compact Contents layout: tight spacing, no page breaks, single-page TOC block."""
+    contents_idx, first_assessment_idx, _, conclusion_idx = _find_contents_region(doc)
+    if contents_idx is None or conclusion_idx is None:
+        return
+
+    # Drop blank lines and page-break-only paragraphs inside the Contents block.
+    for i in range(conclusion_idx - 1, contents_idx, -1):
+        if i >= len(doc.paragraphs):
+            continue
+        para = doc.paragraphs[i]
+        if _is_page_break_only_paragraph(para._element):
+            _remove_paragraph_at(doc, i)
+            continue
+        txt = (para.text or "").strip()
+        if txt:
+            continue
+        if para._element.findall(f".//{PIC_TAG}"):
+            continue
+        _remove_paragraph_at(doc, i)
+
+    _, first_assessment_idx, _, conclusion_idx = _find_contents_region(doc)
+    if conclusion_idx is None:
+        return
+
+    for i in range(contents_idx + 1, conclusion_idx + 1):
+        if i >= len(doc.paragraphs):
+            break
+        p_element = doc.paragraphs[i]._element
+        for br in list(p_element.iter(qn("w:br"))):
+            if br.get(qn("w:type")) == "page":
+                parent = br.getparent()
+                if parent is not None:
+                    parent.remove(br)
+        title, page_num = _parse_toc_line(doc.paragraphs[i].text or "")
+        if title:
+            _set_toc_line(
+                p_element,
+                title,
+                page_num,
+                first_line=(i == contents_idx + 1),
+            )
+
+
+def _strip_yellow_from_element(element) -> int:
+    removed = 0
+    for rpr in element.iter(qn("w:rPr")):
+        highlight = rpr.find(qn("w:highlight"))
+        if highlight is None:
+            continue
+        val = (highlight.get(qn("w:val")) or "").lower()
+        if val not in ("", "none", "white"):
+            rpr.remove(highlight)
+            removed += 1
+    return removed
+
+
+def _strip_all_yellow_highlights(doc: Document) -> int:
+    """Remove all visible highlights from the document (incl. tracked-change runs)."""
+    removed = _strip_yellow_from_element(doc.element.body)
+    for section in doc.sections:
+        for hf in (
+            section.header,
+            section.footer,
+            section.first_page_header,
+            section.first_page_footer,
+        ):
+            if hf is not None and hasattr(hf, "_element"):
+                removed += _strip_yellow_from_element(hf._element)
+    return removed
+
+
+def _finalize_document(docx_path: Path, ordered_keys: list[str] | None = None) -> None:
+    """Apply final layout fixes and refresh all Contents page numbers."""
+    if not ordered_keys:
+        ordered_keys = [item["key"] for item in ASSESSMENT_CATALOG]
+
+    doc = Document(str(docx_path))
+    _normalize_contents_section(doc)
+    _ensure_page_break_before_introduction(doc)
+
+    pages = _compute_layout_pages(doc)
+    _refresh_all_toc_pages(doc, ordered_keys, pages)
+    _normalize_contents_section(doc)
+
+    _strip_all_yellow_highlights(doc)
+    doc.save(str(docx_path))
+    _set_update_fields_on_open(docx_path)
+
+
 def _clone_toc_paragraph(doc: Document) -> OxmlElement:
-    """Clone an empty Contents line shell (style only)."""
-    _, first_assessment_idx, _ = _find_contents_region(doc)
-    sample_idx = first_assessment_idx or 25
-    sample_idx = min(sample_idx, len(doc.paragraphs) - 1)
-    new_p = copy.deepcopy(doc.paragraphs[sample_idx]._element)
+    """Create a new compact Contents line paragraph."""
+    new_p = OxmlElement("w:p")
     _set_toc_line(new_p, "", 1)
     return new_p
 
@@ -403,25 +712,80 @@ def _insert_paragraph_before(doc: Document, index: int, p_element) -> None:
     anchor.addprevious(p_element)
 
 
-def _compute_paragraph_pages(doc: Document, paras_per_page: float = PARAS_PER_PAGE) -> dict[int, int]:
-    """Estimate page number for each paragraph index."""
+def _paragraph_lines(p_element) -> float:
+    """Estimate how many printed lines a paragraph consumes."""
+    text = _paragraph_text(p_element)
+    lines = max(0.35, len(text) / CHARS_PER_LINE) if text else 0.35
+    ppr = p_element.find(qn("w:pPr"))
+    if ppr is not None:
+        sp = ppr.find(qn("w:spacing"))
+        if sp is not None:
+            before = int(sp.get(qn("w:before")) or 0)
+            after = int(sp.get(qn("w:after")) or 0)
+            lines += (before + after) / 240.0
+    return lines
+
+
+def _table_lines(tbl_element) -> float:
+    """Estimate printed lines consumed by a table."""
+    total = 0.75
+    for tr in tbl_element.findall(qn("w:tr")):
+        row_lines = 1.0
+        for tc in tr.findall(qn("w:tc")):
+            cell_text = "".join(t.text or "" for t in tc.iter(qn("w:t")))
+            row_lines = max(row_lines, max(1.0, len(cell_text) / CHARS_PER_LINE))
+        total += row_lines
+    return total
+
+
+def _compute_layout_pages(doc: Document) -> dict[int, int]:
+    """Estimate page numbers for each ``doc.paragraphs`` index from final layout."""
     pages: dict[int, int] = {}
-    current = 1
-    since_break = 0.0
+    current_page = 1
+    lines_used = 0.0
+
     for i, para in enumerate(doc.paragraphs):
-        pages[i] = current
-        since_break += 1.0
-        if _has_page_break(para._element):
-            current += 1
-            since_break = 0.0
+        el = para._element
+        pages[i] = current_page
+
+        ppr = el.find(qn("w:pPr"))
+        if ppr is not None and ppr.find(qn("w:pageBreakBefore")) is not None:
+            current_page += 1
+            lines_used = 0.0
+            pages[i] = current_page
+
+        if _is_page_break_only_paragraph(el):
+            current_page += 1
+            lines_used = 0.0
             continue
-        if since_break >= paras_per_page:
-            current += 1
-            since_break = 0.0
+
+        lines = _paragraph_lines(el)
+        if lines_used + lines > LINES_PER_PAGE:
+            current_page += 1
+            lines_used = lines
+        else:
+            lines_used += lines
+
+        if _has_page_break(el):
+            current_page += 1
+            lines_used = 0.0
+
     return pages
 
 
-def _find_body_anchor_page(doc: Document, label_prefix: str, pages: dict[int, int], min_index: int = 30) -> int:
+def _compute_paragraph_pages(doc: Document, paras_per_page: float = PARAS_PER_PAGE) -> dict[int, int]:
+    """Estimate page number for each paragraph index."""
+    del paras_per_page  # layout model supersedes the old paragraph counter
+    return _compute_layout_pages(doc)
+
+
+def _find_body_heading_idx(
+    doc: Document,
+    label_prefix: str,
+    *,
+    min_index: int = 0,
+    exact: bool = False,
+) -> int | None:
     prefix = label_prefix.strip().lower()
     for i, para in enumerate(doc.paragraphs):
         if i < min_index:
@@ -429,9 +793,41 @@ def _find_body_anchor_page(doc: Document, label_prefix: str, pages: dict[int, in
         text = (para.text or "").strip()
         if not text or "\t" in text:
             continue
-        if text.lower() == prefix or text.lower().startswith(prefix):
-            return pages.get(i, 1)
+        lower = text.lower()
+        if exact:
+            if lower == prefix:
+                return i
+        elif lower == prefix or lower.startswith(prefix):
+            return i
+    return None
+
+
+def _find_body_anchor_page(
+    doc: Document,
+    label_prefix: str,
+    pages: dict[int, int],
+    min_index: int = 30,
+    *,
+    exact: bool = False,
+) -> int:
+    idx = _find_body_heading_idx(doc, label_prefix, min_index=min_index, exact=exact)
+    if idx is not None:
+        return pages.get(idx, 1)
     return 1
+
+
+def _find_terms_body_page(doc: Document, pages: dict[int, int]) -> int:
+    boundaries = _find_annexure_boundaries(doc)
+    search_from = boundaries[-1][0] if boundaries else 0
+    for i, para in enumerate(doc.paragraphs):
+        if i < search_from:
+            continue
+        text = (para.text or "").strip()
+        if text == TERMS_MARKER:
+            return pages.get(i, 1)
+        if text == TRAILER_MARKER:
+            break
+    return _find_body_anchor_page(doc, TERMS_TOC_LABEL, pages)
 
 
 def _find_trailer_page(doc: Document, pages: dict[int, int]) -> int:
@@ -454,14 +850,14 @@ def _find_annexure_heading_pages(doc: Document, pages: dict[int, int]) -> dict[i
 
 def _update_contents_toc_structure(doc: Document, ordered_keys: list[str]) -> None:
     """Rebuild assessment lines in Contents (titles only; pages filled later)."""
-    contents_idx, first_assessment_idx, conclusion_idx = _find_contents_region(doc)
+    contents_idx, first_assessment_idx, _, conclusion_idx = _find_contents_region(doc)
     if contents_idx is None or conclusion_idx is None or first_assessment_idx is None:
         return
 
     for i in range(conclusion_idx - 1, first_assessment_idx - 1, -1):
         _remove_paragraph_at(doc, i)
 
-    _, first_assessment_idx, conclusion_idx = _find_contents_region(doc)
+    _, first_assessment_idx, _, conclusion_idx = _find_contents_region(doc)
     if conclusion_idx is None or first_assessment_idx is None:
         return
 
@@ -473,18 +869,34 @@ def _update_contents_toc_structure(doc: Document, ordered_keys: list[str]) -> No
         _insert_paragraph_before(doc, insert_at, toc_line)
         insert_at += 1
 
+    terms_line = _clone_toc_paragraph(doc)
+    _set_toc_line(terms_line, TERMS_TOC_LABEL, 1)
+    _insert_paragraph_before(doc, insert_at, terms_line)
+
 
 def _refresh_all_toc_pages(doc: Document, ordered_keys: list[str], pages: dict[int, int]) -> None:
-    """Update every Contents line page number after the final document layout is known."""
-    contents_idx, first_assessment_idx, conclusion_idx = _find_contents_region(doc)
+    """Update every Contents line page number from the final document layout."""
+    contents_idx, first_assessment_idx, terms_idx, conclusion_idx = _find_contents_region(doc)
     if contents_idx is None:
         return
+
+    body_min = (conclusion_idx if conclusion_idx is not None else contents_idx or 0) + 1
+    intro_idx = _find_introduction_body_idx(doc)
+    intro_page = int(pages.get(intro_idx, 1)) if intro_idx is not None else 1
 
     for offset, (label, _anchor) in enumerate(STATIC_TOC_ANCHORS):
         toc_idx = contents_idx + 1 + offset
         if toc_idx >= len(doc.paragraphs):
             break
-        _set_toc_line(doc.paragraphs[toc_idx]._element, label, DEFAULT_STATIC_TOC_PAGES[offset])
+        page = int(_find_body_anchor_page(doc, label, pages, min_index=body_min, exact=True))
+        if page <= 1 and intro_page > 1:
+            page = intro_page
+        _set_toc_line(
+            doc.paragraphs[toc_idx]._element,
+            label,
+            page,
+            first_line=(offset == 0),
+        )
 
     if first_assessment_idx is None or conclusion_idx is None:
         return
@@ -492,23 +904,31 @@ def _refresh_all_toc_pages(doc: Document, ordered_keys: list[str], pages: dict[i
     annexure_pages = _find_annexure_heading_pages(doc, pages)
     for slot, key in enumerate(ordered_keys, start=1):
         toc_idx = first_assessment_idx + slot - 1
+        if terms_idx is not None and toc_idx >= terms_idx:
+            break
         if toc_idx >= conclusion_idx:
             break
         item = CATALOG_BY_KEY[key]
         page = int(annexure_pages.get(slot, DEFAULT_FIRST_ANNEXURE_PAGE))
         _set_toc_line(doc.paragraphs[toc_idx]._element, str(item["toc_title"]), page)
 
-    _, _, conclusion_idx = _find_contents_region(doc)
+    _, _, terms_idx, conclusion_idx = _find_contents_region(doc)
+    if terms_idx is not None:
+        terms_page = int(_find_terms_body_page(doc, pages))
+        _set_toc_line(doc.paragraphs[terms_idx]._element, TERMS_TOC_LABEL, terms_page)
     if conclusion_idx is not None:
         conclusion_page = int(_find_trailer_page(doc, pages))
-        _set_toc_line(doc.paragraphs[conclusion_idx]._element, CONCLUSION_TOC_PREFIX, conclusion_page)
+        _set_toc_line(
+            doc.paragraphs[conclusion_idx]._element,
+            CONCLUSION_TOC_PREFIX,
+            conclusion_page,
+        )
 
 
-def _update_contents_toc(doc: Document, ordered_keys: list[str], pages: dict[int, int]) -> None:
-    """Rebuild Contents assessment entries and refresh all page numbers."""
+def _update_contents_toc(doc: Document, ordered_keys: list[str], pages: dict[int, int] | None = None) -> None:
+    """Rebuild Contents assessment entries (page numbers refreshed in finalize)."""
+    del pages
     _update_contents_toc_structure(doc, ordered_keys)
-    pages = _compute_paragraph_pages(doc)
-    _refresh_all_toc_pages(doc, ordered_keys, pages)
 
 
 def _set_update_fields_on_open(docx_path: Path) -> None:
@@ -544,8 +964,13 @@ def _set_update_fields_on_open(docx_path: Path) -> None:
     shutil.move(str(tmp), str(docx_path))
 
 
-def apply_annexure_order(docx_path: Path, ordered_keys: list[str] | None) -> None:
-    """Reorder / subset annexure sections, fix page breaks, and rebuild Contents."""
+def apply_annexure_order(
+    docx_path: Path,
+    ordered_keys: list[str] | None,
+    *,
+    company_name: str = "Client",
+) -> None:
+    """Reorder / subset annexure sections, append Terms & Conclusion, rebuild Contents."""
     if not ordered_keys:
         return
 
@@ -563,24 +988,25 @@ def apply_annexure_order(docx_path: Path, ordered_keys: list[str] | None) -> Non
     if 13 not in section_ranges:
         raise ValueError("Template is missing Annexure 13 block required for document trailer.")
 
-    trailer_start = _find_trailer_start(doc, *section_ranges[13])
+    sec13_start, sec13_end = section_ranges[13]
+    annexure13_end, new_terms_start, trailer_start = _split_annexure13_tail(doc, sec13_start, sec13_end)
+
     blocks: dict[int, list] = {}
     for num, (start, end) in section_ranges.items():
-        block_end = trailer_start if num == 13 else end
+        block_end = annexure13_end if num == 13 else end
         bs, be = _block_range_with_leading_break(doc, start, block_end)
-        # Extract block including all body elements (paragraphs + tables)
         blocks[num] = _extract_block_elements(doc, bs, be)
         if not blocks[num] and num != 13:
-            # Warn if block is empty
             print(f"Warning: Annexure {num} extracted no elements from paragraph {bs} to {be}")
+
+    terms_bs, _ = _block_range_with_leading_break(doc, new_terms_start, trailer_start)
+    terms_elements = _extract_block_elements(doc, terms_bs, trailer_start)
 
     trailer_start_full = trailer_start
     if trailer_start_full > 0 and _is_page_break_only_paragraph(doc.paragraphs[trailer_start_full - 1]._element):
         trailer_start_full -= 1
-    # Extract trailer including all body elements
-    trailer_elements = _extract_block_elements(doc, trailer_start_full, section_ranges[13][1])
+    trailer_elements = _extract_block_elements(doc, trailer_start_full, sec13_end)
 
-    # Remove everything from first annexure onward (including tables)
     body = doc.element.body
     body_children = list(body)
     start_body_idx = _get_body_element_index(doc, first_idx)
@@ -599,46 +1025,61 @@ def apply_annexure_order(docx_path: Path, ordered_keys: list[str] | None) -> Non
             raise ValueError(f"Missing template section for annexure {default_num} ({key}).")
 
         cloned: list = []
-        # Always start each annexure on a new page.
         cloned.append(_make_page_break_paragraph())
 
         for el in block:
             el_copy = copy.deepcopy(el)
-            # Skip page-break-only paragraphs
             if el_copy.tag == qn("w:p") and _is_page_break_only_paragraph(el_copy):
                 continue
-            # Update annexure heading if it's a paragraph
             if el_copy.tag == qn("w:p"):
                 text = _paragraph_text(el_copy)
                 if text.startswith("Annexure "):
                     _set_paragraph_text(el_copy, f"Annexure {slot}: {item['title']}")
-            # Include both paragraphs and tables
+                    _strip_yellow_from_element(el_copy)
             cloned.append(el_copy)
 
         _insert_elements_before_sectpr(body, cloned)
 
-    # Page break before conclusion / pricing block.
+    if terms_elements:
+        terms_clone = [_make_page_break_paragraph()]
+        for el in terms_elements:
+            el_copy = copy.deepcopy(el)
+            if el_copy.tag == qn("w:p") and _is_page_break_only_paragraph(el_copy):
+                continue
+            terms_clone.append(el_copy)
+        _replace_client_literals_in_elements(terms_clone, company_name)
+        for el in terms_clone:
+            _strip_yellow_from_element(el)
+        _insert_elements_before_sectpr(body, terms_clone)
+
     trailer_clone = [_make_page_break_paragraph()]
     for el in trailer_elements:
         el_copy = copy.deepcopy(el)
         if el_copy.tag == qn("w:p") and _is_page_break_only_paragraph(el_copy):
             continue
-        # Include both paragraphs and tables from trailer
         trailer_clone.append(el_copy)
+    _update_conclusion_pricing_table(trailer_clone, ordered_keys)
+    _replace_client_literals_in_elements(trailer_clone, company_name)
+    for el in trailer_clone:
+        _strip_yellow_from_element(el)
     _insert_elements_before_sectpr(body, trailer_clone)
 
     _update_contents_toc(doc, ordered_keys, {})
     doc.save(str(docx_path))
-    _set_update_fields_on_open(docx_path)
 
 
-def apply_assessments(docx_path: Path, assessments: list[AssessmentItem] | None) -> None:
+def apply_assessments(
+    docx_path: Path,
+    assessments: list[AssessmentItem] | None,
+    *,
+    company_name: str = "Client",
+) -> None:
     """Legacy hook — prefer ``apply_annexure_order`` via ``annexure_order`` keys."""
     if not assessments:
         return
     keys = [a.key for a in assessments if a.enabled and a.key in CATALOG_BY_KEY]
     if keys:
-        apply_annexure_order(docx_path, keys)
+        apply_annexure_order(docx_path, keys, company_name=company_name)
 
 
 # ---------------------------------------------------------------------------
@@ -665,9 +1106,8 @@ def _process_xml_part(data: bytes) -> bytes:
     return text.encode("utf-8")
 
 
-def _insert_client_logo_placeholder(docx_path: Path) -> None:
-    doc = Document(str(docx_path))
-    logo_para = None
+def _find_cover_logo_paragraph(doc: Document):
+    """Return the cover paragraph that holds the client logo slot."""
     seen_heading = False
     for para in doc.paragraphs:
         txt = (para.text or "").strip()
@@ -676,9 +1116,38 @@ def _insert_client_logo_placeholder(docx_path: Path) -> None:
             continue
         if not seen_heading:
             continue
+        if "{{ client_logo }}" in (para.text or ""):
+            return para
         if para._element.findall(f".//{PIC_TAG}") and not txt:
-            logo_para = para
-            break
+            return para
+    return None
+
+
+def _insert_logo_on_cover(doc: Document, logo_path: Path) -> bool:
+    """Replace the cover client-logo slot with the uploaded image."""
+    if not logo_path.is_file():
+        return False
+    logo_para = _find_cover_logo_paragraph(doc)
+    if logo_para is None:
+        return False
+    el = logo_para._element
+    for child in list(el):
+        if child.tag != qn("w:pPr"):
+            el.remove(child)
+    logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    try:
+        width = calculate_optimal_logo_size(logo_path)
+        logo_para.add_run().add_picture(str(logo_path), width=Inches(width))
+        return True
+    except Exception:
+        traceback.print_exc()
+        return False
+
+
+def _insert_client_logo_placeholder(docx_path: Path) -> None:
+    """Insert docxtpl tag on the cover logo paragraph (used when building base template)."""
+    doc = Document(str(docx_path))
+    logo_para = _find_cover_logo_paragraph(doc)
     if logo_para is None:
         raise RuntimeError("Cover client-logo paragraph not found.")
     el = logo_para._element
@@ -688,6 +1157,20 @@ def _insert_client_logo_placeholder(docx_path: Path) -> None:
     logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     logo_para.add_run("{{ client_logo }}")
     doc.save(str(docx_path))
+
+
+def _ensure_client_logo_placeholder_in_template() -> None:
+    """Make sure the base template contains a docxtpl logo placeholder."""
+    if not BASE_TEMPLATE.is_file():
+        return
+    try:
+        with zipfile.ZipFile(BASE_TEMPLATE, "r") as zf:
+            xml = zf.read("word/document.xml")
+        if b"client_logo" in xml:
+            return
+        _insert_client_logo_placeholder(BASE_TEMPLATE)
+    except Exception:
+        traceback.print_exc()
 
 
 def _replace_highlighted_placeholder_text(doc: Document, old_text: str, new_text: str) -> None:
@@ -817,6 +1300,8 @@ def ensure_base_template() -> Path:
                 "`python css_proposal_generator.py --build-template`."
             )
         build_base_template()
+    else:
+        _ensure_client_logo_placeholder_in_template()
     return BASE_TEMPLATE
 
 
@@ -888,32 +1373,35 @@ def generate_proposal(
         raise RuntimeError(f"Template render failed: {exc}") from exc
     output.parent.mkdir(parents=True, exist_ok=True)
     tpl.save(str(output))
-    
-    # Post-processing: replace any yellow-highlighted placeholders with actual values
+
+    logo_file: Path | None = None
+    if logo_path:
+        candidate = Path(logo_path)
+        if candidate.is_file():
+            logo_file = candidate
+
+    # Post-processing: replace placeholders and insert cover logo.
     try:
         doc = Document(str(output))
         _replace_highlighted_placeholder_text(doc, "XYZ LLC", company_name)
         _replace_highlighted_placeholder_text(doc, "Company name", company_name)
         _replace_highlighted_placeholder_text(doc, "EN-01-12-25", proposal_ref)
-        
-        # Try to replace yellow-highlighted image with uploaded logo
-        if logo_path:
-            logo_file = Path(logo_path)
-            if logo_file.is_file():
+
+        if logo_file:
+            if not _insert_logo_on_cover(doc, logo_file):
                 _replace_highlighted_placeholder_image(doc, logo_file)
-        
+
         doc.save(str(output))
-    except Exception as exc:
+    except Exception:
         traceback.print_exc()
-        # Don't fail on post-processing, document is already saved
     
     try:
-        if annexure_order:
-            apply_annexure_order(output, annexure_order)
-        else:
-            apply_assessments(output, assessments)
+        ordered_keys = annexure_order or [item["key"] for item in ASSESSMENT_CATALOG]
+        apply_annexure_order(output, ordered_keys, company_name=company_name)
     except Exception as exc:
         raise RuntimeError(f"Annexure layout failed: {exc}") from exc
+
+    _finalize_document(output, ordered_keys)
     return output
 
 
@@ -1009,7 +1497,7 @@ async def proposal_form() -> HTMLResponse:
       <div class="form-group">
         <label for="client_logo">Client logo (cover page)</label>
         <input type="file" id="client_logo" name="client_logo" accept="image/png,image/jpeg,image/jpg,image/webp" />
-        <p class="hint">Upload your company logo. It will replace any yellow-highlighted image placeholders.</p>
+        <p class="hint">Upload your company logo. It will appear on the cover page.</p>
       </div>
 
       <h2>Annexures (optional)</h2>

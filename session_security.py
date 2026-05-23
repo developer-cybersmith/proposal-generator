@@ -87,6 +87,7 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
             "/auth/login",
             "/auth/callback",
             "/static/",
+            "/proposal-generator/",
             # /csrf-token is not skipped so GET with a logged-in session refreshes idle timers (sliding session).
             "/csrf-refresh",
         ]

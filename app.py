@@ -17,7 +17,6 @@ from Automation.backend.type4 import app as type4_app
 from Automation.backend.type5 import app as type5_app
 from Automation.backend.ai_layer import app as ai_layer_app
 from Automation.backend.type6 import router as type6_router
-from Automation.backend.css_proposal_generator import app as css_proposal_app
 
 from dashboard import dashboard_app
 from auth import router as auth_router
@@ -141,7 +140,6 @@ app.mount("/type4", type4_app)
 app.mount("/type5", type5_app)
 app.mount("/ai-layer", ai_layer_app)
 app.mount("/dashboard", dashboard_app)
-app.mount("/css-proposal", css_proposal_app)
 app.include_router(type6_router)
 
 # Include MitKat routes from main.py

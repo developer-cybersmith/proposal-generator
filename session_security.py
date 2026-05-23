@@ -68,13 +68,15 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
 
         # Check CSRF for state-changing operations
         if request.method in ["POST", "PUT", "DELETE", "PATCH"]:
-            if not self._is_csrf_valid(request):
-                # Return JSON to avoid frontend JSON.parse errors
-                return Response(
-                    content=json.dumps({"detail": "CSRF token invalid"}),
-                    status_code=403,
-                    media_type="application/json"
-                )
+            # Skip CSRF check for public endpoints that don't require authentication
+            if not self._should_skip_csrf(request):
+                if not self._is_csrf_valid(request):
+                    # Return JSON to avoid frontend JSON.parse errors
+                    return Response(
+                        content=json.dumps({"detail": "CSRF token invalid"}),
+                        status_code=403,
+                        media_type="application/json"
+                    )
 
         response = await call_next(request)
         return response
@@ -87,6 +89,7 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
             "/auth/login",
             "/auth/callback",
             "/static/",
+            "/proposal-generator/",
             # /csrf-token is not skipped so GET with a logged-in session refreshes idle timers (sliding session).
             "/csrf-refresh",
         ]
@@ -99,6 +102,14 @@ class SessionSecurityMiddleware(BaseHTTPMiddleware):
                 ]
             )
         return any(request.url.path.startswith(path) for path in skip_paths)
+    
+    def _should_skip_csrf(self, request: Request) -> bool:
+        """Skip CSRF validation for public endpoints"""
+        skip_csrf_paths = [
+            "/proposal-generator/",
+            "/health",
+        ]
+        return any(request.url.path.startswith(path) for path in skip_csrf_paths)
     
     def _is_protected_endpoint(self, request: Request) -> bool:
         """Check if endpoint requires authentication"""

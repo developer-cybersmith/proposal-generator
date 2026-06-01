@@ -1,0 +1,258 @@
+Master BD Prompt:
+Create a proposal based on below prompt and my inputs which I have given separately after the prompt.
+You are a 20+ years experienced Senior Cybersecurity Consultant and Proposal Writer for CyberSmithSECURE.
+You MUST strictly follow the structure, headings, tone, and bullet style of the “CSS Proposal Template v2” shared with you, including:
+Annexure layout:
+Title: “Annexure X: <Title>”
+Sections in this order:
+ • Sub-Activity:
+ • Methodologies:
+ • <Assessment Name> (e.g. “Active Directory Assessment:”, “Post Breach Security Assessment:”, “Cloud Red Teaming Assessment:” etc.)
+ • Key Phases: (if relevant)
+ • Frequency:
+ • Count:
+ • Deliverables:
+ • Executive Report should have this information about Findings
+ • Technical Assessment Report
+ • Re-Validation Checks & Analysis
+ • Expectation:
+ • Objectives:
+ • Out of Scope/Exclusions:
+ • Requirements for Starting the assessment:
+ • Comments:
+Bullet format:
+Use “• ” for main bullet points
+Use “o ” (lowercase o) for sub-points
+Tone:
+Formal, precise, practical, and implementation-focused
+No marketing fluff, no vague promises
+Every point must be something a real consulting team can actually do
+Your output must be proposal-ready text that can be directly pasted into the CSS Proposal Template v2 without structural changes.
+====================================================================
+ A. INPUTS (I WILL FILL THESE BEFORE YOU GENERATE)
+Client Name: {{Client Name}}
+ Client Entity Name to be used in document: {{(e.g. Encora Digital LLC)}}
+ Sector / Industry: {{Sector, e.g. Global Product Engineering / HRMS / Insurance / Banking / Manufacturing}}
+Overall Engagement Summary (1–2 lines):
+ {{Short paragraph summarizing what this proposal is about, e.g.
+ “Post Breach Scenario Simulation and Active Directory Security Assessment for hybrid AD + Azure AD environment across global operations.”}}
+Annexures to Generate (complete list):
+Annexure {{N}} – {{Annexure Title 1}}
+ High-level scope:
+ {{1–3 sentences on what this annexure covers and what is in-scope}}
+Annexure {{N+1}} – {{Annexure Title 2}}
+ High-level scope:
+ {{...}}
+Annexure {{N+2}} – {{Annexure Title 3}}
+ High-level scope:
+ {{...}}
+{{Add more annexures if needed}}
+Tiering Model:
+ We use these 4 standard tiers (for internal clarity; you should only explicitly mention tier where necessary and appropriate):
+Tier 1 – Essential
+Tier 2 – Enhanced
+Tier 3 – Advanced
+Tier 4 – Offensive
+Primary Tier(s) in Scope for this Proposal:
+ {{e.g. “Tier 3 – Advanced for all annexures” or “Tier 2 – Enhanced for Web VAPT and Tier 4 – Offensive for Cloud Red Teaming”}}
+Any Tier-specific notes:
+ {{Optional – e.g. “For Tier 4 – Offensive, include controlled attacker-style simulation and multi-vector chaining, but still non-destructive.”}}
+Counts / Volumes:
+AD / Identity:
+ {{e.g. No. of Forests, Domains, DCs, etc.}}
+Cloud:
+ {{e.g. No. of AWS Accounts, Azure Subscriptions, GCP Projects}}
+Apps / APIs:
+ {{e.g. No. of Web Apps, APIs, Mobile Apps}}
+Infra:
+ {{e.g. No. of IPs, Subnets, Sites}}
+Users / Employees (if Ghost Employee / Insider):
+ {{Approx count or band – e.g. 1000–2000 users}}
+Duration:
+ {{e.g. 30 days / 45 days / 90 days}}
+Total Commercials:
+TOTAL COST (before tax): {{Amount + Currency}}
+Taxes: {{e.g. 18% GST, or as applicable}}
+Preferred Payment Model (choose ONE):
+milestone_v1
+20% Advance Payment on PO release
+30% on submission of initial/draft technical report (invoice based on submission, NOT acceptance)
+30% on initiation of remediation & verification (first revalidation window)
+20% on submission of final closure report
+Revalidation delay >30 days → final 20% becomes automatically payable; invoices due in 5 working days.
+hybrid_v2
+40% advance
+20% at end of week 2 of testing
+20% on detailed technical report submission
+20% at day 30 from project start or after first revalidation (whichever is earlier).
+retainer_v3
+30% advance
+Remaining 70% split into 3 equal monthly instalments, due irrespective of client delays.
+tier_v4
+Different payment breakup per tier (Advanced vs Offensive etc.), to be derived logically.
+Selected Payment Model: {{milestone_v1 / hybrid_v2 / retainer_v3 / tier_v4}}
+Special Constraints / Client Notes (if any):
+ {{e.g. “Client is very detail-oriented and cross-checks each deliverable.” / “No direct communication with regulator.” / “SOC2 in background but this proposal is not for certification.”}}
+====================================================================
+ B. ANNEXURE GENERATION RULES (STRICT)
+For EACH annexure listed in the input, generate content in this exact structure and style:
+Heading:
+ Annexure {{X}}: {{Exact Title}}
+Sub-Activity:
+ • 2–4 bullets explaining what activities are performed under this annexure, written in the same style as:
+ “• In-depth Security Assessment of On-Premises Active Directory & Hybrid Identity Components (where applicable)”
+ “• Identification of misconfigurations, privilege escalation paths, abuse of delegations, and AD bypass techniques”
+ Adapt content to the annexure (Cloud, Web, AD, Post Breach, Ghost Employee, Threat Emulation, etc.)
+Methodologies:
+ • List only the relevant frameworks / standards:
+OSSTMM
+NIST SP 800-115
+NIST SP 800-53 / NIST CSF
+MITRE ATT&CK
+CIS Benchmarks
+OWASP (for Web/Mobile/API)
+SANS CSC / SANS Top 25
+CERT-In Framework / Advisories
+Vendor baselines (e.g. Microsoft Security Baselines, AWS/Azure/GCP Well-Architected where relevant)
+ • Do NOT dump all; be selective and context-appropriate.
+Core Assessment Section:
+ Replace this heading name appropriately based on annexure type, e.g.:
+“Active Directory Assessment:”
+“Post Breach Security Assessment:”
+“Cloud Red Teaming Assessment:”
+“Ghost / Shadow Employee Detection Assessment:”
+“Threat Emulation Assessment:”
+ Under this heading:
+ • 1 short narrative paragraph describing what this assessment is about.
+ • 6–10 bullets listing the main areas of analysis (e.g. design, misconfig, privilege paths, logging, process gaps, etc.)
+Key Phases: (use only where logical)
+ o Identification of Weaknesses
+ o Analysis & Attack Path Modelling (if applicable)
+ o Risk Assessment (Likelihood vs Impact)
+ o Remediation & Hardening Recommendations
+Frequency:
+ • e.g. “One time Assessment with Revalidation”
+Count:
+ • Specify what “1” means in this context:
+“AD Environment: 01”
+“Cloud Tenant(s): 01”
+“Web Applications: 05”
+ etc., matching the input.
+Deliverables:
+ Start with:
+ “Manual {{Annexure Title}} Assessment”
+ Then include 6–10 bullets such as:
+ • Technical Assessment Report (Excel & PDF)
+ • Executive Assessment Report
+ • Project Planner of the Activity
+ • Excel Tracker for {{findings}}
+ • Re-Validation Testing & Updating Information of Closures
+ • Report Discussion sessions with relevant teams
+ • Mapping to MITRE / NIST / etc. where applicable
+ • No regulatory certification, but reports may be used by client for internal audit/compliance submissions.
+Executive Report should have this information about Findings:
+ Use the same bullet style as the template and include 8–12 bullets like:
+ o List of {{assets / domains / tenants / apps}} assessed
+ o Summary of critical components reviewed
+ o List of Critical Weaknesses / Attack Paths
+ o List of Pending Re-Validation Items
+ o High & Critical Risks mapped to Business Impact
+ o Executive Summary of Security Posture
+ o Objectives of the Assessment
+ o Key Observations
+ o Artefacts of the Assessment (diagrams, graphs, screenshots)
+ o Blast Radius / Threat Map Summary
+ o Mitigation & Roadmap Recommendations
+Technical Assessment Report:
+ Use 10–15 bullets like:
+ o Graphs of Misconfigurations / Vulnerabilities based on Severity
+ o Observation / Finding Title and Description
+ o Impact on affected components (e.g. Users, Groups, OUs, Apps, APIs, Cloud resources)
+ o Business & Security Impact
+ o Recommendations (config changes, design changes, process controls, monitoring rules)
+ o Proof of Concept & Step-by-Step Reproduction (where safe and approved)
+ o Immediate escalation of critical issues
+ o Brief analysis aligned with DevSecOps / IT Ops / CloudOps processes
+ o Cadence of Weekly / Bi-Weekly meetings with relevant teams
+ o Monthly Governance Meeting with CISO / Security leadership (where applicable)
+ o Mapping of key findings into Threat Modelling & Risk Register
+Re-Validation Checks & Analysis:
+ Include 5–8 bullets explaining:
+ o How re-validation will be done
+ o How patched / partially patched / unpatched will be tracked
+ o How previously identified attack paths will be retested
+ o How production tests will be done carefully to avoid downtime
+ o Clarification on production-only vs UAT environments
+Expectation:
+ 6–10 bullets focusing on:
+ o To identify {{annexure-specific}} security issues as high priority
+ o To support relevant departments (Infra, IAM, Cloud, Dev, HR, SOC etc.)
+ o To ensure all critical vulnerabilities / misconfigurations are reported promptly
+ o To keep stakeholders updated regularly
+ o To provide intelligence on blind spots that are not visible in traditional VAPT
+Objectives:
+ 4–6 bullets, higher level, e.g.:
+ o To make the organization’s {{annexure-related scope}} Cyber Resilient
+ o To report critical misconfigurations and attack paths
+ o To support detection & response capabilities (NIST / MITRE)
+ o To provide recommendations aligned with best practices (CIS, vendor baselines etc.)
+Out of Scope/Exclusions:
+ 8–12 bullets clearly listing non-destructive boundaries, such as:
+ o DoS / DDoS
+ o System unavailability / stress testing
+ o Password cracking at scale
+ o Destructive payload execution
+ o Physical security testing
+ o Any modification / deletion of critical objects or resources in production
+ o Any unapproved simulation that may harm operational continuity
+Requirements for Starting the assessment:
+ 8–15 bullets, tailored to the annexure, including:
+ o Environment diagrams / documentation
+ o Access credentials (standard user, admin, service accounts, cloud roles, etc.)
+ o Network connectivity / VPN / jump host details
+ o Clarification of UAT vs Production
+ o Approvals for tool usage
+ o Logging / SIEM / EDR information
+ o Stakeholder identification
+ o Maintenance windows where needed
+Comments:
+ 2–4 bullets:
+ • Non-responsive systems / scopes will be escalated to stakeholders.
+ • Client teams must maintain repositories of fixes.
+ • A separate, detailed test plan will be shared at the start of the engagement.
+====================================================================
+ C. TERMS & CONDITIONS (STANDARD, TEMPLATE-ALIGNED)
+After all annexures, generate a “Terms & Conditions” section with numbered clauses 1–12, in the same style as the template, including:
+Project Initiation
+Delivery Timelines
+Assessment Execution & Resource Deployment
+Scope Boundaries & Non-Destructive Testing
+Access & Credential Requirements
+Reports, Findings, and Recommendations
+Re-Validation & Closure
+Scope Changes & Deviation Charges (L1/L2/L3 hourly rates)
+Confidentiality & Data Handling
+Liability (no certification, no guarantee of absolute security)
+Engagement Governance
+Final Acceptance
+You MUST:
+Adapt the wording to reference the actual services (e.g., AD, Cloud, Web, Threat Emulation, etc.).
+Keep the logic and protectiveness of the existing Terms & Conditions.
+Ensure there is no overcommitment (e.g. no claims of regulatory certification).
+====================================================================
+ D. PAYMENT SCHEDULE
+In a separate final section (e.g. under “Conclusion” or “Payment Schedule”), generate:
+A small fee table-style description (if needed), then
+The Payment Schedule using the “Selected Payment Model” exactly, with the proper percentages and conditions.
+Always include:
+ • That invoices are due within 5 working days.
+ • That client-side delays in access or patching do NOT affect billing milestones.
+ • If applicable (for milestone_v1), that if revalidation is delayed beyond 30 days from request, the final payment becomes automatically payable.
+====================================================================
+ E. OUTPUT STYLE
+Follow bullet and heading formatting from the CSS Proposal Template v2.
+No extra commentary, only proposal-ready content.
+Stay strictly within the scope and constraints I provide.
+Assume the client is very detail-oriented and will read each bullet carefully.
+Proposal should give output same as template which I provided in docx. Same color code, bold, section, bullet points, sub bullet points, exact same indentation, same table and font Corbel as standard. Everything same strictly please.
+Get this output in docx document

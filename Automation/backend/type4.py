@@ -30,6 +30,7 @@ from .report_insert_sections import (
     insert_overall_vulnerabilities_charts,
     insert_overall_vulnerabilities_charts_3d,
     insert_risk_assessment_analysis_table,
+    web_report_finalize,
 )
 
 # Try to import PIL for image processing, but don't fail if it's not available
@@ -715,13 +716,34 @@ def insert_test_case_table(doc) -> None:
     """
     placeholder = "_TEST_CASE_TABLE_PLACEHOLDER_"
     placeholder_paragraph = None
-    for p in doc.paragraphs:
+    ph_idx = None
+    for i, p in enumerate(doc.paragraphs):
         if placeholder in p.text:
             placeholder_paragraph = p
+            ph_idx = i
             break
     if not placeholder_paragraph:
         print(f"Warning: Placeholder {placeholder} not found in the template.")
         return
+
+    if ph_idx is not None and ph_idx > 0:
+        prev_idx = ph_idx - 1
+        while prev_idx >= 0:
+            prev = doc.paragraphs[prev_idx]
+            t = (prev.text or "").strip()
+            if t:
+                if t == "Test Case":
+                    try:
+                        prev.style = doc.styles["Heading 1"]
+                    except KeyError:
+                        pass
+                    prev.paragraph_format.page_break_before = True
+                    for run in prev.runs:
+                        run.bold = True
+                        run.font.name = "Altone Trial"
+                        run.font.color.rgb = RGBColor(106, 68, 154)
+                break
+            prev_idx -= 1
 
     headers = ["Sr. No.", "Test Case", "Status"]
     rows = [
@@ -1232,23 +1254,20 @@ def generate_word_report(
                 doc.add_page_break()
         # Add a page break and the SUMMARY OF FINDINGS & CONCLUSION section as the last page
         doc.add_page_break()
-        # Add two blank lines after the SUMMARY OF FINDINGS & CONCLUSION: heading
         doc.add_paragraph()
         doc.add_paragraph()
-        # Heading as a single paragraph with a line break for TOC compatibility
         summary_heading = doc.add_paragraph()
-        run = summary_heading.add_run("SUMMARY OF FINDINGS &\nCONCLUSION:")
-        doc.add_paragraph()
+        run = summary_heading.add_run("SUMMARY OF FINDINGS & CONCLUSION:")
         run.bold = True
         run.font.size = Pt(28)
-        run.font.name = 'Altone Trial'
+        run.font.name = "Altone Trial"
         run.font.color.rgb = RGBColor(106, 68, 154)
         summary_heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        # Set style to Heading 1 if available for TOC
         try:
-            summary_heading.style = doc.styles['Heading 1']
+            summary_heading.style = doc.styles["Heading 1"]
         except Exception:
             pass
+        doc.add_paragraph()
         # Paragraph 1
         p1 = doc.add_paragraph()
         p1.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
@@ -1327,7 +1346,7 @@ def generate_word_report(
         run.font.name = 'Altone Trial'
         run.font.size = Pt(11)
         run.font.color.rgb = RGBColor(106, 68, 154)
-        doc.save(output_path)
+        web_report_finalize(doc, output_path, summary_heading_paragraph=summary_heading)
         return output_path
     except Exception as e:
         traceback.print_exc()

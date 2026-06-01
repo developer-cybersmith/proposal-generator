@@ -15,12 +15,14 @@ Assets expected in the same folder as this script:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import copy
 import json
 import os
 import re
 import shutil
 import tempfile
+import time
 import traceback
 import zipfile
 from dataclasses import dataclass, field
@@ -32,7 +34,7 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Inches
+from docx.shared import Inches, Pt, RGBColor
 from docxtpl import DocxTemplate, InlineImage
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,6 +47,13 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
 
+try:
+    from pydantic import BaseModel
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+    BaseModel = object  # type: ignore[assignment,misc]
+
 # ---------------------------------------------------------------------------
 # Paths (all relative to this file — no imports from other project modules)
 # ---------------------------------------------------------------------------
@@ -53,8 +62,62 @@ SOURCE_TEMPLATE = HERE / "CSS_Proposal_Source.docx"
 BASE_TEMPLATE = HERE / "CSS_Proposal_Base_Template.docx"
 DEFAULT_LOGO = HERE / "default_logo.png"
 UPLOAD_DIR = HERE / "uploads" / "css_proposal"
-VERSION = "1.2.0"
+MASTER_BD_PROMPT_FILE = HERE / "master_bd_prompt.txt"
+VERSION = "1.3.0"
 DEFAULT_PORT = 8010
+
+# ---------------------------------------------------------------------------
+# CyberSmithSECURE brand formatting constants — LOCKED, DO NOT CHANGE
+# Verified against CyberSmithSECURE Annexures 2.docx
+# ---------------------------------------------------------------------------
+CSS_FONT_NAME = "Corbel"
+CSS_ANNEXURE_HEADING_SIZE = Pt(16)   # Bold + Italic
+CSS_SECTION_LABEL_SIZE = Pt(14)      # Bold
+CSS_BODY_SIZE = Pt(11)               # Regular
+CSS_HEADING_COLOR = RGBColor(0x70, 0x30, 0xA0)  # #7030A0 — matches static template annexures
+CSS_BODY_COLOR = RGBColor(0, 0, 0)   # Black — body text and bullets only
+CSS_MAIN_BULLET = "\u2022"           # U+2022 •
+CSS_SUB_BULLET = "o"                 # lowercase o (per Master BD Prompt)
+CSS_MAIN_BULLET_INDENT = "360"       # twips (~0.63 cm)
+CSS_SUB_BULLET_INDENT = "720"        # twips (~1.27 cm)
+CSS_BULLET_HANGING = "240"           # twips
+
+# ---------------------------------------------------------------------------
+# AI annexure key pattern and required output sections (from Master BD Prompt)
+# ---------------------------------------------------------------------------
+OTHER_KEY_RE = re.compile(r"^__other__\d+_[a-z0-9]+$")
+
+AI_REQUIRED_SECTIONS = [
+    "Sub-Activity:",
+    "Methodologies:",
+    "Deliverables:",
+    "Expectation:",
+    "Objectives:",
+    "Out of Scope",
+    "Requirements for Starting",
+    "Comments:",
+]
+
+VALID_PAYMENT_MODELS = {"milestone_v1", "hybrid_v2", "retainer_v3", "tier_v4"}
+PAYMENT_MODEL_DESCRIPTIONS = {
+    "milestone_v1": (
+        "20% Advance Payment on PO release | "
+        "30% on submission of initial/draft technical report | "
+        "30% on initiation of remediation & verification (first revalidation window) | "
+        "20% on submission of final closure report"
+    ),
+    "hybrid_v2": (
+        "40% advance | "
+        "20% at end of week 2 of testing | "
+        "20% on detailed technical report submission | "
+        "20% at day 30 from project start or after first revalidation (whichever is earlier)"
+    ),
+    "retainer_v3": (
+        "30% advance | "
+        "Remaining 70% split into 3 equal monthly instalments, due irrespective of client delays"
+    ),
+    "tier_v4": "Per-tier payment breakup (Advanced vs Offensive etc.), derived logically",
+}
 
 # Layout-based page estimation (lines per printed page; tuned for A4 proposal layout).
 LINES_PER_PAGE = 38.0
@@ -141,6 +204,34 @@ CATALOG_BY_NUMBER: dict[int, dict[str, Any]] = {
     int(item["annexure_number"]): dict(item) for item in ASSESSMENT_CATALOG
 }
 
+# Per-request mutable copies (keeps thread safety by creating a fresh dict per call)
+_BASE_CATALOG_BY_KEY: dict[str, dict[str, Any]] = CATALOG_BY_KEY
+
+
+def _make_request_catalog() -> dict[str, dict[str, Any]]:
+    """Return a fresh copy of the catalog safe for per-request mutation."""
+    return {k: dict(v) for k, v in _BASE_CATALOG_BY_KEY.items()}
+
+
+def _register_custom_annexure(
+    catalog: dict[str, dict[str, Any]],
+    key: str,
+    title: str,
+    toc_title: str,
+    slot: int,
+    ai_elements: list | None = None,
+) -> None:
+    """Register a runtime AI-generated annexure into a per-request catalog."""
+    catalog[key] = {
+        "key": key,
+        "title": title,
+        "toc_title": toc_title[:60],
+        "annexure_number": 99 + slot,   # avoids collisions with static 1–13
+        "is_custom": True,
+        "custom_slot": slot,
+        "ai_elements": ai_elements or [],
+    }
+
 
 # ---------------------------------------------------------------------------
 # Phase 2 extension point
@@ -155,11 +246,157 @@ class AssessmentItem:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
-def parse_annexure_order_json(raw: str | None) -> list[str] | None:
+# ---------------------------------------------------------------------------
+# Pydantic schemas for AI context input
+# ---------------------------------------------------------------------------
+
+if PYDANTIC_AVAILABLE:
+    class CountsSchema(BaseModel):  # type: ignore[misc]
+        ad_identity: str = ""
+        cloud: str = ""
+        apps_apis: str = ""
+        infra: str = ""
+        users: str = ""
+        duration: str = ""
+
+    class CommercialsSchema(BaseModel):  # type: ignore[misc]
+        total_cost: str = ""
+        taxes: str = "18% GST"
+
+    class CustomAnnexureInput(BaseModel):  # type: ignore[misc]
+        slot_index: int
+        key: str
+        title: str
+        scope: str
+
+    class AIContextSchema(BaseModel):  # type: ignore[misc]
+        sector: str = ""
+        engagement_summary: str = ""
+        primary_tier: str = "Tier 3 \u2013 Advanced"
+        tier_notes: str = ""
+        counts: CountsSchema = CountsSchema()
+        commercials: CommercialsSchema = CommercialsSchema()
+        payment_model: str = "hybrid_v2"
+        special_constraints: str = ""
+        custom_annexures: list[CustomAnnexureInput] = []
+
+else:
+    # Fallback dataclass equivalents when pydantic is not installed
+    @dataclass
+    class CountsSchema:  # type: ignore[no-redef]
+        ad_identity: str = ""
+        cloud: str = ""
+        apps_apis: str = ""
+        infra: str = ""
+        users: str = ""
+        duration: str = ""
+
+    @dataclass
+    class CommercialsSchema:  # type: ignore[no-redef]
+        total_cost: str = ""
+        taxes: str = "18% GST"
+
+    @dataclass
+    class CustomAnnexureInput:  # type: ignore[no-redef]
+        slot_index: int = 0
+        key: str = ""
+        title: str = ""
+        scope: str = ""
+
+    @dataclass
+    class AIContextSchema:  # type: ignore[no-redef]
+        sector: str = ""
+        engagement_summary: str = ""
+        primary_tier: str = "Tier 3 \u2013 Advanced"
+        tier_notes: str = ""
+        counts: Any = field(default_factory=CountsSchema)  # type: ignore[misc]
+        commercials: Any = field(default_factory=CommercialsSchema)  # type: ignore[misc]
+        payment_model: str = "hybrid_v2"
+        special_constraints: str = ""
+        custom_annexures: list = field(default_factory=list)
+
+
+def _parse_ai_context(raw: str) -> "AIContextSchema":
+    """Parse and validate the ai_context_json form field."""
+    if not raw or not raw.strip():
+        if PYDANTIC_AVAILABLE:
+            return AIContextSchema()
+        return AIContextSchema()  # type: ignore[call-arg]
+    data = json.loads(raw)
+    if PYDANTIC_AVAILABLE:
+        return AIContextSchema.model_validate(data)
+
+    # Manual fallback
+    ctx = AIContextSchema()
+    ctx.sector = str(data.get("sector", ""))
+    ctx.engagement_summary = str(data.get("engagement_summary", ""))
+    ctx.primary_tier = str(data.get("primary_tier", ctx.primary_tier))
+    ctx.tier_notes = str(data.get("tier_notes", ""))
+    ctx.payment_model = str(data.get("payment_model", ctx.payment_model))
+    ctx.special_constraints = str(data.get("special_constraints", ""))
+    counts_raw = data.get("counts", {})
+    ctx.counts = CountsSchema(  # type: ignore[call-arg]
+        ad_identity=str(counts_raw.get("ad_identity", "")),
+        cloud=str(counts_raw.get("cloud", "")),
+        apps_apis=str(counts_raw.get("apps_apis", "")),
+        infra=str(counts_raw.get("infra", "")),
+        users=str(counts_raw.get("users", "")),
+        duration=str(counts_raw.get("duration", "")),
+    )
+    comm_raw = data.get("commercials", {})
+    ctx.commercials = CommercialsSchema(  # type: ignore[call-arg]
+        total_cost=str(comm_raw.get("total_cost", "")),
+        taxes=str(comm_raw.get("taxes", "18% GST")),
+    )
+    ctx.custom_annexures = [
+        CustomAnnexureInput(  # type: ignore[call-arg]
+            slot_index=int(ca.get("slot_index", 0)),
+            key=str(ca.get("key", "")),
+            title=str(ca.get("title", "")),
+            scope=str(ca.get("scope", "")),
+        )
+        for ca in data.get("custom_annexures", [])
+    ]
+    return ctx
+
+
+def _validate_ai_context(ctx: "AIContextSchema") -> None:
+    """Raise ValueError for missing required AI context fields."""
+    if not ctx.sector.strip():
+        raise ValueError("AI context: 'sector' is required when generating a custom annexure.")
+    if len(ctx.engagement_summary.strip()) < 10:
+        raise ValueError("AI context: 'engagement_summary' must be at least 10 characters.")
+    if not ctx.counts.duration.strip():
+        raise ValueError("AI context: 'counts.duration' is required.")
+    if not ctx.commercials.total_cost.strip():
+        raise ValueError("AI context: 'commercials.total_cost' is required.")
+    if ctx.payment_model not in VALID_PAYMENT_MODELS:
+        raise ValueError(
+            f"AI context: 'payment_model' must be one of {sorted(VALID_PAYMENT_MODELS)}."
+        )
+    for ca in ctx.custom_annexures:
+        if not ca.title.strip():
+            raise ValueError(f"Custom annexure key={ca.key}: 'title' is required.")
+        if len(ca.scope.strip()) < 20:
+            raise ValueError(
+                f"Custom annexure '{ca.title}': 'scope' must be at least 20 characters."
+            )
+
+
+# ---------------------------------------------------------------------------
+# Annexure order / assessments parsing
+# ---------------------------------------------------------------------------
+
+def parse_annexure_order_json(
+    raw: str | None,
+    *,
+    allow_custom: bool = True,
+) -> list[str] | None:
     """Parse optional annexure order from the form.
 
     Accepts either a JSON array of catalog keys or
     ``{"enabled": true, "order": ["post_breach", "web_app_pt", ...]}``.
+    Custom AI keys matching ``OTHER_KEY_RE`` are allowed when *allow_custom* is True.
     Returns ``None`` when customization is off or the order is empty (keep template default).
     """
     if not raw or not raw.strip():
@@ -184,7 +421,10 @@ def parse_annexure_order_json(raw: str | None) -> list[str] | None:
         if not k:
             continue
         if k not in CATALOG_BY_KEY:
-            raise ValueError(f"Unknown annexure key: {k}")
+            if allow_custom and OTHER_KEY_RE.match(k):
+                pass  # Custom AI annexure — validated later
+            else:
+                raise ValueError(f"Unknown annexure key: {k}")
         if k in seen:
             raise ValueError(f"Duplicate annexure key: {k}")
         seen.add(k)
@@ -217,6 +457,328 @@ def parse_assessments_json(raw: str | None) -> list[AssessmentItem] | None:
             )
         )
     return items
+
+
+# ---------------------------------------------------------------------------
+# AI Annexure Engine
+# ---------------------------------------------------------------------------
+
+def _load_master_bd_prompt() -> str:
+    """Load the locked Master BD Prompt from disk.  Never modify this file."""
+    if not MASTER_BD_PROMPT_FILE.is_file():
+        raise FileNotFoundError(
+            f"Master BD Prompt not found at {MASTER_BD_PROMPT_FILE}. "
+            "Ensure master_bd_prompt.txt exists next to css_proposal_generator.py."
+        )
+    return MASTER_BD_PROMPT_FILE.read_text(encoding="utf-8")
+
+
+def _build_ai_user_message(
+    company_name: str,
+    context: "AIContextSchema",
+    custom_annexure: "CustomAnnexureInput",
+    slot_number: int,
+) -> str:
+    """Fill in the Master BD Prompt Section A with actual values.
+
+    Only this annexure is requested — T&C and Payment Schedule are
+    already present in the static template and must NOT be regenerated.
+    """
+    c = context.counts
+    counts_lines: list[str] = []
+    if c.ad_identity:
+        counts_lines.append(f"AD / Identity:\n {c.ad_identity}")
+    if c.cloud:
+        counts_lines.append(f"Cloud:\n {c.cloud}")
+    if c.apps_apis:
+        counts_lines.append(f"Apps / APIs:\n {c.apps_apis}")
+    if c.infra:
+        counts_lines.append(f"Infra:\n {c.infra}")
+    if c.users:
+        counts_lines.append(f"Users / Employees (if Ghost Employee / Insider):\n {c.users}")
+    if c.duration:
+        counts_lines.append(f"Duration:\n {c.duration}")
+    counts_block = "\n".join(counts_lines) if counts_lines else "(not specified)"
+
+    payment_desc = PAYMENT_MODEL_DESCRIPTIONS.get(context.payment_model, context.payment_model)
+
+    return f"""A. INPUTS (I WILL FILL THESE BEFORE YOU GENERATE)
+
+Client Name: {company_name}
+Client Entity Name to be used in document: {company_name}
+Sector / Industry: {context.sector}
+
+Overall Engagement Summary (1\u20132 lines):
+{context.engagement_summary}
+
+Annexures to Generate (complete list):
+Annexure {slot_number} \u2013 {custom_annexure.title}
+High-level scope:
+{custom_annexure.scope}
+
+Tiering Model:
+We use these 4 standard tiers (for internal clarity; only mention tier where necessary):
+Tier 1 \u2013 Essential
+Tier 2 \u2013 Enhanced
+Tier 3 \u2013 Advanced
+Tier 4 \u2013 Offensive
+
+Primary Tier(s) in Scope for this Proposal:
+{context.primary_tier}
+
+Any Tier-specific notes:
+{context.tier_notes or "None"}
+
+Counts / Volumes:
+{counts_block}
+
+Total Commercials:
+TOTAL COST (before tax): {context.commercials.total_cost}
+Taxes: {context.commercials.taxes}
+
+Preferred Payment Model (choose ONE):
+Selected Payment Model: {context.payment_model}
+({payment_desc})
+
+Special Constraints / Client Notes (if any):
+{context.special_constraints or "None"}
+
+====================================================================
+IMPORTANT OUTPUT INSTRUCTION:
+Generate ONLY the annexure content block for Annexure {slot_number}: {custom_annexure.title}.
+Do NOT generate the Terms & Conditions section.
+Do NOT generate the Payment Schedule section.
+Do NOT generate the Conclusion & Pricing section.
+Output ONLY the annexure block starting from:
+"Annexure {slot_number}: {custom_annexure.title}"
+and ending after the "Comments:" section.
+Use exactly "\\u2022 " (bullet character + space) for main bullets and "o " for sub-bullets.
+Do NOT use markdown headers (no ## or **). Use plain text headings ending with colon.
+"""
+
+
+def validate_ai_annexure_output(text: str, title: str) -> None:
+    """Lightweight structural check on AI-generated annexure text.
+
+    Checks that all required sections from the Master BD Prompt exist.
+    Does NOT alter the text — content quality is enforced by the guardrail prompt.
+    """
+    missing = [s for s in AI_REQUIRED_SECTIONS if s.lower() not in text.lower()]
+    if missing:
+        raise ValueError(
+            f"AI output for '{title}' is missing required sections: {missing}. "
+            "Please try generating again."
+        )
+    if len(text.strip()) < 500:
+        raise ValueError(
+            f"AI output for '{title}' is too short ({len(text)} chars). "
+            "The model may not have generated complete content. Please try again."
+        )
+
+
+async def generate_custom_annexure_text(
+    company_name: str,
+    context: "AIContextSchema",
+    custom_annexure: "CustomAnnexureInput",
+    slot_number: int,
+) -> str:
+    """Call OpenAI with the locked Master BD Prompt + filled Section A.
+
+    Returns the raw annexure text block (plain text with • / o bullets).
+    Raises HTTPException on missing key, quota errors, or timeout.
+    """
+    from dotenv import load_dotenv
+    load_dotenv(HERE / ".env", override=True)
+
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=500,
+            detail="AI generation is not configured. Set OPENAI_API_KEY in .env.",
+        )
+
+    system_prompt = _load_master_bd_prompt()
+    user_message = _build_ai_user_message(company_name, context, custom_annexure, slot_number)
+
+    try:
+        from openai import AsyncOpenAI, APITimeoutError, RateLimitError
+        client = AsyncOpenAI(api_key=api_key)
+        model = (os.getenv("OPENAI_MODEL") or "gpt-4o").strip()
+
+        response = await client.chat.completions.create(
+            model=model,
+            temperature=0.2,
+            max_tokens=3500,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+        )
+        raw_text = (response.choices[0].message.content or "").strip()
+        validate_ai_annexure_output(raw_text, custom_annexure.title)
+        return raw_text
+
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="openai package not installed. Run: pip install openai",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        err_str = str(exc).lower()
+        if "insufficient_quota" in err_str:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "OpenAI quota exhausted. Add prepaid credits and update OPENAI_API_KEY in .env. "
+                    "See docs/OPENAI_AI_LAYER_PRODUCTION.md"
+                ),
+            )
+        if "timeout" in err_str or "timed out" in err_str:
+            raise HTTPException(
+                status_code=504,
+                detail="AI generation timed out. Please try again in a moment.",
+            )
+        if "rate_limit" in err_str or "rate limit" in err_str:
+            raise HTTPException(
+                status_code=429,
+                detail="AI service is busy. Please wait 30 seconds and try again.",
+            )
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI generation failed: {exc}",
+        )
+
+
+# ---------------------------------------------------------------------------
+# DOCX element builder for AI annexures
+# (produces elements with exact CyberSmithSECURE brand formatting)
+# ---------------------------------------------------------------------------
+
+def _css_section_label_re() -> re.Pattern[str]:
+    """Regex matching section label lines (Title Case word(s) ending with colon)."""
+    return re.compile(
+        r"^(?:[A-Z][A-Za-z0-9 &/\-\u2013\u2014]+:|\bFrequency:\b|\bCount:\b)$"
+    )
+
+
+_SECTION_LABEL_RE = _css_section_label_re()
+
+
+def _parse_annexure_line(text: str) -> dict[str, Any]:
+    """Classify a single text line into a formatting style dict."""
+    stripped = text.strip()
+    if not stripped:
+        return {"style": "blank", "text": ""}
+    if re.match(r"^Annexure\s+\d+\s*:", stripped, re.IGNORECASE):
+        return {"style": "annexure_heading", "text": stripped}
+    if _SECTION_LABEL_RE.match(stripped):
+        return {"style": "section_label", "text": stripped}
+    if stripped.startswith(CSS_MAIN_BULLET + " "):
+        return {"style": "main_bullet", "text": stripped[2:].strip()}
+    if stripped.startswith("o ") and not stripped.startswith("of ") and not stripped.startswith("on "):
+        return {"style": "sub_bullet", "text": stripped[2:].strip()}
+    return {"style": "body", "text": stripped}
+
+
+def _add_formatted_paragraph(doc: Document, parsed: dict[str, Any]) -> None:
+    """Add a single paragraph to *doc* with exact CyberSmithSECURE brand formatting."""
+    style_name = parsed["style"]
+    text = parsed["text"]
+
+    if style_name == "blank":
+        p = doc.add_paragraph()
+        # Keep a small spacing to match template blank lines
+        pPr = p._p.get_or_add_pPr()
+        sp = OxmlElement("w:spacing")
+        sp.set(qn("w:before"), "0")
+        sp.set(qn("w:after"), "0")
+        pPr.append(sp)
+        return
+
+    p = doc.add_paragraph()
+
+    if style_name in ("main_bullet", "sub_bullet"):
+        bullet_char = CSS_MAIN_BULLET if style_name == "main_bullet" else CSS_SUB_BULLET
+        run_text = f"{bullet_char} {text}"
+    else:
+        run_text = text
+
+    run = p.add_run(run_text)
+
+    # Apply Corbel to all; purple headings match static template annexures (#7030A0).
+    run.font.name = CSS_FONT_NAME
+    if style_name in ("annexure_heading", "section_label"):
+        run.font.color.rgb = CSS_HEADING_COLOR
+    else:
+        run.font.color.rgb = CSS_BODY_COLOR
+
+    if style_name == "annexure_heading":
+        run.font.size = CSS_ANNEXURE_HEADING_SIZE
+        run.font.bold = True
+        run.font.italic = True
+    elif style_name == "section_label":
+        run.font.size = CSS_SECTION_LABEL_SIZE
+        run.font.bold = True
+    else:
+        run.font.size = CSS_BODY_SIZE
+
+    # Bullet indentation
+    if style_name in ("main_bullet", "sub_bullet"):
+        left = CSS_MAIN_BULLET_INDENT if style_name == "main_bullet" else CSS_SUB_BULLET_INDENT
+        pPr = p._p.get_or_add_pPr()
+        ind = OxmlElement("w:ind")
+        ind.set(qn("w:left"), left)
+        ind.set(qn("w:hanging"), CSS_BULLET_HANGING)
+        pPr.append(ind)
+
+    # Zero spacing before/after body text (matches template)
+    pPr = p._p.get_or_add_pPr()
+    sp = OxmlElement("w:spacing")
+    sp.set(qn("w:before"), "0")
+    sp.set(qn("w:after"), "0")
+    pPr.append(sp)
+
+
+def build_custom_annexure_block(
+    raw_ai_text: str,
+    slot_number: int,
+    title: str,
+    client_name: str,
+) -> list:
+    """Convert raw AI plain-text annexure into a list of OOXML elements.
+
+    The elements have the exact CyberSmithSECURE brand formatting
+    (Corbel font, correct sizes/styles, bullet indents) and can be
+    inserted directly into the proposal by ``apply_annexure_order``.
+    """
+    # Replace any {{Client Name}} tokens the AI may have emitted
+    for token in ("{{Client Name}}", "{{client_name}}", "{client_name}", "{{Company Name}}"):
+        raw_ai_text = raw_ai_text.replace(token, client_name)
+
+    # Defensive: strip markdown artifacts the model occasionally produces
+    text = re.sub(r"(?m)^#{1,3}\s*", "", raw_ai_text)
+    text = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", text)
+
+    scratch = Document()
+    # Remove the default empty paragraph python-docx always adds
+    for p in list(scratch.paragraphs):
+        p._element.getparent().remove(p._element)
+
+    for line in text.split("\n"):
+        parsed = _parse_annexure_line(line)
+        _add_formatted_paragraph(scratch, parsed)
+
+    body = scratch.element.body
+    elements: list = []
+    for child in body:
+        if child.tag == qn("w:sectPr"):
+            continue
+        elements.append(copy.deepcopy(child))
+
+    return elements
 
 
 def _find_annexure_boundaries(doc: Document) -> list[tuple[int, int, str]]:
@@ -288,8 +850,17 @@ def _find_assessment_pricing_table(root) -> Any:
     return None
 
 
-def _update_conclusion_pricing_table(elements, ordered_keys: list[str]) -> None:
-    """Rebuild the Conclusion pricing table Assessment Type rows from selected annexures."""
+def _update_conclusion_pricing_table(
+    elements,
+    ordered_keys: list[str],
+    catalog: dict[str, dict[str, Any]] | None = None,
+) -> None:
+    """Rebuild the Conclusion pricing table Assessment Type rows from selected annexures.
+
+    *catalog* may include AI-generated custom entries; falls back to CATALOG_BY_KEY.
+    """
+    effective_catalog = catalog if catalog is not None else CATALOG_BY_KEY
+
     tbl = None
     for el in elements:
         tbl = _find_assessment_pricing_table(el)
@@ -308,14 +879,14 @@ def _update_conclusion_pricing_table(elements, ordered_keys: list[str]) -> None:
     total_row = tbl.findall(qn("w:tr"))[-1]
 
     for slot, key in enumerate(ordered_keys, start=1):
-        item = CATALOG_BY_KEY[key]
+        item = effective_catalog.get(key) or CATALOG_BY_KEY.get(key, {})
         row_copy = copy.deepcopy(template_row)
         cells = row_copy.findall(qn("w:tc"))
         qty, freq, dur = PRICING_ROW_DEFAULTS.get(key, ("", "One Time", ""))
         if len(cells) >= 1:
             _set_table_cell_text(cells[0], str(slot))
         if len(cells) >= 2:
-            _set_table_cell_text(cells[1], str(item["title"]))
+            _set_table_cell_text(cells[1], str(item.get("title", key)))
         if len(cells) >= 3:
             _set_table_cell_text(cells[2], qty)
         if len(cells) >= 4:
@@ -682,7 +1253,30 @@ def _strip_all_yellow_highlights(doc: Document) -> int:
     return removed
 
 
-def _finalize_document(docx_path: Path, ordered_keys: list[str] | None = None) -> None:
+def _catalog_item_for_key(
+    key: str,
+    catalog: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Resolve a catalog entry from the per-request catalog or the static base catalog."""
+    effective = catalog if catalog is not None else CATALOG_BY_KEY
+    return effective.get(key) or CATALOG_BY_KEY.get(key) or {}
+
+
+def _toc_title_for_key(
+    key: str,
+    catalog: dict[str, dict[str, Any]] | None = None,
+) -> str:
+    """Human-readable Contents line label for an annexure key."""
+    item = _catalog_item_for_key(key, catalog)
+    return str(item.get("toc_title") or item.get("title") or key)
+
+
+def _finalize_document(
+    docx_path: Path,
+    ordered_keys: list[str] | None = None,
+    *,
+    request_catalog: dict[str, dict[str, Any]] | None = None,
+) -> None:
     """Apply final layout fixes and refresh all Contents page numbers."""
     if not ordered_keys:
         ordered_keys = [item["key"] for item in ASSESSMENT_CATALOG]
@@ -692,7 +1286,7 @@ def _finalize_document(docx_path: Path, ordered_keys: list[str] | None = None) -
     _ensure_page_break_before_introduction(doc)
 
     pages = _compute_layout_pages(doc)
-    _refresh_all_toc_pages(doc, ordered_keys, pages)
+    _refresh_all_toc_pages(doc, ordered_keys, pages, catalog=request_catalog)
     _normalize_contents_section(doc)
 
     _strip_all_yellow_highlights(doc)
@@ -848,8 +1442,15 @@ def _find_annexure_heading_pages(doc: Document, pages: dict[int, int]) -> dict[i
     return slot_pages
 
 
-def _update_contents_toc_structure(doc: Document, ordered_keys: list[str]) -> None:
-    """Rebuild assessment lines in Contents (titles only; pages filled later)."""
+def _update_contents_toc_structure(
+    doc: Document,
+    ordered_keys: list[str],
+    catalog: dict[str, dict[str, Any]] | None = None,
+) -> None:
+    """Rebuild assessment lines in Contents (titles only; pages filled later).
+
+    *catalog* may include AI-generated custom entries; falls back to CATALOG_BY_KEY.
+    """
     contents_idx, first_assessment_idx, _, conclusion_idx = _find_contents_region(doc)
     if contents_idx is None or conclusion_idx is None or first_assessment_idx is None:
         return
@@ -863,9 +1464,9 @@ def _update_contents_toc_structure(doc: Document, ordered_keys: list[str]) -> No
 
     insert_at = first_assessment_idx
     for key in ordered_keys:
-        item = CATALOG_BY_KEY[key]
+        toc_title = _toc_title_for_key(key, catalog)
         toc_line = _clone_toc_paragraph(doc)
-        _set_toc_line(toc_line, str(item["toc_title"]), 1)
+        _set_toc_line(toc_line, toc_title, 1)
         _insert_paragraph_before(doc, insert_at, toc_line)
         insert_at += 1
 
@@ -874,8 +1475,17 @@ def _update_contents_toc_structure(doc: Document, ordered_keys: list[str]) -> No
     _insert_paragraph_before(doc, insert_at, terms_line)
 
 
-def _refresh_all_toc_pages(doc: Document, ordered_keys: list[str], pages: dict[int, int]) -> None:
-    """Update every Contents line page number from the final document layout."""
+def _refresh_all_toc_pages(
+    doc: Document,
+    ordered_keys: list[str],
+    pages: dict[int, int],
+    catalog: dict[str, dict[str, Any]] | None = None,
+) -> None:
+    """Update every Contents line page number from the final document layout.
+
+    *catalog* must include per-request AI custom entries so TOC labels stay
+    human-readable instead of falling back to ``__other__...`` internal keys.
+    """
     contents_idx, first_assessment_idx, terms_idx, conclusion_idx = _find_contents_region(doc)
     if contents_idx is None:
         return
@@ -908,9 +1518,9 @@ def _refresh_all_toc_pages(doc: Document, ordered_keys: list[str], pages: dict[i
             break
         if toc_idx >= conclusion_idx:
             break
-        item = CATALOG_BY_KEY[key]
+        toc_title = _toc_title_for_key(key, catalog)
         page = int(annexure_pages.get(slot, DEFAULT_FIRST_ANNEXURE_PAGE))
-        _set_toc_line(doc.paragraphs[toc_idx]._element, str(item["toc_title"]), page)
+        _set_toc_line(doc.paragraphs[toc_idx]._element, toc_title, page)
 
     _, _, terms_idx, conclusion_idx = _find_contents_region(doc)
     if terms_idx is not None:
@@ -925,10 +1535,15 @@ def _refresh_all_toc_pages(doc: Document, ordered_keys: list[str], pages: dict[i
         )
 
 
-def _update_contents_toc(doc: Document, ordered_keys: list[str], pages: dict[int, int] | None = None) -> None:
+def _update_contents_toc(
+    doc: Document,
+    ordered_keys: list[str],
+    pages: dict[int, int] | None = None,
+    catalog: dict[str, dict[str, Any]] | None = None,
+) -> None:
     """Rebuild Contents assessment entries (page numbers refreshed in finalize)."""
     del pages
-    _update_contents_toc_structure(doc, ordered_keys)
+    _update_contents_toc_structure(doc, ordered_keys, catalog=catalog)
 
 
 def _set_update_fields_on_open(docx_path: Path) -> None:
@@ -969,10 +1584,17 @@ def apply_annexure_order(
     ordered_keys: list[str] | None,
     *,
     company_name: str = "Client",
+    request_catalog: dict[str, dict[str, Any]] | None = None,
 ) -> None:
-    """Reorder / subset annexure sections, append Terms & Conclusion, rebuild Contents."""
+    """Reorder / subset annexure sections, append Terms & Conclusion, rebuild Contents.
+
+    *request_catalog* extends the base CATALOG_BY_KEY with per-request AI-generated
+    entries (keys matching ``OTHER_KEY_RE``).  When None the base catalog is used.
+    """
     if not ordered_keys:
         return
+
+    catalog = request_catalog if request_catalog is not None else CATALOG_BY_KEY
 
     doc = Document(str(docx_path))
     boundaries = _find_annexure_boundaries(doc)
@@ -1018,13 +1640,32 @@ def apply_annexure_order(
     body = doc.element.body
 
     for slot, key in enumerate(ordered_keys, start=1):
-        item = CATALOG_BY_KEY[key]
+        item = catalog.get(key) or CATALOG_BY_KEY.get(key)
+        if item is None:
+            raise ValueError(f"Unknown annexure key in order: {key!r}")
+
+        # ---- Custom / AI-generated annexure --------------------------------
+        if item.get("is_custom"):
+            ai_elements = item.get("ai_elements") or []
+            if not ai_elements:
+                raise ValueError(
+                    f"No AI-generated content found for custom annexure '{item.get('title', key)}'. "
+                    "This is an internal error — the content should have been generated before this point."
+                )
+            cloned: list = [_make_page_break_paragraph()]
+            for el in ai_elements:
+                cloned.append(copy.deepcopy(el))
+            _replace_client_literals_in_elements(cloned, company_name)
+            _insert_elements_before_sectpr(body, cloned)
+            continue
+
+        # ---- Static template annexure --------------------------------------
         default_num = int(item["annexure_number"])
         block = blocks.get(default_num)
         if not block:
             raise ValueError(f"Missing template section for annexure {default_num} ({key}).")
 
-        cloned: list = []
+        cloned = []
         cloned.append(_make_page_break_paragraph())
 
         for el in block:
@@ -1058,13 +1699,13 @@ def apply_annexure_order(
         if el_copy.tag == qn("w:p") and _is_page_break_only_paragraph(el_copy):
             continue
         trailer_clone.append(el_copy)
-    _update_conclusion_pricing_table(trailer_clone, ordered_keys)
+    _update_conclusion_pricing_table(trailer_clone, ordered_keys, catalog=catalog)
     _replace_client_literals_in_elements(trailer_clone, company_name)
     for el in trailer_clone:
         _strip_yellow_from_element(el)
     _insert_elements_before_sectpr(body, trailer_clone)
 
-    _update_contents_toc(doc, ordered_keys, {})
+    _update_contents_toc(doc, ordered_keys, {}, catalog=catalog)
     doc.save(str(docx_path))
 
 
@@ -1134,7 +1775,7 @@ def _insert_logo_on_cover(doc: Document, logo_path: Path) -> bool:
     for child in list(el):
         if child.tag != qn("w:pPr"):
             el.remove(child)
-    logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    logo_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
     try:
         width = calculate_optimal_logo_size(logo_path)
         logo_para.add_run().add_picture(str(logo_path), width=Inches(width))
@@ -1154,9 +1795,22 @@ def _insert_client_logo_placeholder(docx_path: Path) -> None:
     for child in list(el):
         if child.tag != qn("w:pPr"):
             el.remove(child)
-    logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    logo_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
     logo_para.add_run("{{ client_logo }}")
     doc.save(str(docx_path))
+
+
+def _ensure_client_logo_left_alignment(docx_path: Path) -> None:
+    """Ensure the client logo slot under 'For' is left-aligned (brand layout)."""
+    try:
+        doc = Document(str(docx_path))
+        logo_para = _find_cover_logo_paragraph(doc)
+        if logo_para is None:
+            return
+        logo_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        doc.save(str(docx_path))
+    except Exception:
+        traceback.print_exc()
 
 
 def _ensure_client_logo_placeholder_in_template() -> None:
@@ -1255,8 +1909,8 @@ def _replace_highlighted_placeholder_image(doc: Document, logo_path: Path) -> bo
                 width_inches = calculate_optimal_logo_size(logo_path)
                 run = paragraph.add_run()
                 picture = run.add_picture(str(logo_path), width=Inches(width_inches))
-                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+
                 # Remove yellow highlight from the new run
                 if run._element.get_or_add_rPr() is not None:
                     rPr = run._element.rPr
@@ -1302,6 +1956,7 @@ def ensure_base_template() -> Path:
         build_base_template()
     else:
         _ensure_client_logo_placeholder_in_template()
+        _ensure_client_logo_left_alignment(BASE_TEMPLATE)
     return BASE_TEMPLATE
 
 
@@ -1354,6 +2009,7 @@ def generate_proposal(
     annexure_order: list[str] | None = None,
     assessments: list[AssessmentItem] | None = None,
     template_path: str | Path | None = None,
+    request_catalog: dict[str, dict[str, Any]] | None = None,
 ) -> Path:
     company_name = (company_name or "").strip() or "Client"
     proposal_ref = (proposal_ref or "").strip() or default_proposal_ref()
@@ -1397,11 +2053,16 @@ def generate_proposal(
     
     try:
         ordered_keys = annexure_order or [item["key"] for item in ASSESSMENT_CATALOG]
-        apply_annexure_order(output, ordered_keys, company_name=company_name)
+        apply_annexure_order(
+            output,
+            ordered_keys,
+            company_name=company_name,
+            request_catalog=request_catalog,
+        )
     except Exception as exc:
         raise RuntimeError(f"Annexure layout failed: {exc}") from exc
 
-    _finalize_document(output, ordered_keys)
+    _finalize_document(output, ordered_keys, request_catalog=request_catalog)
     return output
 
 
@@ -1441,15 +2102,17 @@ async def proposal_form() -> HTMLResponse:
   <title>CSS Proposal Generator</title>
   <style>
     body {{ font-family: Arial, sans-serif; background: #1a1a2e; color: #fff; margin: 0; padding: 20px; }}
-    .container {{ max-width: 820px; margin: 0 auto; background: #16213e; border-radius: 8px; padding: 24px; }}
+    .container {{ max-width: 860px; margin: 0 auto; background: #16213e; border-radius: 8px; padding: 24px; }}
     h1 {{ color: #8a2be2; text-align: center; margin-top: 0; }}
     h2 {{ color: #b388ff; font-size: 1.05rem; margin: 24px 0 12px; }}
+    h3 {{ color: #b388ff; font-size: 0.95rem; margin: 16px 0 8px; }}
     .form-group {{ margin-bottom: 16px; }}
     label {{ display: block; margin-bottom: 6px; font-weight: bold; }}
-    input[type="text"], input[type="file"], select {{ width: 100%; box-sizing: border-box; }}
-    input[type="text"], select {{
+    input[type="text"], input[type="file"], select, textarea {{ width: 100%; box-sizing: border-box; }}
+    input[type="text"], select, textarea {{
       padding: 10px; border: 1px solid #444; border-radius: 4px; background: #0f3460; color: #fff;
     }}
+    textarea {{ resize: vertical; min-height: 70px; }}
     select option {{ background: #0f3460; color: #fff; }}
     button {{
       background: #8a2be2; color: #fff; border: none; padding: 10px 16px; border-radius: 4px;
@@ -1462,31 +2125,50 @@ async def proposal_form() -> HTMLResponse:
     button.danger:hover {{ background: #922635; }}
     .submit-btn {{ width: 100%; padding: 12px 24px; font-size: 16px; margin-top: 8px; }}
     .hint {{ color: #aaa; font-size: 0.9em; margin-top: 4px; }}
-    #status {{ margin-top: 16px; min-height: 1.2em; }}
+    #status {{ margin-top: 16px; min-height: 1.2em; font-weight: bold; }}
     .error {{ color: #ff6b6b; }}
     .success {{ color: #69db7c; }}
+    .info {{ color: #74b9ff; }}
     .annexure-panel {{
       border: 1px solid #394867; border-radius: 6px; padding: 16px; background: #0f2744;
     }}
     .annexure-row {{
-      display: grid; grid-template-columns: 120px 1fr auto; gap: 10px; align-items: center;
-      margin-bottom: 10px;
+      display: grid; grid-template-columns: 120px 1fr auto; gap: 10px; align-items: start;
+      margin-bottom: 14px;
     }}
-    .annexure-row label {{ margin: 0; font-weight: 600; }}
+    .annexure-row > label {{ margin: 0; font-weight: 600; padding-top: 10px; }}
+    .annexure-slot-body {{ display: flex; flex-direction: column; gap: 6px; }}
     .annexure-actions {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }}
     .checkbox-row {{ display: flex; align-items: center; gap: 10px; }}
     .checkbox-row input {{ width: auto; }}
     .checkbox-row label {{ margin: 0; font-weight: normal; }}
     .hidden {{ display: none; }}
+    .ai-panel {{
+      border: 1px solid #5e35b1; border-radius: 6px; padding: 18px; background: #130f30;
+      margin-top: 20px;
+    }}
+    .ai-panel h2 {{ color: #ce93d8; margin-top: 0; }}
+    .counts-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
+    .radio-group {{ display: flex; flex-wrap: wrap; gap: 14px; margin-top: 4px; }}
+    .radio-group label {{ font-weight: normal; display: flex; align-items: center; gap: 6px; }}
+    .radio-group input {{ width: auto; }}
+    .custom-slot-fields {{
+      background: #1a1060; border: 1px solid #7b1fa2; border-radius: 5px;
+      padding: 12px; margin-top: 8px;
+    }}
+    .custom-slot-fields label {{ color: #ce93d8; font-size: 0.92em; }}
+    .step-progress {{ color: #74b9ff; font-style: italic; }}
+    .char-count {{ color: #888; font-size: 0.8em; text-align: right; }}
   </style>
 </head>
 <body>
   <div class="container">
     <h1>CSS Proposal Generator</h1>
-    <p class="hint">Company name, proposal reference, cover logo, and optional annexure selection/order.</p>
+    <p class="hint">CyberSmithSECURE &mdash; generates polished client proposals with annexure ordering and AI custom services.</p>
     <form id="proposalForm">
+      <!-- Basic fields -->
       <div class="form-group">
-        <label for="company_name">Company name</label>
+        <label for="company_name">Company name *</label>
         <input type="text" id="company_name" name="company_name" required placeholder="Acme Corp" />
       </div>
       <div class="form-group">
@@ -1500,6 +2182,7 @@ async def proposal_form() -> HTMLResponse:
         <p class="hint">Upload your company logo. It will appear on the cover page.</p>
       </div>
 
+      <!-- Annexure builder -->
       <h2>Annexures (optional)</h2>
       <div class="annexure-panel">
         <div class="checkbox-row form-group">
@@ -1508,7 +2191,8 @@ async def proposal_form() -> HTMLResponse:
         </div>
         <p class="hint">Leave unchecked to keep all 13 annexures in the template default order.</p>
         <div id="annexureBuilder" class="hidden">
-          <p class="hint">Pick Annexure 1, then Annexure 2 from the remaining list, and so on. Add only as many as you need.</p>
+          <p class="hint">Pick Annexure 1 first, then Annexure 2, and so on.
+             Select <strong>&#10022; Other / Custom Service </strong> to generate a new annexure using AI.</p>
           <div id="annexureSlots"></div>
           <div class="annexure-actions">
             <button type="button" class="secondary" id="addAnnexureBtn">+ Add annexure slot</button>
@@ -1517,76 +2201,265 @@ async def proposal_form() -> HTMLResponse:
         </div>
       </div>
 
-      <button type="submit" class="submit-btn">Generate Proposal</button>
+      <!-- AI Context Panel (shown when any slot is __other__) -->
+      <div id="aiContextPanel" class="ai-panel hidden">
+        <h2>&#128161; AI Context &mdash; Custom Service Generation</h2>
+        <p class="hint">This information feeds the Master BD Prompt to generate the custom annexure.</p>
+
+        <div class="form-group">
+          <label for="ai_sector">Sector / Industry *</label>
+          <input type="text" id="ai_sector" placeholder="e.g. Banking, Insurance, Healthcare, Fintech" />
+        </div>
+
+        <div class="form-group">
+          <label for="ai_engagement_summary">Overall Engagement Summary * <span class="hint">(1&ndash;2 lines)</span></label>
+          <textarea id="ai_engagement_summary" rows="3"
+            placeholder="e.g. Comprehensive cloud security and identity assessment for Acme Corp&rsquo;s hybrid infrastructure."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>Primary Tier *</label>
+          <div class="radio-group" id="ai_tier_group">
+            <label><input type="radio" name="ai_primary_tier" value="Tier 1 \u2013 Essential" /> Tier 1 &ndash; Essential</label>
+            <label><input type="radio" name="ai_primary_tier" value="Tier 2 \u2013 Enhanced" /> Tier 2 &ndash; Enhanced</label>
+            <label><input type="radio" name="ai_primary_tier" value="Tier 3 \u2013 Advanced" checked /> Tier 3 &ndash; Advanced</label>
+            <label><input type="radio" name="ai_primary_tier" value="Tier 4 \u2013 Offensive" /> Tier 4 &ndash; Offensive</label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="ai_tier_notes">Tier-specific notes <span class="hint">(optional)</span></label>
+          <textarea id="ai_tier_notes" rows="2" placeholder="e.g. Client wants Tier 3 for cloud but Tier 2 for endpoint."></textarea>
+        </div>
+
+        <h3>Counts / Volumes <span class="hint">(fill what applies)</span></h3>
+        <div class="counts-grid">
+          <div class="form-group">
+            <label for="ai_counts_ad">AD / Identity</label>
+            <input type="text" id="ai_counts_ad" placeholder="e.g. 2 AD Domains" />
+          </div>
+          <div class="form-group">
+            <label for="ai_counts_cloud">Cloud</label>
+            <input type="text" id="ai_counts_cloud" placeholder="e.g. AWS + Azure" />
+          </div>
+          <div class="form-group">
+            <label for="ai_counts_apps">Apps / APIs</label>
+            <input type="text" id="ai_counts_apps" placeholder="e.g. 5 web apps" />
+          </div>
+          <div class="form-group">
+            <label for="ai_counts_infra">Infra</label>
+            <input type="text" id="ai_counts_infra" placeholder="e.g. 50 IPs" />
+          </div>
+          <div class="form-group">
+            <label for="ai_counts_users">Users / Employees</label>
+            <input type="text" id="ai_counts_users" placeholder="e.g. 200 employees" />
+          </div>
+          <div class="form-group">
+            <label for="ai_counts_duration">Duration *</label>
+            <input type="text" id="ai_counts_duration" placeholder="e.g. 4 weeks" />
+          </div>
+        </div>
+
+        <h3>Commercials</h3>
+        <div class="counts-grid">
+          <div class="form-group">
+            <label for="ai_total_cost">Total Cost (before tax) *</label>
+            <input type="text" id="ai_total_cost" placeholder="e.g. 4,33,000 INR" />
+          </div>
+          <div class="form-group">
+            <label for="ai_taxes">Taxes</label>
+            <input type="text" id="ai_taxes" value="18% GST" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Payment Model *</label>
+          <div class="radio-group" id="ai_payment_group">
+            <label><input type="radio" name="ai_payment_model" value="milestone_v1" checked /> Milestone v1</label>
+            <label><input type="radio" name="ai_payment_model" value="hybrid_v2" /> Hybrid v2</label>
+            <label><input type="radio" name="ai_payment_model" value="retainer_v3" /> Retainer v3</label>
+            <label><input type="radio" name="ai_payment_model" value="tier_v4" /> Tier v4</label>
+          </div>
+          <p class="hint" id="payment_model_hint">20% advance &rarr; 30% draft report &rarr; 30% revalidation &rarr; 20% closure</p>
+        </div>
+
+        <div class="form-group">
+          <label for="ai_special_constraints">Special Constraints / Notes <span class="hint">(optional)</span></label>
+          <textarea id="ai_special_constraints" rows="2"
+            placeholder="e.g. Zero-trust environment, restricted change windows, BCP-sensitive systems."></textarea>
+        </div>
+      </div>
+
+      <button type="submit" class="submit-btn" id="generateBtn">Generate Proposal</button>
     </form>
     <div id="status"></div>
   </div>
+
   <script>
-    const CATALOG = {catalog_json};
-    const slotsEl = document.getElementById('annexureSlots');
-    const customizeEl = document.getElementById('customize_annexures');
-    const builderEl = document.getElementById('annexureBuilder');
-    let slotSelections = [];
+    /* ------------------------------------------------------------------ */
+    /* Catalog + Other option                                               */
+    /* ------------------------------------------------------------------ */
+    const BASE_CATALOG = {catalog_json};
+    const OTHER_ITEM = {{ key: '__other__', title: '\u2726 Other / Custom Service (AI-Generated)' }};
+    const CATALOG = [...BASE_CATALOG, OTHER_ITEM];
+
+    const PAYMENT_HINTS = {{
+      milestone_v1: '20% advance \u2192 30% draft report \u2192 30% revalidation \u2192 20% closure',
+      hybrid_v2:    '40% advance \u2192 20% week-2 \u2192 20% technical report \u2192 20% at day-30 / revalidation',
+      retainer_v3:  '30% advance \u2192 70% in 3 equal monthly instalments (irrespective of client delays)',
+      tier_v4:      'Per-tier payment breakup (Advanced vs Offensive etc.)',
+    }};
+
+    const slotsEl       = document.getElementById('annexureSlots');
+    const customizeEl   = document.getElementById('customize_annexures');
+    const builderEl     = document.getElementById('annexureBuilder');
+    const aiPanelEl     = document.getElementById('aiContextPanel');
+    const paymentHintEl = document.getElementById('payment_model_hint');
+    let slotSelections  = [];   // array of strings (catalog key or '' or '__other__<unique>')
+    let otherSlotMeta   = {{}};  // key -> {{ title, scope }}
+
+    /* payment model hint */
+    document.querySelectorAll('input[name="ai_payment_model"]').forEach(r => {{
+      r.addEventListener('change', () => {{ paymentHintEl.textContent = PAYMENT_HINTS[r.value] || ''; }});
+    }});
+
+    /* ------------------------------------------------------------------ */
+    /* Unique key per "Other" slot                                          */
+    /* ------------------------------------------------------------------ */
+    function makeOtherKey() {{
+      return `__other__${{Date.now()}}_${{Math.random().toString(36).slice(2, 7)}}`;
+    }}
 
     function selectedKeys() {{
       return slotSelections.filter(Boolean);
     }}
 
+    function hasAnyOther() {{
+      return slotSelections.some(k => k && k.startsWith('__other__'));
+    }}
+
+    /* ------------------------------------------------------------------ */
+    /* Available options for a slot (no duplicates; always show Other)     */
+    /* ------------------------------------------------------------------ */
     function availableForSlot(slotIndex) {{
       const used = new Set(selectedKeys());
       const current = slotSelections[slotIndex];
       if (current) used.delete(current);
-      return CATALOG.filter(item => !used.has(item.key));
+      // Normal catalog entries (no duplicates); Other is always available
+      const normal = BASE_CATALOG.filter(item => !used.has(item.key));
+      return [...normal, OTHER_ITEM];
     }}
 
+    /* ------------------------------------------------------------------ */
+    /* Render all slots                                                     */
+    /* ------------------------------------------------------------------ */
     function renderSlots() {{
       slotsEl.innerHTML = '';
       slotSelections.forEach((selected, index) => {{
+        const isOther = selected && selected.startsWith('__other__');
         const row = document.createElement('div');
         row.className = 'annexure-row';
 
-        const label = document.createElement('label');
-        label.textContent = `Annexure ${{index + 1}}`;
+        const labelEl = document.createElement('label');
+        labelEl.textContent = `Annexure ${{index + 1}}`;
 
+        const body = document.createElement('div');
+        body.className = 'annexure-slot-body';
+
+        /* dropdown */
         const select = document.createElement('select');
         select.dataset.index = String(index);
-        const empty = document.createElement('option');
-        empty.value = '';
-        empty.textContent = '-- Select assessment --';
-        select.appendChild(empty);
-
+        const emptyOpt = new Option('-- Select assessment --', '');
+        select.appendChild(emptyOpt);
         availableForSlot(index).forEach(item => {{
-          const opt = document.createElement('option');
-          opt.value = item.key;
-          opt.textContent = item.title;
-          if (item.key === selected) opt.selected = true;
+          const isThisOther = item.key === '__other__';
+          const displayKey = isThisOther ? (isOther ? selected : '') : item.key;
+          const opt = new Option(item.title, isThisOther ? '__other__' : item.key);
+          if ((isOther && isThisOther) || selected === item.key) opt.selected = true;
           select.appendChild(opt);
         }});
 
-        select.addEventListener('change', (e) => {{
-          slotSelections[index] = e.target.value || '';
+        select.addEventListener('change', e => {{
+          const val = e.target.value;
+          if (val === '__other__') {{
+            const uniqueKey = makeOtherKey();
+            slotSelections[index] = uniqueKey;
+            otherSlotMeta[uniqueKey] = {{ title: '', scope: '' }};
+          }} else {{
+            // If previous was __other__, clean up its meta
+            if (slotSelections[index] && slotSelections[index].startsWith('__other__')) {{
+              delete otherSlotMeta[slotSelections[index]];
+            }}
+            slotSelections[index] = val || '';
+          }}
           renderSlots();
+          aiPanelEl.classList.toggle('hidden', !hasAnyOther());
         }});
+        body.appendChild(select);
+
+        /* per-slot custom fields (only when this slot is __other__) */
+        if (isOther) {{
+          const meta = otherSlotMeta[selected] || {{ title: '', scope: '' }};
+          const fields = document.createElement('div');
+          fields.className = 'custom-slot-fields';
+
+          const titleLabel = document.createElement('label');
+          titleLabel.textContent = 'Service / Annexure Title *';
+          const titleInput = document.createElement('input');
+          titleInput.type = 'text';
+          titleInput.maxLength = 100;
+          titleInput.placeholder = 'e.g. Cloud Red Teaming Assessment';
+          titleInput.value = meta.title;
+          titleInput.addEventListener('input', () => {{
+            otherSlotMeta[selected].title = titleInput.value;
+          }});
+
+          const scopeLabel = document.createElement('label');
+          scopeLabel.textContent = 'High-Level Scope * (20\u2013500 chars)';
+          const scopeArea = document.createElement('textarea');
+          scopeArea.rows = 3;
+          scopeArea.maxLength = 500;
+          scopeArea.placeholder =
+            'e.g. Simulate adversary attack paths on cloud infrastructure (AWS/GCP), identify privilege escalation paths, lateral movement opportunities, and critical data exposure.';
+          scopeArea.value = meta.scope;
+          const charCount = document.createElement('div');
+          charCount.className = 'char-count';
+          charCount.textContent = `${{meta.scope.length}}/500`;
+          scopeArea.addEventListener('input', () => {{
+            otherSlotMeta[selected].scope = scopeArea.value;
+            charCount.textContent = `${{scopeArea.value.length}}/500`;
+          }});
+
+          fields.appendChild(titleLabel);
+          fields.appendChild(titleInput);
+          fields.appendChild(scopeLabel);
+          fields.appendChild(scopeArea);
+          fields.appendChild(charCount);
+          body.appendChild(fields);
+        }}
 
         const removeBtn = document.createElement('button');
         removeBtn.type = 'button';
         removeBtn.className = 'danger';
         removeBtn.textContent = 'Remove';
+        removeBtn.style.alignSelf = 'flex-start';
         removeBtn.addEventListener('click', () => {{
+          if (slotSelections[index] && slotSelections[index].startsWith('__other__')) {{
+            delete otherSlotMeta[slotSelections[index]];
+          }}
           slotSelections.splice(index, 1);
           renderSlots();
+          aiPanelEl.classList.toggle('hidden', !hasAnyOther());
         }});
 
-        row.appendChild(label);
-        row.appendChild(select);
+        row.appendChild(labelEl);
+        row.appendChild(body);
         row.appendChild(removeBtn);
         slotsEl.appendChild(row);
       }});
     }}
 
     function addSlot() {{
-      if (slotSelections.length >= CATALOG.length) return;
-      if (selectedKeys().length >= CATALOG.length) return;
       slotSelections.push('');
       renderSlots();
     }}
@@ -1594,14 +2467,20 @@ async def proposal_form() -> HTMLResponse:
     customizeEl.addEventListener('change', () => {{
       builderEl.classList.toggle('hidden', !customizeEl.checked);
       if (customizeEl.checked && slotSelections.length === 0) addSlot();
+      if (!customizeEl.checked) aiPanelEl.classList.add('hidden');
     }});
 
     document.getElementById('addAnnexureBtn').addEventListener('click', addSlot);
     document.getElementById('clearAnnexuresBtn').addEventListener('click', () => {{
       slotSelections = [];
+      otherSlotMeta = {{}};
       renderSlots();
+      aiPanelEl.classList.add('hidden');
     }});
 
+    /* ------------------------------------------------------------------ */
+    /* Build annexure payload (including other_ keys)                      */
+    /* ------------------------------------------------------------------ */
     function buildAnnexurePayload() {{
       if (!customizeEl.checked) return null;
       const order = selectedKeys();
@@ -1609,24 +2488,103 @@ async def proposal_form() -> HTMLResponse:
       return {{ enabled: true, order }};
     }}
 
+    /* ------------------------------------------------------------------ */
+    /* Build AI context JSON from panel                                     */
+    /* ------------------------------------------------------------------ */
+    function buildAIContext() {{
+      if (!hasAnyOther()) return null;
+      const tierEl = document.querySelector('input[name="ai_primary_tier"]:checked');
+      const paymentEl = document.querySelector('input[name="ai_payment_model"]:checked');
+      const customAnnexures = [];
+      slotSelections.forEach((key, idx) => {{
+        if (key && key.startsWith('__other__')) {{
+          const meta = otherSlotMeta[key] || {{}};
+          customAnnexures.push({{
+            slot_index: idx,
+            key: key,
+            title: (meta.title || '').trim(),
+            scope: (meta.scope || '').trim(),
+          }});
+        }}
+      }});
+      return {{
+        sector: document.getElementById('ai_sector').value.trim(),
+        engagement_summary: document.getElementById('ai_engagement_summary').value.trim(),
+        primary_tier: tierEl ? tierEl.value : 'Tier 3 \u2013 Advanced',
+        tier_notes: document.getElementById('ai_tier_notes').value.trim(),
+        counts: {{
+          ad_identity: document.getElementById('ai_counts_ad').value.trim(),
+          cloud:       document.getElementById('ai_counts_cloud').value.trim(),
+          apps_apis:   document.getElementById('ai_counts_apps').value.trim(),
+          infra:       document.getElementById('ai_counts_infra').value.trim(),
+          users:       document.getElementById('ai_counts_users').value.trim(),
+          duration:    document.getElementById('ai_counts_duration').value.trim(),
+        }},
+        commercials: {{
+          total_cost: document.getElementById('ai_total_cost').value.trim(),
+          taxes:      document.getElementById('ai_taxes').value.trim() || '18% GST',
+        }},
+        payment_model: paymentEl ? paymentEl.value : 'hybrid_v2',
+        special_constraints: document.getElementById('ai_special_constraints').value.trim(),
+        custom_annexures: customAnnexures,
+      }};
+    }}
+
+    /* ------------------------------------------------------------------ */
+    /* Form validation helpers                                              */
+    /* ------------------------------------------------------------------ */
+    function validateAIContext(ctx) {{
+      if (!ctx) return null;
+      if (!ctx.sector) return 'AI Context: Sector / Industry is required.';
+      if (ctx.engagement_summary.length < 10) return 'AI Context: Engagement Summary must be at least 10 characters.';
+      if (!ctx.counts.duration) return 'AI Context: Duration is required.';
+      if (!ctx.commercials.total_cost) return 'AI Context: Total Cost is required.';
+      for (const ca of ctx.custom_annexures) {{
+        if (!ca.title) return `Annexure slot ${{ca.slot_index + 1}}: Service Title is required.`;
+        if (ca.scope.length < 20) return `Annexure "${{ca.title}}": Scope must be at least 20 characters.`;
+      }}
+      return null;
+    }}
+
+    /* ------------------------------------------------------------------ */
+    /* Submit                                                               */
+    /* ------------------------------------------------------------------ */
     document.getElementById('proposalForm').addEventListener('submit', async (e) => {{
       e.preventDefault();
-      const status = document.getElementById('status');
-      status.textContent = 'Generating...';
-      status.className = '';
+      const statusEl = document.getElementById('status');
+      const btn = document.getElementById('generateBtn');
 
+      const setStatus = (msg, cls='') => {{
+        statusEl.textContent = msg;
+        statusEl.className = cls;
+      }};
+
+      // Validate annexure slots
       if (customizeEl.checked) {{
-        const order = selectedKeys();
-        if (order.length !== slotSelections.filter(s => s !== undefined).length) {{
-          status.textContent = 'Please select an assessment for each annexure slot, or remove empty slots.';
-          status.className = 'error';
+        const filled = slotSelections.filter(s => s);
+        if (filled.length !== slotSelections.length) {{
+          setStatus('Please select an assessment for each slot, or remove empty ones.', 'error');
           return;
         }}
-        if (!order.length) {{
-          status.textContent = 'Add at least one annexure or uncheck customization to use the default 13.';
-          status.className = 'error';
+        if (!filled.length) {{
+          setStatus('Add at least one annexure or uncheck customization to use the default 13.', 'error');
           return;
         }}
+      }}
+
+      // Validate AI context if needed
+      const aiCtx = buildAIContext();
+      if (aiCtx) {{
+        const aiErr = validateAIContext(aiCtx);
+        if (aiErr) {{ setStatus(aiErr, 'error'); return; }}
+      }}
+
+      btn.disabled = true;
+      const hasAI = !!aiCtx;
+      if (hasAI) {{
+        setStatus('Step 1/3: Validating inputs\u2026', 'info step-progress');
+      }} else {{
+        setStatus('Generating\u2026', '');
       }}
 
       const formData = new FormData();
@@ -1636,9 +2594,10 @@ async def proposal_form() -> HTMLResponse:
       if (logo) formData.append('client_logo', logo);
 
       const annexurePayload = buildAnnexurePayload();
-      if (annexurePayload) {{
-        formData.append('annexure_order_json', JSON.stringify(annexurePayload));
-      }}
+      if (annexurePayload) formData.append('annexure_order_json', JSON.stringify(annexurePayload));
+      if (aiCtx) formData.append('ai_context_json', JSON.stringify(aiCtx));
+
+      if (hasAI) setStatus('Step 2/3: AI is generating custom annexure\u2026 (this may take 20\u201340 seconds)', 'info step-progress');
 
       try {{
         const resp = await fetch('generate/', {{ method: 'POST', body: formData }});
@@ -1646,20 +2605,21 @@ async def proposal_form() -> HTMLResponse:
           const err = await resp.json().catch(() => ({{ detail: resp.statusText }}));
           throw new Error(err.detail || 'Generation failed');
         }}
+        if (hasAI) setStatus('Step 3/3: Building document\u2026', 'info step-progress');
         const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
         a.download = 'CSS_Proposal.docx';
         document.body.appendChild(a);
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
-        status.textContent = 'Proposal downloaded successfully.';
-        status.className = 'success';
+        setStatus('Proposal downloaded successfully.', 'success');
       }} catch (err) {{
-        status.textContent = err.message || String(err);
-        status.className = 'error';
+        setStatus(err.message || String(err), 'error');
+      }} finally {{
+        btn.disabled = false;
       }}
     }});
   </script>
@@ -1675,13 +2635,76 @@ async def generate_proposal_endpoint(
     client_logo: UploadFile | None = File(None),
     annexure_order_json: str = Form(""),
     assessments_json: str = Form(""),
+    ai_context_json: str = Form(""),
 ) -> FileResponse:
     tmp_dir: str | None = None
     logo_path: Path | None = None
     try:
         ref = (proposal_ref or "").strip() or default_proposal_ref()
-        annexure_order = parse_annexure_order_json(annexure_order_json)
+        annexure_order = parse_annexure_order_json(annexure_order_json, allow_custom=True)
         assessments = parse_assessments_json(assessments_json) if not annexure_order else None
+
+        # ---------- AI custom annexure generation ----------------------------
+        request_catalog: dict[str, dict[str, Any]] | None = None
+        ai_context: "AIContextSchema | None" = None
+
+        if ai_context_json and ai_context_json.strip():
+            ai_context = _parse_ai_context(ai_context_json)
+
+        if annexure_order:
+            custom_keys = [k for k in annexure_order if OTHER_KEY_RE.match(k)]
+            if custom_keys:
+                if ai_context is None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=(
+                            "One or more 'Other / Custom Service' slots were selected but "
+                            "no AI context was provided. Please fill the AI Context panel."
+                        ),
+                    )
+                _validate_ai_context(ai_context)
+
+                # Index the custom annexures from ai_context by key
+                ca_by_key = {ca.key: ca for ca in ai_context.custom_annexures}
+
+                # Validate that every custom_key has a matching CustomAnnexureInput
+                for ck in custom_keys:
+                    if ck not in ca_by_key:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"No title/scope provided for custom annexure key: {ck}",
+                        )
+
+                # Build per-request catalog with AI-generated elements
+                request_catalog = _make_request_catalog()
+                for ck in custom_keys:
+                    ca = ca_by_key[ck]
+                    slot_number = annexure_order.index(ck) + 1
+                    print(
+                        f"[AI] Generating annexure {slot_number}: '{ca.title}' for {company_name} …"
+                    )
+                    raw_text = await generate_custom_annexure_text(
+                        company_name=company_name,
+                        context=ai_context,
+                        custom_annexure=ca,
+                        slot_number=slot_number,
+                    )
+                    elements = build_custom_annexure_block(
+                        raw_ai_text=raw_text,
+                        slot_number=slot_number,
+                        title=ca.title,
+                        client_name=company_name,
+                    )
+                    _register_custom_annexure(
+                        catalog=request_catalog,
+                        key=ck,
+                        title=ca.title,
+                        toc_title=ca.title,
+                        slot=slot_number,
+                        ai_elements=elements,
+                    )
+
+        # ---------- Document generation ---------------------------------------
         tmp_dir = tempfile.mkdtemp(prefix="css_proposal_")
         if client_logo and client_logo.filename:
             ext = Path(client_logo.filename).suffix or ".png"
@@ -1696,6 +2719,7 @@ async def generate_proposal_endpoint(
             output_path=output_path,
             annexure_order=annexure_order,
             assessments=assessments,
+            request_catalog=request_catalog,
         )
         final_path = UPLOAD_DIR / out_name
         shutil.copy2(output_path, final_path)
@@ -1704,6 +2728,8 @@ async def generate_proposal_endpoint(
             filename=out_name,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:

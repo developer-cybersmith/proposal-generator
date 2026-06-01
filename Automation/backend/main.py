@@ -52,6 +52,12 @@ from excel_parser import parse_excel_data, format_for_template
 # Shared Excel converter (any-format → feature-format)
 from Automation.backend.excel_converter import convert_any_excel_to_format
 
+# Shared web/IP report chart insertion + TOC finalize (parity with type4)
+from Automation.backend.report_insert_sections import (
+    insert_overall_vulnerabilities_charts as insert_overall_vulnerabilities_charts_shared,
+    web_report_finalize,
+)
+
 # Version tracking for code changes
 # Format: MAJOR.MINOR.PATCH
 # Increment MAJOR for significant structural changes
@@ -1322,8 +1328,8 @@ def generate_word_report(vulnerabilities_by_ip, doc_control_data, template_path,
             tpl.save(tmp.name)
             tmp_path = tmp.name
         doc = Document(tmp_path)
-        # Insert overall vulnerabilities charts at placeholder
-        insert_overall_vulnerabilities_charts(doc, vulnerabilities_by_ip)
+        # Insert overall vulnerabilities charts at placeholder (shared with Type-4 web report)
+        insert_overall_vulnerabilities_charts_shared(doc, vulnerabilities_by_ip)
         # Insert risk assessment analysis table at placeholder
         insert_risk_assessment_analysis_table(doc, vulnerabilities_by_ip)
         for ip, vulns in vulnerabilities_by_ip.items():
@@ -1364,8 +1370,7 @@ def generate_word_report(vulnerabilities_by_ip, doc_control_data, template_path,
         doc.add_paragraph()
         doc.add_paragraph()
         summary_heading = doc.add_paragraph()
-        run = summary_heading.add_run("SUMMARY OF FINDINGS &\nCONCLUSION:")
-        doc.add_paragraph()
+        run = summary_heading.add_run("SUMMARY OF FINDINGS & CONCLUSION:")
         run.bold = True
         run.font.size = Pt(28)
         run.font.name = 'Altone Trial'
@@ -1375,6 +1380,7 @@ def generate_word_report(vulnerabilities_by_ip, doc_control_data, template_path,
             summary_heading.style = doc.styles['Heading 1']
         except Exception:
             pass
+        doc.add_paragraph()
         p1 = doc.add_paragraph()
         p1.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         p1.paragraph_format.space_after = Pt(24)
@@ -1449,7 +1455,7 @@ def generate_word_report(vulnerabilities_by_ip, doc_control_data, template_path,
         run.font.name = 'Altone Trial'
         run.font.size = Pt(11)
         run.font.color.rgb = RGBColor(106, 68, 154)
-        doc.save(output_path)
+        web_report_finalize(doc, output_path, summary_heading_paragraph=summary_heading)
         return output_path
     except Exception as e:
         traceback.print_exc()
@@ -2070,127 +2076,6 @@ def insert_risk_assessment_analysis_table(doc, vulnerabilities_by_ip):
     parent = placeholder_paragraph._p.getparent()
     parent.insert(parent.index(placeholder_paragraph._p), table._element)
     parent.remove(placeholder_paragraph._p)
-
-def create_combined_vulnerability_charts(severity_counts, output_path):
-    """
-    Generates a single image with the bar chart and donut chart side by side,
-    and a centered legend at the bottom showing all severity levels.
-    """
-    import math
-    import matplotlib.pyplot as plt
-    from matplotlib.patches import Patch
-    # Ensure all severity levels are present
-    all_severities = ['Critical', 'High', 'Medium', 'Low', 'Informational']
-    all_colors = [get_severity_colors(s)['row1_bg'] for s in all_severities]
-    counts = [severity_counts.get(s, 0) for s in all_severities]
-    total_findings = sum(counts)
-
-    fig = plt.figure(figsize=(12, 6))
-    gs = fig.add_gridspec(2, 2, height_ratios=[5, 1])
-    # Bar chart (left)
-    ax_bar = fig.add_subplot(gs[0, 0])
-    x_pos = range(len(all_severities))
-    bars = ax_bar.bar(x_pos, counts, color=all_colors)
-    ax_bar.set_xticks(x_pos)
-    ax_bar.set_xticklabels(all_severities, rotation=10, ha='right', fontsize=14)
-    ax_bar.set_ylabel('Number of Vulnerabilities', fontsize=14)
-    ax_bar.set_title('Total Vulnerabilities Found', fontsize=18)
-    # Add counts inside bars
-    for i, bar in enumerate(bars):
-        height = bar.get_height()
-        ax_bar.text(bar.get_x() + bar.get_width()/2, height/2, str(counts[i]),
-                    ha='center', va='center', fontsize=16, weight='bold', color='white')
-    # Donut chart (right)
-    ax_donut = fig.add_subplot(gs[0, 1])
-    wedges, _ = ax_donut.pie(
-        counts,
-        colors=all_colors,
-        wedgeprops=dict(width=0.4, edgecolor='white'),
-        startangle=90,
-        labels=None,
-        textprops={'fontsize': 14, 'weight': 'bold', 'color': 'white'}
-    )
-    for i, w in enumerate(wedges):
-        ang = (w.theta2 + w.theta1)/2.
-        x = math.cos(math.radians(ang)) * 0.8
-        y = math.sin(math.radians(ang)) * 0.8
-        ax_donut.text(x, y, str(counts[i]), ha='center', va='center', fontsize=16, weight='bold', color='white')
-    centre_circle = plt.Circle((0, 0), 0.60, fc='white')
-    ax_donut.add_artist(centre_circle)
-    ax_donut.text(0, 0, f'Total\nFindings\n{total_findings}', ha='center', va='center', fontsize=14, weight='bold', color='black')
-    ax_donut.set_title('Overall Vulnerabilities Identified', fontsize=18, weight='bold', pad=20, color='#660099')
-    ax_donut.axis('equal')
-    # Hide axes
-    ax_bar.spines['top'].set_visible(False)
-    ax_bar.spines['right'].set_visible(False)
-    ax_bar.spines['left'].set_visible(False)
-    ax_bar.spines['bottom'].set_visible(False)
-    ax_bar.tick_params(left=False, bottom=False)
-    ax_bar.yaxis.set_ticks_position('none')
-    ax_bar.xaxis.set_ticks_position('none')
-    # Legend (bottom, centered across both charts)
-    legend_ax = fig.add_subplot(gs[1, :])
-    legend_ax.axis('off')
-    legend_handles = [Patch(facecolor=all_colors[i], label=all_severities[i]) for i in range(len(all_severities))]
-    legend = legend_ax.legend(
-        handles=legend_handles,
-        loc='center',
-        ncol=len(all_severities),
-        fontsize=16,
-        frameon=False,
-        bbox_to_anchor=(0.5, 0.5)
-    )
-    # Remove axes for legend
-    legend_ax.set_xticks([])
-    legend_ax.set_yticks([])
-    plt.tight_layout(rect=[0, 0.08, 1, 1])
-    plt.savefig(output_path, bbox_inches='tight')
-    plt.close()
-    return output_path
-
-def insert_overall_vulnerabilities_charts(doc, vulnerabilities_by_ip):
-    """
-    Inserts a single combined chart image at the _VULNERABILITIES_FOUND_PLACEHOLDER_ marker.
-    """
-    import tempfile
-    placeholder = '_VULNERABILITIES_FOUND_PLACEHOLDER_'
-    placeholder_paragraph = None
-    for p in doc.paragraphs:
-        if placeholder in p.text:
-            placeholder_paragraph = p
-            break
-    if not placeholder_paragraph:
-        print(f"Warning: Placeholder {placeholder} not found in the template.")
-        return
-    # Gather all vulnerabilities into a flat list, EXCLUDING 'no_vuln' entries
-    all_vulns = []
-    for vulns in vulnerabilities_by_ip.values():
-        for v in vulns:
-            if not v.get('no_vuln'):
-                all_vulns.append(v)
-    from collections import Counter
-    severity_counts = Counter()
-    for vuln in all_vulns:
-        severity_counts[vuln.get('severity', 'Unknown')] += 1
-    # Generate the combined chart as a temporary file
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as chart_file:
-        chart_path = create_combined_vulnerability_charts(severity_counts, chart_file.name)
-        # Insert heading (styled similar to the image)
-        heading = placeholder_paragraph.insert_paragraph_before("Overall Vulnerability Identified")
-        heading.style = placeholder_paragraph.style
-        for run in heading.runs:
-            run.font.size = Pt(32)
-            run.font.bold = True
-            run.font.color.rgb = RGBColor(106, 68, 154)  # #6A449A
-        heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        # Insert the combined chart image
-        img_paragraph = placeholder_paragraph.insert_paragraph_before()
-        run = img_paragraph.add_run()
-        run.add_picture(chart_path, width=Inches(6.5))
-        img_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        # Remove the placeholder
-        parent = placeholder_paragraph._p.getparent()
-        parent.remove(placeholder_paragraph._p)
 
 # Add a new API endpoint to save the default logo
 @app.post("/upload-default-logo/")

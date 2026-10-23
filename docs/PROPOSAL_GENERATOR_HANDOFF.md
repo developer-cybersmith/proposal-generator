@@ -29,7 +29,13 @@ It is **not** the same as **AI Layer** (`/ai-layer`), which fills Excel vulnerab
 
 **Common mistake:** `/proposal_generator` (underscore) → **wrong**. Use **`/proposal-generator`** (hyphen).
 
-**Auth:** `/proposal-generator/` is treated as a **public path** in `session_security.py` (no Azure SSO). That helps BD use it quickly, but it also means **anyone with the URL can hit the form and burn OpenAI credits** if AI slots are used.
+**Auth (updated):** The repo was cleaned up to contain only this feature. Azure SSO and the other VAPT tools were removed. Access is now protected by a simple login in `auth.py`:
+
+- Browser: `/login` with the shared password `PROPOSAL_ACCESS_PASSWORD` (session cookie; 5 wrong tries per 5 minutes per IP, then blocked).
+- Scripts: header `X-API-Key: <PROPOSAL_API_KEY>` (optional).
+- Local dev only: `AUTH_DISABLED=true` skips login; `TEST_MODE=true` allows the cookie over plain http.
+
+Everything under `/proposal-generator/*` requires one of these. `/health` and `/login` are public.
 
 **Wiring:** Root app `Report-Generator-IP-main/app.py` **mounts** the proposal app:
 
@@ -59,7 +65,8 @@ app.mount("/proposal-generator", proposal_generator_app)
 | File | Role |
 |------|------|
 | **`Report-Generator-IP-main/app.py`** | Mounts proposal app at `/proposal-generator`. |
-| **`Report-Generator-IP-main/session_security.py`** | Lists `/proposal-generator/` as public (SSO bypass). |
+| **`Report-Generator-IP-main/auth.py`** | Login page, shared-password check, API-key check, login throttling. |
+| **`Report-Generator-IP-main/reference/`** | Unzipped copy of the Word template (`_template_extract/`) plus `.zip`. Not used at runtime; kept as the readable source of annexure content. |
 | **`Automation/backend/.env`** | `OPENAI_API_KEY`, optional `OPENAI_MODEL` (gitignored — set on Railway too). |
 | **`Automation/backend/.env.example`** | Documents env vars (shared with AI Layer). |
 | **`Report-Generator-IP-main/requirements.txt`** | `python-docx`, `docxtpl`, `openai`, FastAPI, etc. |
@@ -70,13 +77,9 @@ app.mount("/proposal-generator", proposal_generator_app)
 |------|------|
 | **`Automation/backend/uploads/css_proposal/`** | Copy of last generated file served to user (filename from sanitized client name). |
 
-### 3.4 **Not** part of proposal generator (do not confuse)
+### 3.4 Removed from this repo (cleanup branch)
 
-| File | Why it’s unrelated |
-|------|---------------------|
-| `ai_layer.py`, `ai_prompts.py` | Excel row narratives, JSON output, stricter anti-hallucination, rate limits, retries. |
-| `exec_summary.py` | Executive summary Word feature; **not mounted** in `app.py` unless someone adds it. |
-| `type1`–`type6`, `mitkat*` | VAPT report automation — different products. |
+The VAPT report tools (`type1`–`type6`, `mitkat*`), AI Layer, Executive Summary, dashboard, database/AWS migration code, Azure SSO and the old tests were deleted. They still exist in git history: `git log --diff-filter=D --name-only` finds them, `git checkout <commit>~1 -- <path>` restores one.
 
 There is **no** `css_proposal_ai_prompts.py` in the repo; prompts live in **`master_bd_prompt.txt`** + functions inside the big Python file.
 
@@ -321,7 +324,7 @@ python -m pytest tests/test_css_proposal_ai.py -v
 4. Remove or wire up **`assessments_json`** dead code.
 5. Align Master BD file text with “annexure-only” API behavior.
 6. Stronger validator: require `Frequency:`, `Count:`, annexure heading line match slot number.
-7. Optional SSO or API key for production AI generation.
+7. ~~Optional SSO or API key for production AI generation.~~ Done: shared-password login + optional API key (`auth.py`).
 
 ---
 

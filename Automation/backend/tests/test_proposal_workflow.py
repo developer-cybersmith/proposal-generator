@@ -566,8 +566,34 @@ def test_ai_failure_after_one_retry_is_a_clear_error(client, fixtures, fake_ai):
     assert len(fake_ai.calls) == 2                                          # exactly one retry, no loop
 
 
+def test_dedicated_proposal_key_and_model_take_priority(client, fixtures, fake_ai, monkeypatch):
+    seen = {}
+    real_init = FakeOpenAI.__init__
+
+    def spy(self, *a, **k):
+        seen["key"] = k.get("api_key")
+        real_init(self, *a, **k)
+    monkeypatch.setattr(FakeOpenAI, "__init__", spy)
+    monkeypatch.setattr(gen, "HERE", Path(fixtures))                       # no .env here: only the environment counts
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-shared")
+    monkeypatch.setenv("OPENAI_MODEL", "shared-model")
+    monkeypatch.setenv("PROPOSAL_OPENAI_API_KEY", "sk-proposal-only")
+    monkeypatch.setenv("PROPOSAL_OPENAI_MODEL", "proposal-model")
+    draft_id = _full_draft_id(client, fixtures, "04_mixed_known_and_custom", entries=[{"id": "red_team", "include": False}], **AI_FIELDS)
+    assert client.post(f"/draft/{draft_id}/generate/").status_code == 200
+    assert seen["key"] == "sk-proposal-only" and fake_ai.calls[0]["model"] == "proposal-model"
+    # an empty dedicated key falls back to the shared one
+    monkeypatch.setenv("PROPOSAL_OPENAI_API_KEY", "")
+    monkeypatch.setenv("PROPOSAL_OPENAI_MODEL", "")
+    fake_ai.calls.clear()
+    draft_id = _full_draft_id(client, fixtures, "04_mixed_known_and_custom", entries=[{"id": "red_team", "include": False}], **AI_FIELDS)
+    assert client.post(f"/draft/{draft_id}/generate/").status_code == 200
+    assert seen["key"] == "sk-shared" and fake_ai.calls[0]["model"] == "shared-model"
+
+
 def test_missing_openai_key_is_reported(client, fixtures, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setenv("PROPOSAL_OPENAI_API_KEY", "")
     monkeypatch.setattr(gen, "HERE", Path(fixtures))                         # no .env here, so no key can be loaded
     draft_id = _full_draft_id(client, fixtures, "04_mixed_known_and_custom", **AI_FIELDS)
     r = client.post(f"/draft/{draft_id}/generate/")

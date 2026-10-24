@@ -644,11 +644,12 @@ async def generate_custom_annexure_text(
     from dotenv import load_dotenv
     load_dotenv(HERE / ".env", override=True)
 
-    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    # A key meant only for the proposal's custom annexures wins; otherwise the shared OPENAI_API_KEY.
+    api_key = (os.getenv("PROPOSAL_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()
     if not api_key:
         raise HTTPException(
             status_code=500,
-            detail="AI generation is not configured. Set OPENAI_API_KEY in .env.",
+            detail="AI generation is not configured. Set PROPOSAL_OPENAI_API_KEY (or OPENAI_API_KEY) in .env.",
         )
 
     system_prompt = _load_master_bd_prompt()
@@ -657,7 +658,7 @@ async def generate_custom_annexure_text(
     try:
         from openai import AsyncOpenAI, APITimeoutError, RateLimitError
         client = AsyncOpenAI(api_key=api_key)
-        model = (os.getenv("OPENAI_MODEL") or "gpt-4o").strip()
+        model = (os.getenv("PROPOSAL_OPENAI_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-4o").strip()
 
         messages = [
             {"role": "system", "content": system_prompt},

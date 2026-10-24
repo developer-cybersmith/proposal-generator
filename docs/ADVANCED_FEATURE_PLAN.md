@@ -386,7 +386,7 @@ The spec describes `Annexures 2.docx` (11 annexures, 1 section, 1 in margins). O
 | Track B Specification applied | Done except brand-owner items | Handoff §15; body of every generated proposal has 0 lint errors and 0 warnings |
 
 **Tests:** 203 pass in a fresh virtualenv built from `requirements.txt` (55 original regression tests + 148 new).
-**Acceptance** (`css_scoping_testset/acceptance_run.py --engine word`): all 22 valid and edge workbooks generated through the real flow and rendered in Word with no blank pages and Contents numbers equal to the measured pages; the 8 invalid workbooks rejected with plain messages; 25 load and stress files parsed with 0 mismatches against the expected JSON. That pass ran just before two small label/field-line refinements; a re-run on the final code (all 100 load files) was started at commit time and is reported separately.
+**Acceptance** (`css_scoping_testset/acceptance_run.py --engine word`): all 22 valid and edge workbooks generated through the real flow and rendered in Word with no blank pages and Contents numbers equal to the measured pages; the 8 invalid workbooks rejected with plain messages; 25 load and stress files parsed with 0 mismatches against the expected JSON. The pass was **repeated on the final code** (after the label/field-line refinements, with all 100 load and 5 stress files): ALL CHECKS PASSED, 105 load/stress files with 0 mismatches.
 
 **Defects in the original generator found and fixed along the way** (all Word-verified, all tested): files Word reported as corrupt, a company name with `&` corrupting the proposal, blank pages, a missing closing section, wrong and phantom Contents entries, the clipped cover reference. Details: handoff §14.5.
 

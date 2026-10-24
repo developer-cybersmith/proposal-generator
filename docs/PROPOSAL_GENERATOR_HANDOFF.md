@@ -363,6 +363,7 @@ For each annexure's block of matrix rows: **Count** = rows holding a number abov
 ### 14.4 Behaviour worth knowing
 - **Frequency is one shared field.** While it still holds the default `One Time`, each annexure keeps its own template wording (e.g. "One time with Revalidation"); once edited, the edited text is used in both the annexure and the pricing table.
 - **External + Internal Network PT** appear as two pricing lines under one Annexure 3, with one combined Count line.
+- **OpenAI key for the custom annexures:** set `PROPOSAL_OPENAI_API_KEY` (and optionally `PROPOSAL_OPENAI_MODEL`) in `Automation/backend/.env`. If empty, the shared `OPENAI_API_KEY` / `OPENAI_MODEL` are used.
 - **AI annexures** receive the Excel context, one automatic retry if the structure check fails, and then a clear error (HTTP 502). The heading number and the Count line are always set by the system, never trusted from the model. The "Total cost" field is optional in this flow only (derived from the pricing table when every row is priced); the manual form still requires it.
 - **Total row:** `₹ /- * + 18% GST` until *every* row is priced, then the sum (`₹ 1,75,000 /- * + 18% GST`). A partial sum is never shown.
 - **Manual flow unchanged** except that it now gets the corrected layout and the new table styling; its pricing quantities are blank (the old dummy values such as "1 Web Application" were placeholders).

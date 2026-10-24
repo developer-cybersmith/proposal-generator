@@ -61,6 +61,26 @@ class LintReport:
 
 
 # --------------------------------------------------------------------------- paragraph helpers
+def body_elements_after_cover(doc) -> list:
+    """Top-level body elements from the INTRODUCTION heading on.
+
+    The cover page and the Contents block keep the template's own design (cover navy, artwork and
+    blank-line layout are brand-owner decisions, plan section 12), so formatting checks start at
+    the body. A document without that heading is checked in full.
+    """
+    children = list(doc.element.body)
+    seen_contents = False
+    for i, el in enumerate(children):
+        if el.tag != qn("w:p"):
+            continue
+        t = " ".join(_text(el).split())
+        if t == "Contents":
+            seen_contents = True
+        elif seen_contents and t == "INTRODUCTION":
+            return children[i:]
+    return children
+
+
 def _text(p) -> str:
     return "".join(t.text or "" for t in p.iter(qn("w:t"))).strip()
 
@@ -141,12 +161,13 @@ def check_toc_lists_all_annexures(doc) -> list[Finding]:
 def check_blank_spacing(doc) -> list[Finding]:
     findings: list[Finding] = []
     paragraphs = _body_paragraph_elements(doc)
+    body_ids = {id(el) for el in body_elements_after_cover(doc)}
     blank_run = 0
     break_run = 0
     for i, p in enumerate(paragraphs):
         if _is_blank(p):
             blank_run += 1
-            if blank_run == BLANK_RUN_LIMIT:
+            if blank_run == BLANK_RUN_LIMIT and id(p) in body_ids:      # the cover keeps its own layout
                 findings.append(Finding("warning", "blank_paragraph_run",
                                         f"{BLANK_RUN_LIMIT}+ empty paragraphs in a row near body paragraph {i}"))
         else:
@@ -193,7 +214,8 @@ def check_run_formatting(doc) -> list[Finding]:
     """Warn about explicit fonts/colours outside the tokens (aggregated, one finding each)."""
     fonts: Counter = Counter()
     colors: Counter = Counter()
-    for r in doc.element.body.iter(qn("w:r")):
+    runs = [r for el in body_elements_after_cover(doc) for r in el.iter(qn("w:r"))]
+    for r in runs:
         if not "".join(t.text or "" for t in r.iter(qn("w:t"))).strip():
             continue
         rpr = r.find(qn("w:rPr"))

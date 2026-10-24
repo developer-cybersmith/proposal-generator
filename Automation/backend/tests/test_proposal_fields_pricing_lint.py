@@ -58,7 +58,7 @@ def test_existing_lines_are_rewritten_and_formatted_from_tokens():
     label_rpr, value_rpr = (r.find(qn("w:rPr")) for r in runs)
     assert label_rpr.find(qn("w:b")) is not None and value_rpr.find(qn("w:b")) is None
     assert label_rpr.find(qn("w:color")).get(qn("w:val")) == tokens.BRAND_PURPLE
-    assert value_rpr.find(qn("w:color")).get(qn("w:val")) == tokens.BODY_TEXT
+    assert value_rpr.find(qn("w:color")).get(qn("w:val")) == tokens.BODY_BLACK   # matches the black annexure body
     assert label_rpr.find(qn("w:rFonts")).get(qn("w:ascii")) == tokens.FONT
 
 

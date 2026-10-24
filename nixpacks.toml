@@ -1,3 +1,10 @@
 # Pin Python for reproducible Railway/Nixpacks builds.
 [variables]
 NIXPACKS_PYTHON_VERSION = "3.12"
+
+# LibreOffice renders each generated proposal to PDF so blank pages can be detected, the Contents page
+# numbers can be measured from the real layout, and a PDF proof can be offered (docs/ADVANCED_FEATURE_PLAN.md, D29).
+# "..." keeps the default packages. Without LibreOffice the app still works: proposals are produced
+# unverified and the response header X-Proposal-Pdf says "not verified".
+[phases.setup]
+aptPkgs = ["...", "libreoffice-writer", "fontconfig", "fonts-liberation"]

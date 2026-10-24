@@ -68,6 +68,7 @@ import proposal_fields  # noqa: E402
 import proposal_lint  # noqa: E402
 import proposal_pdf  # noqa: E402
 import proposal_pricing  # noqa: E402
+import proposal_style  # noqa: E402
 import proposal_tokens  # noqa: E402
 from proposal_ratelimit import rate_limit  # noqa: E402
 
@@ -762,11 +763,8 @@ def _add_formatted_paragraph(doc: Document, parsed: dict[str, Any]) -> None:
 
     p = doc.add_paragraph()
 
-    if style_name in ("main_bullet", "sub_bullet"):
-        bullet_char = CSS_MAIN_BULLET if style_name == "main_bullet" else CSS_SUB_BULLET
-        run_text = f"{bullet_char} {text}"
-    else:
-        run_text = text
+    # Bullets are real Word list items (numbering definition owned by proposal_style), not typed glyphs.
+    run_text = text
 
     run = p.add_run(run_text)
 
@@ -787,14 +785,10 @@ def _add_formatted_paragraph(doc: Document, parsed: dict[str, Any]) -> None:
     else:
         run.font.size = CSS_BODY_SIZE
 
-    # Bullet indentation
+    # Bullet list membership (indent and glyph come from the numbering level)
     if style_name in ("main_bullet", "sub_bullet"):
-        left = CSS_MAIN_BULLET_INDENT if style_name == "main_bullet" else CSS_SUB_BULLET_INDENT
         pPr = p._p.get_or_add_pPr()
-        ind = OxmlElement("w:ind")
-        ind.set(qn("w:left"), left)
-        ind.set(qn("w:hanging"), CSS_BULLET_HANGING)
-        pPr.append(ind)
+        pPr.append(proposal_style.bullet_numpr(0 if style_name == "main_bullet" else 1))
 
     # Paragraph spacing (Formatting Specification): labels open a new block, lists are tight,
     # body text gets the standard gap.
@@ -1116,12 +1110,23 @@ def _normalize_page_breaks(doc: Document) -> dict[str, int]:
         return run
 
     for p in list(body.iter(qn("w:p"))):
-        if _has_page_break_before(p.find(qn("w:pPr"))) and p.getparent() is body:
-            for blank in preceding_blank_run(p):
-                body.remove(blank)
-                stats["blank_removed"] += 1
+        if not _has_page_break_before(p.find(qn("w:pPr"))):
+            continue
+        top = p                                  # the body-level element that starts the new page
+        while top.getparent() is not body and top.getparent() is not None:
+            top = top.getparent()
+        first_p = top if top.tag == qn("w:p") else top.find(f".//{qn('w:p')}")
+        if first_p is not p:
+            continue                             # only the first paragraph of a block starts the page
+        for blank in preceding_blank_run(top):
+            body.remove(blank)
+            stats["blank_removed"] += 1
     last = body.find(qn("w:sectPr"))
     tail = preceding_blank_run(last) if last is not None else []
+    if tail:
+        before_run = tail[-1].getprevious()              # the element the blank run follows
+        if before_run is not None and before_run.tag == qn("w:tbl"):
+            proposal_style.make_tiny_paragraph(tail.pop())   # Word needs one paragraph after a final table
     for blank in tail:
         body.remove(blank)
         stats["blank_removed"] += 1
@@ -1310,6 +1315,9 @@ def _apply_compact_toc_ppr(p_element, *, first_line: bool = False) -> None:
     """Apply compact Contents paragraph formatting with right-aligned dot leader tab."""
     existing = p_element.find(qn("w:pPr"))
     if existing is not None:
+        style = existing.find(qn("w:pStyle"))
+        if style is not None and (style.get(qn("w:val")) or "").startswith("TOC"):
+            return                    # TOC1/TOC2 (spec styles) already define tabs, spacing and fonts
         p_element.remove(existing)
 
     ref = _reference_toc_ppr()
@@ -1355,9 +1363,16 @@ def _apply_compact_toc_ppr(p_element, *, first_line: bool = False) -> None:
 def _set_toc_line(p_element, title: str, page: int, *, first_line: bool = False) -> None:
     """Rebuild a Contents line as ``Title<TAB>Page`` with compact layout."""
     _apply_compact_toc_ppr(p_element, first_line=first_line)
+    # keep the TOC field's begin/instruction/separate (first line) and end (last line) runs
+    field_runs = [c for c in p_element if c.tag == qn("w:r") and proposal_style._is_field_run(c)]
+    field_open = [r for r in field_runs if r.find(qn("w:fldChar")) is None
+                  or r.find(qn("w:fldChar")).get(qn("w:fldCharType")) != "end"]
+    field_end = [r for r in field_runs if r not in field_open]
     for child in list(p_element):
         if child.tag != qn("w:pPr"):
             p_element.remove(child)
+    for r in field_open:
+        p_element.append(r)
 
     r_title = OxmlElement("w:r")
     t_title = OxmlElement("w:t")
@@ -1375,6 +1390,8 @@ def _set_toc_line(p_element, title: str, page: int, *, first_line: bool = False)
     t_page.text = str(page)
     r_page.append(t_page)
     p_element.append(r_page)
+    for r in field_end:
+        p_element.append(r)
 
 
 def _parse_toc_line(text: str) -> tuple[str, int]:
@@ -1546,11 +1563,13 @@ def _finalize_document(
     _prune_static_toc_entries(doc)
     _ensure_page_break_before_introduction(doc)
     _ensure_final_section(doc)
+    proposal_style.apply_specification(doc)          # Track B: styles, body text, tables, signature, lists
     _normalize_page_breaks(doc)
 
     pages = _compute_layout_pages(doc)
     _refresh_all_toc_pages(doc, ordered_keys, pages, catalog=request_catalog)
     _normalize_contents_section(doc)
+    proposal_style.wrap_contents_in_toc_field(doc)   # a real TOC field (cached result = these lines)
 
     _strip_all_yellow_highlights(doc)
     doc.save(str(docx_path))
@@ -1913,6 +1932,50 @@ _CORE_NS = {
     "dcterms": "http://purl.org/dc/terms/",
     "xsi": "http://www.w3.org/2001/XMLSchema-instance",
 }
+
+
+def _fit_cover_reference(doc: Document) -> int:
+    """Shrink the cover reference so a long one (e.g. CSS-ENG-2026-943) stays on the page.
+
+    The cover's Title paragraph starts 4.6 in from the left at 36 pt (designed for short refs like
+    EN-01-12-25). A longer reference overflowed and lost its first characters. The largest size
+    that fits the remaining width is chosen; short references keep the template's 36 pt.
+    """
+    for p in doc.paragraphs:
+        text = (p.text or "").strip()
+        if not text:
+            continue
+        ppr = p._p.find(qn("w:pPr"))
+        style = ppr.find(qn("w:pStyle")) if ppr is not None else None
+        if style is None or style.get(qn("w:val")) != "Title":
+            return 0
+        sect = doc.sections[0]
+        ind = ppr.find(qn("w:ind"))
+        first_line = int(ind.get(qn("w:firstLine")) or 0) if ind is not None else 0
+        if ind is not None and first_line:
+            # The Title style already indents the paragraph (left 6686); the direct first-line
+            # indent doubled it and pushed the first character off the page (the reference lost
+            # its first letter, e.g. "N-01-12-25"). Zero it: same position, whole text visible.
+            ind.set(qn("w:firstLine"), "0")
+        usable_in = (sect.page_width - sect.left_margin - sect.right_margin) / 914400 - first_line / 1440 - 0.1
+        size = 36
+        while size > 16 and len(text) * 0.57 * size / 72 > usable_in:
+            size -= 2
+        if size == 36:
+            return 36
+        for r in p._p.iter(qn("w:r")):
+            rpr = r.find(qn("w:rPr"))
+            if rpr is None:
+                rpr = OxmlElement("w:rPr")
+                r.insert(0, rpr)
+            for tag in ("w:sz", "w:szCs"):
+                for node in rpr.findall(qn(tag)):
+                    rpr.remove(node)
+                el = OxmlElement(tag)
+                el.set(qn("w:val"), str(size * 2))
+                rpr.append(el)
+        return size
+    return 0
 
 
 def _repair_core_properties(docx_path: Path, title: str = "") -> None:
@@ -2448,6 +2511,7 @@ def generate_proposal(
         _replace_highlighted_placeholder_text(doc, "XYZ LLC", company_name)
         _replace_highlighted_placeholder_text(doc, "Company name", company_name)
         _replace_highlighted_placeholder_text(doc, "EN-01-12-25", proposal_ref)
+        _fit_cover_reference(doc)
 
         if logo_file:
             if not _insert_logo_on_cover(doc, logo_file):

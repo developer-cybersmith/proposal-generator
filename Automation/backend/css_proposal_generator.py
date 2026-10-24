@@ -77,7 +77,7 @@ BASE_TEMPLATE = HERE / "CSS_Proposal_Base_Template.docx"
 DEFAULT_LOGO = HERE / "default_logo.png"
 UPLOAD_DIR = HERE / "uploads" / "css_proposal"
 MASTER_BD_PROMPT_FILE = HERE / "master_bd_prompt.txt"
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 DEFAULT_PORT = 8010
 
 # ---------------------------------------------------------------------------

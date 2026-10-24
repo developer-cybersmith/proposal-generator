@@ -79,7 +79,8 @@ def label_value_paragraph(label: str, value: str):
     p = OxmlElement("w:p")
     p.append(_spacing_ppr())
     p.append(make_run(f"{label}: ", bold=True, color=tokens.BRAND_PURPLE, size_pt=tokens.SIZE_BODY))
-    p.append(make_run(value, color=tokens.BODY_BLACK, size_pt=tokens.SIZE_BODY))   # annexure body is black
+    if value:
+        p.append(make_run(value, color=tokens.BODY_TEXT, size_pt=tokens.SIZE_BODY))
     return p
 
 
@@ -97,7 +98,8 @@ def rewrite_label_value(p, label: str, value: str) -> None:
         elif child.tag in (qn("w:r"), qn("w:hyperlink"), qn("w:smartTag"), qn("w:ins")):
             p.remove(child)
     p.append(make_run(f"{label}: ", bold=True, color=tokens.BRAND_PURPLE, size_pt=tokens.SIZE_BODY))
-    p.append(make_run(value, color=tokens.BODY_BLACK, size_pt=tokens.SIZE_BODY))   # annexure body is black
+    if value:
+        p.append(make_run(value, color=tokens.BODY_TEXT, size_pt=tokens.SIZE_BODY))
 
 
 def _value_after_colon(p) -> str:

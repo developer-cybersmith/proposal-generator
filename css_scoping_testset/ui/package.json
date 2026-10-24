@@ -1,0 +1,6 @@
+{
+  "name": "proposal-ui-e2e",
+  "private": true,
+  "description": "Drives the Excel review UI (proposal_excel_ui.html) against a running server, in jsdom. See ui_e2e.js.",
+  "dependencies": { "jsdom": "^24.0.0" }
+}

@@ -1,6 +1,6 @@
 # Advanced Feature Plan — Excel-Driven Proposal Generation
 
-**Status:** DRAFT v2. No code is written until the items in §15 are closed.
+**Status:** **IMPLEMENTED (Track A phases 1–5 and Track B), see §17 for the evidence and the items still open.** Originally DRAFT v2; the plan text below is kept as the record of the decisions.
 **Input format (fixed):** `CSS Pre-Engagement Scoping v2.xlsx`. No new Excel format will be introduced.
 **Builds on:** `docs/PROPOSAL_GENERATOR_HANDOFF.md` (generator v1.3.0).
 **Binding formatting standard:** `docs/CyberSmithSECURE_Proposal_Formatting_Specification.md` (see §0).
@@ -72,6 +72,19 @@ Today the user ticks annexures by hand. We add a second way in: **upload the sco
 | D32 | **Pricing table Quantity cell:** the sum as a **number only** (e.g. `23`), editable. The old `Android - X, iOS - Y` text is dropped; Mobile Quantity is the plain sum of rows 62–65. |
 | D33 | **Zero rule:** only values **above 0** count toward Count; blank and 0 are both skipped. A block whose sum is 0 triggers the amber confirm (D16). |
 | D34 | **Two previews before generating:** *Preview 1* = list of annexures with Count and Frequency (editable); *Preview 2* = Conclusion & Pricing table with Quantity and an empty Cost column (editable). **Frequency is one shared field**: editing it in either preview updates both and the annexure's `Frequency:` line. Prices can be entered in Preview 2 or left blank and filled in Word after generation. |
+| D35 | *(derived while implementing)* **External + Internal Network PT** share Annexure 3: one combined line `Count: 6 External Infrastructure categories, 12 Internal Infrastructure categories`; the annexure's Frequency is the first included entry's (kept equal for both). |
+| D36 | *(derived)* **Frequency default:** while the shared Frequency is still `One Time`, each annexure keeps its own template wording (e.g. "One time with Revalidation"); only an edited value replaces it. No template commitment is dropped silently. |
+| D37 | *(derived)* The five annexures with no Excel row (manual toggles) default to Count 1 / Quantity 1, label "Assessment categories", editable. |
+| D38 | *(derived)* **Total row** shows a sum only when **every** row is priced; otherwise it keeps `₹ /- * + 18% GST`. A partial sum is never presented as the total. |
+| D39 | *(derived)* **Manual flow:** the template's dummy pricing values ("1 Web Application", "Three Time") were placeholders and are no longer produced; quantity and cost are blank. |
+| D40 | *(derived)* For AI annexures the **heading number, title and Count line are always set by the system**, never trusted from the model. |
+| D41 | *(derived)* The **cover page and Contents block are left as designed**; the specification is applied from the INTRODUCTION heading on. Cover navy, artwork, header/footer artwork, first-section margins, signatory and currency spacing need the brand owner (handoff §15). |
+| D42 | *(derived)* **Contents = a real Word TOC field** whose cached lines carry the page numbers measured from a real render; Contents entries whose heading does not exist in the body are removed. |
+| D43 | *(derived)* **Blank pages are made structurally impossible:** page breaks are `pageBreakBefore` properties (not free-standing paragraphs), blank-paragraph spacing is removed, a closing section is restored, and the last table is followed by a 1 pt paragraph. |
+| D44 | *(derived)* Negative Quantity cells are skipped with a warning (`negative_quantity_skipped`), extending D33. |
+| D45 | *(refines D18)* "Total cost" is optional **only in the Excel flow**; the manual form keeps requiring it (an existing regression test pins that). |
+| D46 | *(derived)* Rate limits per client IP: 10 uploads and 5 generations per minute by default (`RATE_LIMIT_UPLOAD`, `RATE_LIMIT_GENERATE`); process-local. |
+| D47 | *(derived)* PDF engine: LibreOffice by default when installed (Railway), Microsoft Word only by explicit opt-in (`PROPOSAL_PDF_ENGINE=word`, development machines). |
 
 ---
 
@@ -354,7 +367,27 @@ The spec describes `Annexures 2.docx` (11 annexures, 1 section, 1 in margins). O
 ## 15. Open items ❓ (to be asked one by one)
 
 - ~~Q-A: which matrix rows count~~ — closed, see §4.2 / D30.
-- **Q-B.** Filled sample Excel (Phase 0).
+- **Q-B (superseded by §17).** Filled sample Excel (Phase 0).
 - **Q-C.** Track B prerequisites (§12 list).
 - ~~Q-D: PDF renderer~~ — closed, D29.
 - ~~Q-E: track order~~ — closed, D28.
+
+---
+
+## 17. Implementation status and evidence
+
+| Phase | Result | Evidence |
+|-------|--------|----------|
+| 1 Tokens, lint, parser, mapping, fixtures to D30–D33 | Done | 137 fixtures regenerated; parser equals the reference parser on all of them (SaaS 3/12 and Web 6/23 verified) |
+| 2 Upload, drafts, Preview 1 and 2 | Done | API tests; the real page driven in jsdom: 19/19 edit checks and 6/6 generate checks |
+| 3 Count/Frequency, pricing table, numbering | Done | Word renders; Design Sample Gate pages inspected as images |
+| 4 AI with Excel context, retry, validation | Done, **mocked only** | Retry, failure (HTTP 502), heading and Count override tested with a fake client; real OpenAI not exercised |
+| 5 Rate limits, hardening, PDF, blank-page check | Done, **Word-verified** | LibreOffice not installed here (install was stopped for low memory), so Microsoft Word was the engine |
+| Track B Specification applied | Done except brand-owner items | Handoff §15; body of every generated proposal has 0 lint errors and 0 warnings |
+
+**Tests:** 203 pass in a fresh virtualenv built from `requirements.txt` (55 original regression tests + 148 new).
+**Acceptance** (`css_scoping_testset/acceptance_run.py --engine word`): all 22 valid and edge workbooks generated through the real flow and rendered in Word with no blank pages and Contents numbers equal to the measured pages; the 8 invalid workbooks rejected with plain messages; 25 load and stress files parsed with 0 mismatches against the expected JSON. That pass ran just before two small label/field-line refinements; a re-run on the final code (all 100 load files) was started at commit time and is reported separately.
+
+**Defects in the original generator found and fixed along the way** (all Word-verified, all tested): files Word reported as corrupt, a company name with `&` corrupting the proposal, blank pages, a missing closing section, wrong and phantom Contents entries, the clipped cover reference. Details: handoff §14.5.
+
+**Still open (needs you):** a real filled client Excel; the brand-owner items in handoff §15; LibreOffice on Railway and real OpenAI output are unverified; nothing is deployed.

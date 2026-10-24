@@ -1,2 +1,4 @@
 samples/
 __pycache__/
+acceptance_out/
+ui/node_modules/

@@ -2,7 +2,7 @@
 
 **Audience:** Someone new who will maintain or extend the feature  
 **Tone:** Plain language + honest about gaps  
-**Version referenced in code:** `1.3.0` (`css_proposal_generator.py`)
+**Version referenced in code:** `1.4.0` (`css_proposal_generator.py`). Sections 1–13 describe the original v1.3.0 design; **sections 14–16 describe what v1.4.0 added (Excel-driven flow, formatting specification, verification)** and where it supersedes earlier statements.
 
 ---
 
@@ -328,4 +328,93 @@ python -m pytest tests/test_css_proposal_ai.py -v
 
 ---
 
-*Last updated: handoff doc aligned to codebase v1.3.0 (`css_proposal_generator.py`).*
+---
+
+## 14. v1.4.0 — Excel-driven flow (added after sections 1–13 were written)
+
+### 14.1 What it does
+A second way in: upload the filled **`CSS Pre-Engagement Scoping v2.xlsx`** at `/proposal-generator/excel/` (link on the manual form).
+
+1. **Upload** (`POST /upload-excel/`, `.xlsx` ≤ 5 MB, rate-limited, never stored) is parsed by `proposal_excel.py`.
+2. **Preview 1 – Annexures:** client name, editable reference number, include/exclude, **Count**, **Frequency**, order, manual toggles for the five annexures that have no Excel row (1, 2, 6, 9, 12), amber confirmation for a block that adds up to 0, AI context (sector, summary, duration, payment model) when an annexure has no template.
+3. **Preview 2 – Conclusion & Pricing:** the exact table that goes into the Word file (Sr. No., Assessment Type, **Quantity**, Frequency, Cost Per Annexure). Prices are optional; rows can be removed or added.
+4. **Generate** (`POST /draft/{id}/generate/`): `.docx` download plus, where a PDF engine exists, a PDF proof (`GET /draft/{id}/download/pdf`).
+
+### 14.2 The two numbers (plan D30–D33)
+For each annexure's block of matrix rows: **Count** = rows holding a number above 0 → the annexure's `Count: N <label>` line. **Quantity** = their sum → the pricing table. Example: SaaS rows 5, blank, blank, 4, 3 → Count 3 / Quantity 12; Web 2, 1, 4, 5, 3, 8 → Count 6 / Quantity 23. The mapping (cover cell, rows, labels, annexure number) lives in **`annexure_map.json`**: edit it, not the code.
+
+### 14.3 New files
+| File | Role |
+|------|------|
+| `proposal_excel.py` | Reads the workbook (Cover Page + Overall Scoping Matrix; other sheets only as AI context; contact details are never sent to the AI). Never raises: problems come back as `errors` / `warnings`. |
+| `annexure_map.json` | Editable mapping and context sources. |
+| `proposal_workflow.py` | Draft building, validated edits, readiness checks (what keeps Generate disabled), generation plan, and the router. |
+| `proposal_excel_ui.html` | The upload + Preview 1 + Preview 2 page (builds DOM with `textContent`: no user text becomes markup). |
+| `proposal_drafts.py` | 60-minute server-side drafts (random ids, expired files deleted, generated files kept only as long as the draft). |
+| `proposal_ratelimit.py` | Per-IP sliding-window limits (`RATE_LIMIT_UPLOAD`, `RATE_LIMIT_GENERATE`). |
+| `proposal_tokens.py` | **Every font, colour, size and table metric**, from the Formatting Specification. Change formatting here. |
+| `proposal_fields.py` | Count/Frequency line rewriting, cross-reference renumbering. |
+| `proposal_pricing.py` | Pricing table, Indian digit grouping (₹ 1,25,000), total rule. |
+| `proposal_style.py` | **Track B:** applies the specification to the assembled document (section 15). |
+| `proposal_lint.py` | Checks every output: numbering, Contents, blank pages, final section, package validity, tables within width, fonts/colours. |
+| `proposal_pdf.py` | PDF render (LibreOffice or Word), blank-page detection, measured heading pages. |
+| `../../css_scoping_testset/` | Generator of 137 dummy workbooks + expected results + `acceptance_run.py`. |
+
+### 14.4 Behaviour worth knowing
+- **Frequency is one shared field.** While it still holds the default `One Time`, each annexure keeps its own template wording (e.g. "One time with Revalidation"); once edited, the edited text is used in both the annexure and the pricing table.
+- **External + Internal Network PT** appear as two pricing lines under one Annexure 3, with one combined Count line.
+- **AI annexures** receive the Excel context, one automatic retry if the structure check fails, and then a clear error (HTTP 502). The heading number and the Count line are always set by the system, never trusted from the model. The "Total cost" field is optional in this flow only (derived from the pricing table when every row is priced); the manual form still requires it.
+- **Total row:** `₹ /- * + 18% GST` until *every* row is priced, then the sum (`₹ 1,75,000 /- * + 18% GST`). A partial sum is never shown.
+- **Manual flow unchanged** except that it now gets the corrected layout and the new table styling; its pricing quantities are blank (the old dummy values such as "1 Web Application" were placeholders).
+
+### 14.5 Defects found and fixed in the original generator
+Found by rendering real output in Microsoft Word; all are covered by tests.
+1. **Files Word refused to open** ("The file appears to be corrupted"): `docProps/core.xml` had `cp:lastModifiedBy`/`cp:revision` in the wrong XML namespace. Rewritten valid at the end of generation; the lint checks it.
+2. **A company name with `&`, `<`, `>` or quotes** (e.g. "L&T", "Smith & Sons") corrupted the document (all 13 annexures instead of the selection, "&" vanishing from headings). docxtpl autoescape is now on.
+3. **Blank pages** between sections and at the end (page-break paragraphs and trailing empty paragraphs spilling onto new pages). Page breaks are now `pageBreakBefore` properties; blank-paragraph spacing is gone.
+4. **No closing section properties:** assembly deleted the template's final `sectPr`; Word fell back to defaults. A continuous closing section is restored.
+5. **Wrong Contents numbers** (e.g. "Conclusion & Pricing … page 114"): `pageBreakBefore w:val="0"` was read as a break. Fixed, and the numbers are now **measured from a real render** when an engine exists.
+6. **Contents listed three sections that do not exist** in the body ("Our Understanding of Your Requirement", "Methodology Overview", "Vulnerability Assessment Methodology"): removed.
+7. **The first character of the cover reference was clipped** (`N-01-12-25`): a direct first-line indent doubled the style's indent. Fixed; long references are shrunk to fit.
+
+---
+
+## 15. Formatting Specification compliance (Track B)
+
+`proposal_style.apply_specification()` runs on every generated document. It applies `docs/CyberSmithSECURE_Proposal_Formatting_Specification.md`:
+
+| Specification item | Result |
+|---|---|
+| Named styles (Heading 1/2/3, Annexure Title, TOC 1/2) | Defined from `proposal_tokens.py`; headings and sub-labels use them instead of direct formatting. |
+| Body text | Corbel 11 pt, body colour `#595959`; bold/italic and purple/white emphasis kept. |
+| No blank-paragraph spacing | Removed; spacing comes from paragraph spacing (6 pt after body, 3 pt in lists, 12 pt before headings, a gap after tables). |
+| Real lists | Template lists were already real; AI annexures now use a real Word list definition (no typed bullets). |
+| Tables (spec §9) | Team and deviation tables restyled: purple header row, repeating header, rows never split, grey borders, padding, within text width, "Sr No." never wraps. |
+| Pricing table | Built from the tokens (5 columns, right-aligned Indian-format prices, merged Total row). |
+| Signature block | Borderless two-column table (not space-aligned); a Date row is added as the specification lists it. |
+| Automatic TOC | The Contents is a real Word `TOC` field (cached result = the measured lines); when Word updates fields it rebuilds from the headings (full annexure titles). |
+| Pagination | No blank pages, no stacked breaks, headings keep-with-next, closing section present, Contents numbers measured. |
+
+**Deliberately not changed (needs the brand owner) — recorded, not guessed:**
+- **Cover page and Contents block** keep the template's own design: the exact `cover_navy` value and artwork are unconfirmed (`proposal_tokens.COVER_NAVY` is `None`).
+- **Margins of the first sections** (1.0/0.75 cm sides) stay as the template's header artwork requires; the annexure sections already use 1 in (2.54 cm).
+- **Body colour** `#595959` follows the source-verified value; the specification also allows `#404040` (one constant in `proposal_tokens.py`).
+- **Header/footer artwork** is unchanged (image-based, page number present); a rebuilt header needs approved vector assets.
+- **Signatory** (Smith Gonsalves, Chief Operating Officer) is the source value and still marked "confirm current signatory" by the specification.
+- **Currency spacing in the deviation table** (`₹8,500 per hour` vs `₹ 8,500/hour`) awaits the approved format.
+
+---
+
+## 16. Verification status (honest summary)
+
+| Check | Status |
+|---|---|
+| Test suite | **203 tests pass** in a fresh virtualenv built only from `requirements.txt` (the original 55 regression tests are among them). Run from `Automation/backend`: `python -m pytest tests -q`. |
+| Real layout in **Microsoft Word** | Verified here: every generated scenario opens in Word, has no blank pages, and its Contents numbers equal the measured pages; Word's own TOC update reproduces the same numbers. Tests that need an engine skip themselves when none is installed. |
+| Dummy workbook acceptance | `python css_scoping_testset/acceptance_run.py --engine word` (see the result in the plan, section 17). |
+| **LibreOffice on Railway** | **Not verified.** Configuration is in `nixpacks.toml`; LibreOffice could not be installed on the development machine, and pagination may differ slightly from Word (Corbel is a Microsoft font). Word remains the final authority. Without LibreOffice the app still works and reports `X-Proposal-Pdf: not verified`. |
+| **Real OpenAI output** | **Not verified.** All AI paths are tested with a fake client (structure, retry, failure, numbering, Count override). Run one real generation before relying on it. |
+| **Deployment to Railway** | **Not performed.** Set `PROPOSAL_ACCESS_PASSWORD`, `SESSION_SECRET_KEY`, `OPENAI_API_KEY` and `TEST_MODE=false`; see `.env.example`. |
+| A real filled client Excel | **Still needed.** Everything above was proven with generated dummy workbooks. |
+
+*Last updated: handoff aligned to codebase v1.4.0.*

@@ -25,6 +25,7 @@ from typing import Any
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import nsdecls, qn
 
+import proposal_fields
 import proposal_tokens as tokens
 from proposal_fields import make_run
 
@@ -297,6 +298,7 @@ def _is_blank(p) -> bool:
 
 
 _STYLE_KIND = {"AnnexureTitle": "annexure_title", "Heading1": "h1", "Heading2": "h2", "Heading3": "label"}
+FIELD_LINE_RE = re.compile(r"^\s*(Frequency|Count)\s*:", re.IGNORECASE)
 
 
 def _pstyle(p) -> str | None:
@@ -321,6 +323,8 @@ def _classify(p) -> str:
     # Already styled by an earlier pass (this function must be idempotent). A list item that merely
     # carries a heading style in the template (Google-Docs export) is body text, not a heading.
     styled = _STYLE_KIND.get(_pstyle(p) or "")
+    if FIELD_LINE_RE.match(text):
+        return "field"                         # "Frequency: ..." / "Count: ..." lines share one style
     runs = _runs_with_text(p)
     if styled and len(text) < 140:
         # A heading already normalised by a previous pass has no direct size on its runs. A list item
@@ -330,7 +334,10 @@ def _classify(p) -> str:
             return styled
     if runs:
         infos = [_run_props(r) for r in runs]
-        if all(i["bold"] and i["color"] in PURPLES and i["size"] == 28 for i in infos) and len(text) < 140:
+        # a sub-label is bold purple text; the template sizes them inconsistently (14 pt, 12 pt, 11 pt),
+        # so a trailing colon (or the 14 pt size) identifies it, not the exact size
+        if all(i["bold"] and i["color"] in PURPLES for i in infos) and len(text) < 140 and \
+                (text.endswith(":") or all(i["size"] == 28 for i in infos)):
             return "label"
     return "body"
 
@@ -731,6 +738,12 @@ def apply_specification(doc) -> dict[str, int]:
         if el.tag == _w("w:p"):
             kind = _classify(el)
             if kind == "contents":
+                continue
+            if kind == "field":
+                label, _, value = _text(el).partition(":")
+                proposal_fields.rewrite_label_value(el, label.strip().capitalize(), value.strip())
+                _set_spacing(el, after=SPACING_AFTER_BODY)
+                stats["body"] += 1
                 continue
             if kind in ("annexure_title", "h1", "h2", "label"):
                 style = {"annexure_title": "AnnexureTitle", "h1": "Heading1", "h2": "Heading2", "label": "Heading3"}[kind]

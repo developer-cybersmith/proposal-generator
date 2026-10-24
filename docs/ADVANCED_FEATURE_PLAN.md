@@ -41,10 +41,10 @@ Today the user ticks annexures by hand. We add a second way in: **upload the sco
 | D1 | Excel upload is an **additional** option; the manual form stays. |
 | D2 | Excel format is fixed (v2.0): sheet names, headers and row order are not changed. |
 | D3 | **Cover Page** gives client details and a Yes/No "In Scope?" for each assessment type. |
-| D4 | **Overall Scoping Matrix** gives quantities: a block of rows is fixed to one annexure and its Quantity cells are summed (which rows count: §4.2, D27). |
+| D4 | **Overall Scoping Matrix** gives two numbers per annexure from its block of rows: **Count** (rows with a value above 0) and **Quantity** (sum of those cells). See §4.2 and D30–D34. |
 | D5 | "Service Provided" (matrix column F) is informational only. |
 | D6 | Quantity cells are numeric; non-numeric cells are skipped with a warning (safety only). |
-| D7 | Quantity feeds **two places**: the `Count:` line inside the annexure and the Conclusion & Pricing table. |
+| D7 | **Count** feeds the `Count:` line inside the annexure; **Quantity** feeds the Conclusion & Pricing table (see D30). |
 | D8 | Types with no template annexure are written by the **AI custom annexure** flow (locked system prompt). If the Excel is not enough, the user fills the existing basic AI form. |
 | D9 | The annexures with no Excel row (Post Breach, AD Post-Breach Attacks, Insider Threat, SOC Simulation, Training) are chosen with **manual toggles** on the review screen. |
 | D10 | The list may be any mix: all known, only custom, or both. All three must work. |
@@ -54,19 +54,24 @@ Today the user ticks annexures by hand. We add a second way in: **upload the sco
 | D14 | Authentication stays: shared password + optional API key. |
 | D15 | Config / Hardening Review → **Annexure 5** (its text covers "systems, network devices and applications"). Quantity = rows 4, 5, 6 (routers, switches, firewalls) + rows 9, 10, 11 (Windows, Linux, database servers). *Chosen by me after reading Annexure 5, as you asked; editable in the mapping file.* |
 | D16 | In scope = Yes but quantity 0/blank: the annexure is **included**, shown **amber** with "quantity is 0, please confirm"; the user edits it, confirms as-is, or removes it. **Generate stays disabled until every flagged row is resolved.** |
-| D17 | `Count:` line format everywhere: **`Count: N <unit label>`** (e.g. `Count: 12 Web Applications`). Same text as the pricing table's Quantity cell. |
+| D17 | ~~`Count: N <unit label>` using the sum~~ — **superseded by D30/D31** (Count is now the number of filled rows, not the sum). |
 | D18 | The AI form's **Total cost is optional**; when the pricing table has prices, the total is passed to the AI automatically. It never blocks generation. |
 | D19 | API Security Testing → Annexure 11, quantity = row 19 (Public APIs) + row 32 (API Gateways). |
 | D20 | **Sector** is asked on the review screen (only when an AI annexure is included), pre-suggested from the Cover Page "Regulatory Driver", user confirms. |
 | D21 | **Reference number**: taken from the Excel's "Engagement Reference No.", editable on the review screen. If blank or still the placeholder `CSS-ENG-YYYY-XXX`, the field is empty and required. |
-| D22 | Pricing **Quantity** cell = number + unit (e.g. `5 Web Applications`), and the whole cell is **editable text** on the review screen. |
+| D22 | ~~Quantity cell = number + unit~~ — **superseded by D32** (number only). |
 | D23 | **Frequency** column defaults to `One Time`, editable. |
 | D24 | **Total row**: keep the model from `CyberSmithSECURE Annexures 2.docx` page 47 — one merged cell, `₹ /- * + 18% GST` (with the summed amount in Indian format when prices exist). |
 | D25 | **Pricing table font = Corbel** and all table formatting per the spec. |
 | D26 | Template work has **two tracks, both required**: Track A normalises everything the feature creates (this plan); Track B rebuilds the Base Template to the full spec afterwards (§12). |
-| D27 | Quantity rows per block as in §4.2: asset-count blocks sum all numeric rows; other blocks count only their primary row(s). |
+| D27 | ~~Primary-row-only quantity rule~~ — **superseded by D30** (all rows in the block count). |
 | D28 | **Order:** Track A (Excel feature) first, then Track B (template rebuild to the full spec). |
 | D29 | **PDF proof and blank-page check** use **LibreOffice installed on Railway**: each generated proposal is rendered to PDF, checked for empty pages, and the PDF is offered beside the `.docx`. |
+| D30 | **Two numbers per annexure, from all rows of its block** (Config Review rows 4–6 + 9–11 and API rows 19 + 32 keep their own rows): **Count** = number of rows holding a value; **Quantity** = sum of those values. Worked examples from your screenshot: SaaS → Count 3, Quantity 12; Web → Count 6, Quantity 23. |
+| D31 | **`Count:` line wording:** `Count: N <label>`, e.g. `Count: 6 Web Application categories`. One label per annexure, editable. |
+| D32 | **Pricing table Quantity cell:** the sum as a **number only** (e.g. `23`), editable. The old `Android - X, iOS - Y` text is dropped; Mobile Quantity is the plain sum of rows 62–65. |
+| D33 | **Zero rule:** only values **above 0** count toward Count; blank and 0 are both skipped. A block whose sum is 0 triggers the amber confirm (D16). |
+| D34 | **Two previews before generating:** *Preview 1* = list of annexures with Count and Frequency (editable); *Preview 2* = Conclusion & Pricing table with Quantity and an empty Cost column (editable). **Frequency is one shared field**: editing it in either preview updates both and the annexure's `Frequency:` line. Prices can be entered in Preview 2 or left blank and filled in Word after generation. |
 
 ---
 
@@ -111,32 +116,45 @@ Today the user ticks annexures by hand. We add a second way in: **upload the sco
 | Compliance Gap Assessment | none | **AI custom** |
 | *(no Excel row)* 1 Post Breach, 2 AD Post-Breach, 6 Insider Threat, 9 SOC Simulation, 12 Training | 1, 2, 6, 9, 12 | **manual toggle** |
 
-### 4.2 Matrix block → quantity ✅ (D27)
+### 4.2 Matrix block → Count and Quantity ✅ (D30–D34, supersedes the old "primary row" rule)
 
-Asset-count blocks sum **all numeric rows**; the other blocks count only their **primary row(s)**. Rows that are not counted (modules, roles, API endpoints, lines of code, Y/N rows, etc.) are still shown on the review screen as information.
+Every annexure gets **two numbers** from its rows in the matrix:
 
-| Block (Excel rows) | Annexure | Rows that count | Unit label (editable) |
-|--------------------|----------|-----------------|-----------------------|
-| Internal Infrastructure (4–15) | 3 Internal | all numeric rows 4–15 | Internal Assets |
-| Public-Facing (17–22) | 3 External | all numeric rows 17–22 (your screenshot) | External Assets |
-| Cloud Infrastructure (24–33) | 10 | all numeric rows 24–33 | Cloud Assets |
-| Active Directory / Identity (35–41) | 8 | row 35 only | AD Domains |
-| Network Segmentation (43–47) | AI custom | row 43 only | VLANs |
-| SaaS Applications (49–53) | AI custom | row 49 only | SaaS Applications |
-| Web Applications (55–60) | 4 | row 55 only | Web Applications |
-| Mobile Applications (62–65) | 7 | rows 62 + 63, shown as `Android - X, iOS - Y` | Mobile Applications |
-| Source Code (67–70) | 13 | row 67 only | Repositories |
-| Config Review | 5 | rows 4–6 + 9–11 (D15) | Devices & Servers |
-| API | 11 | rows 19 + 32 (D19) | APIs |
-| Social Eng., Red Team, Compliance | AI custom | no matrix rows: user types the number (default 1) | Engagements |
+| Number | Definition | Goes into |
+|--------|------------|-----------|
+| **Count** | how many rows in the block hold a value **above 0** (blank and 0 are skipped) | the annexure's `Count:` line (Preview 1) |
+| **Quantity** | the **sum** of the Quantity cells of those rows | the pricing table's Quantity cell (Preview 2) |
 
-Unit labels in the last column are my first suggestions; BD can change them in `annexure_map.json` or per proposal on the review screen.
+**Worked examples (from your screenshot of the filled matrix):**
+
+| Block | Rows with a value | Count | Quantity |
+|-------|-------------------|-------|----------|
+| SaaS (49–53) | 49 = 5, 50 blank, 51 blank, 52 = 4, 53 = 3 | **3** | 5 + 4 + 3 = **12** |
+| Web (55–60) | 55 = 2, 56 = 1, 57 = 4, 58 = 5, 59 = 3, 60 = 8 | **6** | 2 + 1 + 4 + 5 + 3 + 8 = **23** |
+
+The rule applies to **all rows in the block**, whatever the row's meaning (modules, roles, Y/N rows and so on): if a number is typed, it counts. Config Review and API keep their own rows. Count labels are my first suggestions and are editable.
+
+| Block (Excel rows) | Annexure | Rows used | `Count:` line label |
+|--------------------|----------|-----------|---------------------|
+| Internal Infrastructure (4–15) | 3 Internal | 4–15 | Internal Infrastructure categories |
+| Public-Facing (17–22) | 3 External | 17–22 | External Infrastructure categories |
+| Cloud Infrastructure (24–33) | 10 | 24–33 | Cloud Infrastructure categories |
+| Active Directory / Identity (35–41) | 8 | 35–41 | Active Directory categories |
+| Network Segmentation (43–47) | AI custom | 43–47 | Network Segmentation categories |
+| SaaS Applications (49–53) | AI custom | 49–53 | SaaS Application categories |
+| Web Applications (55–60) | 4 | 55–60 | Web Application categories |
+| Mobile Applications (62–65) | 7 | 62–65 | Mobile Application categories |
+| Source Code (67–70) | 13 | 67–70 | Source Code categories |
+| Config Review | 5 | 4–6 and 9–11 (D15) | Device & Server categories |
+| API | 11 | 19 and 32 (D19) | API categories |
+| Social Eng., Red Team, Compliance | AI custom | no matrix rows: Count 1, Quantity 1, user edits | Engagement categories |
 
 ### 4.3 Rules
 - An annexure is included only if its Cover Page type = Yes (case-insensitive; `y`, `yes`, `✓` accepted).
-- Quantity 0/blank on an included annexure → D16.
-- The user can override any quantity or unit text; the override wins.
-- **Unit labels** (`Web Applications`, `Mobile Applications`, …) live in `annexure_map.json`, are shown pre-filled on the review screen, and are editable.
+- Sum of 0 (or no row above 0) on an included annexure → D16 (amber, confirm).
+- The user can override Count, Quantity and Frequency; the override wins.
+- Count labels live in `annexure_map.json`, are pre-filled on the review screen, and are editable.
+- Count and Quantity are independent: editing one does not change the other.
 
 ---
 
@@ -150,21 +168,25 @@ Home page ── Tab A: Manual (today's form, unchanged)
  1. Upload .xlsx ─► parse ─► not our sheet / invalid? ─► plain message, stay on page
                  │
                  ▼
- 2. REVIEW SCREEN (everything editable)
+ 2. PREVIEW 1 — ANNEXURES (everything editable)
       a. Client details from Cover Page; reference no. (D21)
-      b. Annexure list: ☑ include · title · source (Template / AI) · quantity+unit text · order
-         – amber rows for quantity 0 (D16): confirm / edit / remove
+      b. Annexure list: ☑ include · title · source (Template / AI) · Count (D30/D31) · Frequency · order
+         – amber rows when the block sum is 0 (D16, D33): confirm / edit / remove
       c. Manual toggles for the 5 annexures with no Excel row
       d. For AI annexures: what the Excel supplied and what is missing; sector (D20);
          basic AI form pre-filled; user completes the rest
-                 │
+                 │  [Next]
                  ▼
- 3. PRICING PREVIEW (editable): Sr. No · Assessment Type · Quantity · Frequency · Cost Per Annexure
-      – add price, remove row, edit text; External/Internal appear as two rows
+ 3. PREVIEW 2 — CONCLUSION & PRICING (editable; same table that goes into the Word file)
+      Sr. No · Assessment Type · Quantity (sum, D32) · Frequency (shared with Preview 1, D34) · Cost Per Annexure (empty)
+      – type prices now, or leave blank and fill them in Word after generation
+      – remove row, edit text; External/Internal Network PT appear as two rows
                  │
                  ▼
  4. Generate (disabled until amber rows resolved) ─► .docx download
 ```
+
+Count appears only in Preview 1 and Quantity only in Preview 2; Frequency is a single shared field.
 
 Draft state lives on the server for **60 minutes** (random id), then is deleted.
 
@@ -175,7 +197,7 @@ Draft state lives on the server for **60 minutes** (random id), then is deleted.
 | Area | Change |
 |------|--------|
 | Cover | Client name, reference no. (D21), date from Excel; logo optional upload. |
-| Annexure `Count:` line | Rewritten to `Count: N <unit label>` in **every** annexure (today the template has five inconsistent forms: blank in 3/4/5/13, `Environment(s): 01…` in 1, `1` in 8, `Cloud Azure & AWS 2` in 10, and a **stale `API = 2350`** in 11 — all replaced). |
+| Annexure `Count:` line | Rewritten to `Count: N <label>` (D31, e.g. `Count: 6 Web Application categories`) in **every** annexure, where N is the number of filled rows (D30). Today the template has five inconsistent forms: blank in 3/4/5/13, `Environment(s): 01…` in 1, `1` in 8, `Cloud Azure & AWS 2` in 10, and a **stale `API = 2350`** in 11 — all replaced. |
 | `Frequency:` line | Same label/value treatment (bold label, regular value) per spec §8, so the two lines look identical. |
 | Contents | Auto-refreshed; includes every annexure; numbers match body. |
 | Conclusion & Pricing | **The table already exists** (inside a Word content control) and the generator already rebuilds its rows (`_update_conclusion_pricing_table`). Today it uses **hard-coded dummy values** (`1 Web Application`, `Three Time`, …) and the last column is titled **Duration**. We replace the dummies with real data, rename the column **Cost Per Annexure**, and apply §7. |
@@ -205,7 +227,7 @@ Source of structure: `CyberSmithSECURE Annexures 2.docx`, the table before the p
 | With prices | `₹ 1,25,000 /- * + 18% GST` (Indian digit grouping, sum of entered prices) |
 | Empty prices | Cost cells left empty and editable in Word afterwards (D12) |
 | Keep together | Heading, intro sentence, HSN/SAC line and table header stay on one page |
-| Quantity text | Number + unit, e.g. `5 Web Applications`, `Android - 6, iOS - 3` (the source's typo `IoS` is corrected) |
+| Quantity text | The **sum as a number only**, e.g. `23` (D32); no unit text. The old `Android - 6, IoS - 3` text is no longer produced. |
 | Frequency text | `One Time` by default |
 
 Header/footer, TOC, page numbers: untouched in Track A; rebuilt in Track B.
@@ -214,13 +236,13 @@ Header/footer, TOC, page numbers: untouched in Track A; rebuilt in Track B.
 
 ## 8. AI annexures for unknown types
 
-**Sent to the AI** (all optional except title + scope): client name, sector (D20), regulatory driver, dates → duration, the annexure quantity, that type's answers from General Scoping Questions and the matching detail sheet, Rules of Engagement (window, exclusions, compliance), and the pricing total when present (D18). Fixed rules come from `master_bd_prompt.txt` plus the "annexure only, no T&C/pricing" user message (unchanged).
+**Sent to the AI** (all optional except title + scope): client name, sector (D20), regulatory driver, dates → duration, the annexure's Count and Quantity (D30), that type's answers from General Scoping Questions and the matching detail sheet, Rules of Engagement (window, exclusions, compliance), and the pricing total when present (D18). Fixed rules come from `master_bd_prompt.txt` plus the "annexure only, no T&C/pricing" user message (unchanged).
 
 **User still fills** only what the Excel cannot give: engagement summary, tier, payment model, special constraints, and a title/scope (≥ 20 chars) per AI annexure. Everything the Excel answered arrives pre-filled.
 
 **Quality upgrades in this feature**
 1. One automatic **retry** when the AI output misses required sections.
-2. Stronger validation: annexure heading matches the slot number; `Frequency:` and `Count:` present; **`Count:` must equal the quantity** shown in the pricing table.
+2. Stronger validation: annexure heading matches the slot number; `Frequency:` and `Count:` present; **`Count:` must equal the Count from Preview 1** and the pricing Quantity must equal Preview 2 (the AI annexure is told both numbers).
 3. AI output formatted only through the tokens module (Corbel 11 pt, headings purple `#7030A0`, per spec §5/§8).
 4. Rate limit on `/upload-excel` and `/generate` (AI costs money).
 
@@ -271,7 +293,7 @@ Header/footer, TOC, page numbers: untouched in Track A; rebuilt in Track B.
 | Phase | Deliverable | Done when |
 |-------|-------------|-----------|
 | 0 | Sign-off on this plan + a filled sample Excel | §15 closed |
-| 1 | `proposal_tokens.py` + `proposal_lint.py` + Excel parser + mapping file + tests | A filled sample parses to the right annexures/quantities; lint runs on today's output |
+| 1 | **First update `css_scoping_testset/` (reference parser + expected JSONs) to D30–D33**, then `proposal_tokens.py` + `proposal_lint.py` + Excel parser + mapping file + tests | Parser output equals the expected JSONs for all 135 fixtures (SaaS 3/12 and Web 6/23 verified); lint runs on today's output |
 | 2 | Review screen + draft storage | Upload → editable list → pricing preview works end to end |
 | 3 | `Count:`/`Frequency:` rewrite + pricing table in the docx | Generated Word passes lint; **Design Sample Gate**: you approve the table against the spec |
 | 4 | AI annexures from Excel context + retry + stronger validation | A mix of known + custom annexures generates, numbering correct, no blank pages |
@@ -306,7 +328,8 @@ The spec describes `Annexures 2.docx` (11 annexures, 1 section, 1 in margins). O
 
 - Parser: blank sheet, placeholders treated as empty, Yes/No variants, missing sheet, wrong file, oversize file.
 - Mapping: only-known, only-custom, mixed; External + Internal both selected (two pricing lines); zero quantity (amber, Generate disabled until resolved).
-- Docx: `Count:` equals pricing Quantity; numbering sequential; Contents lists every annexure; pricing table matches rows, blank prices stay blank, removed rows disappear; table within text width, header repeats.
+- Count/Quantity: SaaS example gives Count 3 / Quantity 12 and Web example Count 6 / Quantity 23; rows with 0 or blank are skipped; sum 0 gives the amber flag; Config (rows 4–6, 9–11) and API (rows 19, 32) use only their rows.
+- Docx: `Count:` equals the Preview 1 Count and the pricing Quantity equals the Preview 2 Quantity; Frequency identical in annexure and table; numbering sequential; Contents lists every annexure; pricing table matches rows, blank prices stay blank, removed rows disappear; table within text width, header repeats.
 - Lint: only Corbel and token colours, no typed bullets, no blank paragraphs as spacing, no blank pages.
 - AI (mocked): retry path; failure after retry gives a clear error.
 - Regression: all 55 existing tests still pass.
@@ -318,7 +341,8 @@ The spec describes `Annexures 2.docx` (11 annexures, 1 section, 1 in margins). O
 | Risk | Mitigation |
 |------|------------|
 | Real Excel files differ from the blank template | Need the sample (Phase 0); parser strict on anchors, lenient on values |
-| Summing unlike rows gives a meaningless number (e.g. Web block: modules + roles) | Resolved by D27 (primary rows only); review screen still shows every row |
+| The block sum adds unlike rows (e.g. Web: apps + modules + roles), so Quantity is a total of entries, not literally "applications" | Accepted by you (D30); Count and Quantity are both editable in the previews; the review screen shows the per-row breakdown so it can be sanity-checked |
+| Test fixtures `css_scoping_testset/` still use the old primary-row rule and old Mobile text | Phase 1 updates the fixture generator's reference parser to D30–D33 and regenerates the expected JSONs before any parser code is written |
 | Template and spec disagree today | Track A uses spec tokens for everything generated; Track B aligns the template; Design Sample Gate each phase |
 | AI invents details | Retry + validation + review screen + human check of the .docx |
 | Blank pages / wrong numbering | Hard acceptance rules (§0) + automated lint + PDF render check |
@@ -329,7 +353,7 @@ The spec describes `Annexures 2.docx` (11 annexures, 1 section, 1 in margins). O
 
 ## 15. Open items ❓ (to be asked one by one)
 
-- ~~Q-A: which matrix rows count~~ — closed, see §4.2 / D27.
+- ~~Q-A: which matrix rows count~~ — closed, see §4.2 / D30.
 - **Q-B.** Filled sample Excel (Phase 0).
 - **Q-C.** Track B prerequisites (§12 list).
 - ~~Q-D: PDF renderer~~ — closed, D29.

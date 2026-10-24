@@ -1,0 +1,11 @@
+{
+  "included_annexures": [],
+  "pricing_lines": [],
+  "distinct_annexures": [],
+  "warnings": [],
+  "client": {},
+  "reference_no": null,
+  "errors": [
+    "invalid_xlsx: not a valid zip/OOXML container"
+  ]
+}

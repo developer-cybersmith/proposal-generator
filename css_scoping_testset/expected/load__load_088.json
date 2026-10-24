@@ -1,0 +1,42 @@
+{
+  "included_annexures": [
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 3,
+      "quantity": 428,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 428,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    7
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Sunder Agro Industries",
+    "primary_contact_name": "Priya Deshpande",
+    "designation": "CISO",
+    "email": "priya.deshpande@example.com",
+    "phone": "+91 9848764610",
+    "alternate_contact_name": "Rahul Reddy",
+    "alternate_contact_email": "rahul.reddy@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-365",
+    "date_of_submission": "2026-01-13",
+    "preferred_start_date": "2026-06-11",
+    "preferred_end_date": "2026-06-29",
+    "project_classification": "Restricted",
+    "regulatory_driver": "RBI",
+    "nda_signed": "In Progress"
+  },
+  "reference_no": "CSS-ENG-2026-365",
+  "errors": []
+}

@@ -1,0 +1,42 @@
+{
+  "included_annexures": [
+    {
+      "type": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    "custom"
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Lotus Hospitality Group",
+    "primary_contact_name": "Diya Iyer",
+    "designation": "IT Head",
+    "email": "diya.iyer@example.com",
+    "phone": "+91 9817047570",
+    "alternate_contact_name": "Rahul Deshpande",
+    "alternate_contact_email": "rahul.deshpande@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-644",
+    "date_of_submission": "2026-01-05",
+    "preferred_start_date": "2026-02-08",
+    "preferred_end_date": "2026-03-16",
+    "project_classification": "Confidential",
+    "regulatory_driver": "Other",
+    "nda_signed": "In Progress"
+  },
+  "reference_no": "CSS-ENG-2026-644",
+  "errors": []
+}

@@ -21,6 +21,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import time
 import traceback
@@ -58,6 +59,15 @@ except ImportError:
 # Paths (all relative to this file — no imports from other project modules)
 # ---------------------------------------------------------------------------
 HERE = Path(__file__).resolve().parent
+# The sibling proposal_* modules are imported by plain name so this file works both standalone
+# and when mounted as Automation.backend.css_proposal_generator by the root app.
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+
+import proposal_fields  # noqa: E402
+import proposal_pricing  # noqa: E402
+import proposal_tokens  # noqa: E402
+
 SOURCE_TEMPLATE = HERE / "CSS_Proposal_Source.docx"
 BASE_TEMPLATE = HERE / "CSS_Proposal_Base_Template.docx"
 DEFAULT_LOGO = HERE / "default_logo.png"
@@ -155,6 +165,7 @@ PRICING_ROW_DEFAULTS: dict[str, tuple[str, str, str]] = {
     "mobile_app_pt": ("Android - 6, IoS - 3", "One Time", ""),
 }
 ANNEXURE_HEADING_RE = re.compile(r"^Annexure\s+(\d+)\s*:\s*(.+)$", re.IGNORECASE)
+_DEFAULT_TEXT_WIDTH_TWIPS = 10914  # A4 minus the Base Template's 1.0 / 0.75 cm side margins
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 PIC_TAG = f"{{{W_NS}}}drawing"
@@ -850,14 +861,34 @@ def _find_assessment_pricing_table(root) -> Any:
     return None
 
 
+def _default_pricing_rows(
+    ordered_keys: list[str],
+    catalog: dict[str, dict[str, Any]],
+) -> list[dict[str, str]]:
+    """Manual flow: one row per annexure with the title and default frequency.
+
+    Quantity and cost stay empty (to be typed in Word). The template's old dummy quantities
+    (e.g. "1 Web Application", "Three Time") were placeholders, not data, and are no longer used.
+    """
+    rows: list[dict[str, str]] = []
+    for key in ordered_keys:
+        item = catalog.get(key) or CATALOG_BY_KEY.get(key, {})
+        rows.append({"title": str(item.get("title", key)), "quantity": "", "frequency": "One Time", "cost": ""})
+    return rows
+
+
 def _update_conclusion_pricing_table(
     elements,
     ordered_keys: list[str],
     catalog: dict[str, dict[str, Any]] | None = None,
+    pricing_rows: list[dict[str, str]] | None = None,
+    text_width_twips: int | None = None,
 ) -> None:
-    """Rebuild the Conclusion pricing table Assessment Type rows from selected annexures.
+    """Replace the Conclusion & Pricing table with one built from the formatting tokens.
 
-    *catalog* may include AI-generated custom entries; falls back to CATALOG_BY_KEY.
+    *pricing_rows* come from the reviewed Excel draft (Preview 2); without them (manual flow)
+    one row per selected annexure is produced. *catalog* may include AI-generated custom
+    entries; falls back to CATALOG_BY_KEY.
     """
     effective_catalog = catalog if catalog is not None else CATALOG_BY_KEY
 
@@ -869,32 +900,8 @@ def _update_conclusion_pricing_table(
     if tbl is None:
         return
 
-    rows = tbl.findall(qn("w:tr"))
-    if len(rows) < 2:
-        return
-
-    template_row = copy.deepcopy(rows[1])
-    for row in rows[1:-1]:
-        tbl.remove(row)
-    total_row = tbl.findall(qn("w:tr"))[-1]
-
-    for slot, key in enumerate(ordered_keys, start=1):
-        item = effective_catalog.get(key) or CATALOG_BY_KEY.get(key, {})
-        row_copy = copy.deepcopy(template_row)
-        cells = row_copy.findall(qn("w:tc"))
-        qty, freq, dur = PRICING_ROW_DEFAULTS.get(key, ("", "One Time", ""))
-        if len(cells) >= 1:
-            _set_table_cell_text(cells[0], str(slot))
-        if len(cells) >= 2:
-            _set_table_cell_text(cells[1], str(item.get("title", key)))
-        if len(cells) >= 3:
-            _set_table_cell_text(cells[2], qty)
-        if len(cells) >= 4:
-            _set_table_cell_text(cells[3], freq)
-        if len(cells) >= 5:
-            _set_table_cell_text(cells[4], dur)
-        _strip_yellow_from_element(row_copy)
-        total_row.addprevious(row_copy)
+    rows = pricing_rows if pricing_rows is not None else _default_pricing_rows(ordered_keys, effective_catalog)
+    proposal_pricing.replace_pricing_table(tbl, rows, text_width_twips or _DEFAULT_TEXT_WIDTH_TWIPS)
 
 
 def _paragraph_text(p_element) -> str:
@@ -923,6 +930,52 @@ def _has_page_break(p_element) -> bool:
 
 def _is_page_break_only_paragraph(p_element) -> bool:
     return not _paragraph_text(p_element) and _has_page_break(p_element)
+
+
+def _has_page_break_before(ppr) -> bool:
+    """True when a paragraph really starts a new page.
+
+    ``<w:pageBreakBefore w:val="0"/>`` (very common in the template) means *off*; only a
+    missing val or an explicit true/1/on value turns the break on.
+    """
+    if ppr is None:
+        return False
+    node = ppr.find(qn("w:pageBreakBefore"))
+    if node is None:
+        return False
+    return (node.get(qn("w:val")) or "true").strip().lower() not in ("0", "false", "off")
+
+
+def _remove_stacked_page_breaks(doc: Document) -> int:
+    """Delete page-break-only paragraphs that directly follow another page break.
+
+    Two breaks with no content between them produce an empty page (hard acceptance rule:
+    no empty pages). Blank paragraphs between the breaks do not count as content.
+    Returns the number of paragraphs removed.
+    """
+    body = doc.element.body
+    pending = False  # a page break has just happened and nothing visible followed it
+    removed = 0
+    for el in list(body):
+        if el.tag != qn("w:p"):
+            pending = False  # tables / content controls are content
+            continue
+        if _is_page_break_only_paragraph(el):
+            if pending:
+                body.remove(el)
+                removed += 1
+            else:
+                pending = True
+            continue
+        has_content = (
+            bool(_paragraph_text(el))
+            or el.find(f".//{PIC_TAG}") is not None
+            or el.find(f".//{{{W_NS}}}pict") is not None
+            or el.find(f".//{{{W_NS}}}sectPr") is not None
+        )
+        if has_content:
+            pending = _has_page_break(el)
+    return removed
 
 
 def _make_page_break_paragraph():
@@ -1174,8 +1227,7 @@ def _ensure_page_break_before_introduction(doc: Document) -> None:
             return
 
     intro_el = doc.paragraphs[intro_idx]._element
-    ppr = intro_el.find(qn("w:pPr"))
-    if ppr is not None and ppr.find(qn("w:pageBreakBefore")) is not None:
+    if _has_page_break_before(intro_el.find(qn("w:pPr"))):
         return
 
     _insert_paragraph_before(doc, intro_idx, _make_page_break_paragraph())
@@ -1284,6 +1336,7 @@ def _finalize_document(
     doc = Document(str(docx_path))
     _normalize_contents_section(doc)
     _ensure_page_break_before_introduction(doc)
+    _remove_stacked_page_breaks(doc)
 
     pages = _compute_layout_pages(doc)
     _refresh_all_toc_pages(doc, ordered_keys, pages, catalog=request_catalog)
@@ -1342,8 +1395,7 @@ def _compute_layout_pages(doc: Document) -> dict[int, int]:
         el = para._element
         pages[i] = current_page
 
-        ppr = el.find(qn("w:pPr"))
-        if ppr is not None and ppr.find(qn("w:pageBreakBefore")) is not None:
+        if _has_page_break_before(el.find(qn("w:pPr"))):
             current_page += 1
             lines_used = 0.0
             pages[i] = current_page
@@ -1585,11 +1637,18 @@ def apply_annexure_order(
     *,
     company_name: str = "Client",
     request_catalog: dict[str, dict[str, Any]] | None = None,
+    annexure_details: dict[str, dict[str, Any]] | None = None,
+    pricing_rows: list[dict[str, str]] | None = None,
 ) -> None:
     """Reorder / subset annexure sections, append Terms & Conclusion, rebuild Contents.
 
     *request_catalog* extends the base CATALOG_BY_KEY with per-request AI-generated
     entries (keys matching ``OTHER_KEY_RE``).  When None the base catalog is used.
+
+    Excel flow only: *annexure_details* maps an annexure key to
+    ``{"count_text": "6 Web Application categories", "frequency": "One Time"}`` and rewrites
+    that annexure's Count / Frequency lines; *pricing_rows* feeds the Conclusion & Pricing
+    table. Both None leaves the manual flow's annexure text untouched.
     """
     if not ordered_keys:
         return
@@ -1597,6 +1656,9 @@ def apply_annexure_order(
     catalog = request_catalog if request_catalog is not None else CATALOG_BY_KEY
 
     doc = Document(str(docx_path))
+    last_section = doc.sections[-1]
+    text_width_twips = int((last_section.page_width - last_section.left_margin
+                            - last_section.right_margin) / 635)
     boundaries = _find_annexure_boundaries(doc)
     if not boundaries:
         raise ValueError("No annexure headings found in the generated document.")
@@ -1639,6 +1701,13 @@ def apply_annexure_order(
         _remove_paragraphs_from(doc, first_idx)
     body = doc.element.body
 
+    # Template annexure number -> position in this proposal, for cross-reference renumbering.
+    number_map: dict[int, int] = {}
+    for pos, k in enumerate(ordered_keys, start=1):
+        it = catalog.get(k) or CATALOG_BY_KEY.get(k) or {}
+        if not it.get("is_custom") and it.get("annexure_number") is not None:
+            number_map[int(it["annexure_number"])] = pos
+
     for slot, key in enumerate(ordered_keys, start=1):
         item = catalog.get(key) or CATALOG_BY_KEY.get(key)
         if item is None:
@@ -1656,6 +1725,10 @@ def apply_annexure_order(
             for el in ai_elements:
                 cloned.append(copy.deepcopy(el))
             _replace_client_literals_in_elements(cloned, company_name)
+            if annexure_details and key in annexure_details:
+                d = annexure_details[key]
+                proposal_fields.apply_count_and_frequency(
+                    cloned, count_text=d.get("count_text"), frequency=d.get("frequency"))
             _insert_elements_before_sectpr(body, cloned)
             continue
 
@@ -1679,6 +1752,11 @@ def apply_annexure_order(
                     _strip_yellow_from_element(el_copy)
             cloned.append(el_copy)
 
+        if annexure_details and key in annexure_details:
+            d = annexure_details[key]
+            proposal_fields.apply_count_and_frequency(
+                cloned, count_text=d.get("count_text"), frequency=d.get("frequency"))
+        proposal_fields.renumber_cross_references(cloned, number_map)
         _insert_elements_before_sectpr(body, cloned)
 
     if terms_elements:
@@ -1699,7 +1777,9 @@ def apply_annexure_order(
         if el_copy.tag == qn("w:p") and _is_page_break_only_paragraph(el_copy):
             continue
         trailer_clone.append(el_copy)
-    _update_conclusion_pricing_table(trailer_clone, ordered_keys, catalog=catalog)
+    _update_conclusion_pricing_table(
+        trailer_clone, ordered_keys, catalog=catalog,
+        pricing_rows=pricing_rows, text_width_twips=text_width_twips)
     _replace_client_literals_in_elements(trailer_clone, company_name)
     for el in trailer_clone:
         _strip_yellow_from_element(el)
@@ -2010,6 +2090,8 @@ def generate_proposal(
     assessments: list[AssessmentItem] | None = None,
     template_path: str | Path | None = None,
     request_catalog: dict[str, dict[str, Any]] | None = None,
+    annexure_details: dict[str, dict[str, Any]] | None = None,
+    pricing_rows: list[dict[str, str]] | None = None,
 ) -> Path:
     company_name = (company_name or "").strip() or "Client"
     proposal_ref = (proposal_ref or "").strip() or default_proposal_ref()
@@ -2058,6 +2140,8 @@ def generate_proposal(
             ordered_keys,
             company_name=company_name,
             request_catalog=request_catalog,
+            annexure_details=annexure_details,
+            pricing_rows=pricing_rows,
         )
     except Exception as exc:
         raise RuntimeError(f"Annexure layout failed: {exc}") from exc

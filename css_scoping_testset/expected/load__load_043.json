@@ -1,0 +1,161 @@
+{
+  "included_annexures": [
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 11,
+      "quantity": 2802,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 6,
+      "quantity": 1136,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 3,
+      "quantity": 1045,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 7,
+      "quantity": 1496,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "count": 2,
+      "quantity": 910,
+      "count_label": "API categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "count": 4,
+      "quantity": 1048,
+      "count_label": "Network Segmentation categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "count": 3,
+      "quantity": 476,
+      "count_label": "SaaS Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 2802,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 1136,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 1045,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 1496,
+      "frequency": "One Time"
+    },
+    {
+      "label": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "quantity": 910,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1048,
+      "frequency": "One Time"
+    },
+    {
+      "label": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "quantity": 476,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    5,
+    7,
+    10,
+    11,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Container Workloads (EKS / AKS / GKE) (Overall Scoping Matrix!D29)='many'"
+  ],
+  "client": {
+    "client_organization_name": "Blue Harbour Logistics",
+    "primary_contact_name": "Neha Iyer",
+    "designation": "Security Analyst",
+    "email": "neha.iyer@example.com",
+    "phone": "+91 9844320580",
+    "alternate_contact_name": "Vikram Malhotra",
+    "alternate_contact_email": "vikram.malhotra@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-800",
+    "date_of_submission": "2026-01-07",
+    "preferred_start_date": "2026-02-28",
+    "preferred_end_date": "2026-03-17",
+    "project_classification": "Restricted",
+    "regulatory_driver": "Other",
+    "nda_signed": "Yes"
+  },
+  "reference_no": "CSS-ENG-2026-800",
+  "errors": []
+}

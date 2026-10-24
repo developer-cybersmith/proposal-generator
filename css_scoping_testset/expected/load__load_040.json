@@ -1,0 +1,88 @@
+{
+  "included_annexures": [
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 6,
+      "quantity": 1832,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 9,
+      "quantity": 1651,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "count": 4,
+      "quantity": 916,
+      "count_label": "Network Segmentation categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 1832,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 1651,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "quantity": 916,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    5,
+    10,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Virtual Machines / EC2 / Compute Instances (Overall Scoping Matrix!D25)='10.0.0.0/24'"
+  ],
+  "client": {
+    "client_organization_name": "Ironclad Manufacturing Co.",
+    "primary_contact_name": "Kavya Deshpande",
+    "designation": "Security Analyst",
+    "email": "kavya.deshpande@example.com",
+    "phone": "+91 9851860960",
+    "alternate_contact_name": "Kabir Malhotra",
+    "alternate_contact_email": "kabir.malhotra@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-520",
+    "date_of_submission": "2026-01-11",
+    "preferred_start_date": "2026-03-24",
+    "preferred_end_date": "2026-04-11",
+    "project_classification": "Internal",
+    "regulatory_driver": "DPDPA",
+    "nda_signed": "In Progress"
+  },
+  "reference_no": "CSS-ENG-2026-520",
+  "errors": []
+}

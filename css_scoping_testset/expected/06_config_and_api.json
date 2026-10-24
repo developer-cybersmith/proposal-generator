@@ -1,0 +1,57 @@
+{
+  "included_annexures": [
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 6,
+      "quantity": 32,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "count": 2,
+      "quantity": 9,
+      "count_label": "API categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 32,
+      "frequency": "One Time"
+    },
+    {
+      "label": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "quantity": 9,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    5,
+    11
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Alpine Dairy Cooperative",
+    "primary_contact_name": "Aarav Reddy",
+    "designation": "IT Manager",
+    "email": "aarav.reddy@example.com",
+    "phone": "+91 9831116540",
+    "alternate_contact_name": "Sameer Kulkarni",
+    "alternate_contact_email": "sameer.kulkarni@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-980",
+    "date_of_submission": "2026-01-24",
+    "preferred_start_date": "2026-02-08",
+    "preferred_end_date": "2026-03-05",
+    "project_classification": "Confidential",
+    "regulatory_driver": "DPDPA",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-980",
+  "errors": []
+}

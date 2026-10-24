@@ -1,0 +1,206 @@
+{
+  "included_annexures": [
+    {
+      "type": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 5,
+      "quantity": 1474,
+      "count_label": "External Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 10,
+      "quantity": 2750,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "count": 6,
+      "quantity": 773,
+      "count_label": "Web Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 3,
+      "quantity": 489,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "count": 5,
+      "quantity": 1697,
+      "count_label": "Active Directory categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 8,
+      "quantity": 1353,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "count": 0,
+      "quantity": 0,
+      "count_label": "API categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "count": 3,
+      "quantity": 678,
+      "count_label": "Source Code categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "count": 5,
+      "quantity": 1135,
+      "count_label": "Network Segmentation categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "count": 4,
+      "quantity": 1144,
+      "count_label": "SaaS Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 1474,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 2750,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "quantity": 773,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 489,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "quantity": 1697,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 1353,
+      "frequency": "One Time"
+    },
+    {
+      "label": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "quantity": 0,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "quantity": 678,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1135,
+      "frequency": "One Time"
+    },
+    {
+      "label": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1144,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    4,
+    7,
+    8,
+    10,
+    11,
+    13,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Number of API Endpoints (Overall Scoping Matrix!D64)='ten'",
+    "quantity_zero_confirm: API Security Testing"
+  ],
+  "client": {
+    "client_organization_name": "Pinnacle Health Systems",
+    "primary_contact_name": "Ananya Iyer",
+    "designation": "VP Engineering",
+    "email": "ananya.iyer@example.com",
+    "phone": "+91 9877696900",
+    "alternate_contact_name": "Kavya Bhat",
+    "alternate_contact_email": "kavya.bhat@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-179",
+    "date_of_submission": "2026-01-18",
+    "preferred_start_date": "2026-05-10",
+    "preferred_end_date": "2026-05-22",
+    "project_classification": "Internal",
+    "regulatory_driver": "CERT-In",
+    "nda_signed": "Yes"
+  },
+  "reference_no": "CSS-ENG-2026-179",
+  "errors": []
+}

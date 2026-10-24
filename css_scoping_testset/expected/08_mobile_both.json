@@ -1,0 +1,42 @@
+{
+  "included_annexures": [
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 2,
+      "quantity": 9,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 9,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    7
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Alpine Dairy Cooperative",
+    "primary_contact_name": "Rohan Pillai",
+    "designation": "VP Engineering",
+    "email": "rohan.pillai@example.com",
+    "phone": "+91 9809430970",
+    "alternate_contact_name": "Rahul Nair",
+    "alternate_contact_email": "rahul.nair@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-271",
+    "date_of_submission": "2026-01-24",
+    "preferred_start_date": "2026-06-08",
+    "preferred_end_date": "2026-06-25",
+    "project_classification": "Restricted",
+    "regulatory_driver": "Other",
+    "nda_signed": "In Progress"
+  },
+  "reference_no": "CSS-ENG-2026-271",
+  "errors": []
+}

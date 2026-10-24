@@ -1,0 +1,72 @@
+{
+  "included_annexures": [
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 6,
+      "quantity": 1392,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "count": 7,
+      "quantity": 2636,
+      "count_label": "Active Directory categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 1392,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "quantity": 2636,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    5,
+    8,
+    "custom"
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Zephyr Media House",
+    "primary_contact_name": "Neha Sethi",
+    "designation": "Security Analyst",
+    "email": "neha.sethi@example.com",
+    "phone": "+91 9875811450",
+    "alternate_contact_name": "Diya Deshpande",
+    "alternate_contact_email": "diya.deshpande@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-926",
+    "date_of_submission": "2026-01-07",
+    "preferred_start_date": "2026-04-22",
+    "preferred_end_date": "2026-06-01",
+    "project_classification": "Restricted",
+    "regulatory_driver": "SEBI",
+    "nda_signed": "Yes"
+  },
+  "reference_no": "CSS-ENG-2026-926",
+  "errors": []
+}

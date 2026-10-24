@@ -1,0 +1,56 @@
+{
+  "included_annexures": [
+    {
+      "type": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 6,
+      "quantity": 25,
+      "count_label": "External Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 12,
+      "quantity": 90,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 25,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 90,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Vantage Retail Group",
+    "primary_contact_name": "Priya Sethi",
+    "designation": "IT Manager",
+    "email": "priya.sethi@example.com",
+    "phone": "+91 9876687210",
+    "alternate_contact_name": "Kabir Ghosh",
+    "alternate_contact_email": "kabir.ghosh@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-813",
+    "date_of_submission": "2026-01-07",
+    "preferred_start_date": "2026-06-20",
+    "preferred_end_date": "2026-07-14",
+    "project_classification": "Confidential",
+    "regulatory_driver": "SEBI",
+    "nda_signed": "In Progress"
+  },
+  "reference_no": "CSS-ENG-2026-813",
+  "errors": []
+}

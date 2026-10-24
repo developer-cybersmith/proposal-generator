@@ -1,0 +1,87 @@
+{
+  "included_annexures": [
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 11,
+      "quantity": 2733,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 6,
+      "quantity": 1309,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 3,
+      "quantity": 534,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 10,
+      "quantity": 2059,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 2733,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 1309,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 534,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 2059,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    5,
+    7,
+    10
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Meridian Textiles Pvt. Ltd.",
+    "primary_contact_name": "Arjun Joshi",
+    "designation": "IT Head",
+    "email": "arjun.joshi@example.com",
+    "phone": "+91 9843261800",
+    "alternate_contact_name": "Arjun Iyer",
+    "alternate_contact_email": "arjun.iyer@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-425",
+    "date_of_submission": "2026-01-25",
+    "preferred_start_date": "2026-01-28",
+    "preferred_end_date": "2026-02-14",
+    "project_classification": "Restricted",
+    "regulatory_driver": "RBI",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-425",
+  "errors": []
+}

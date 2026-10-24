@@ -1,0 +1,138 @@
+{
+  "included_annexures": [
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 8,
+      "quantity": 2025,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "count": 6,
+      "quantity": 1015,
+      "count_label": "Web Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 4,
+      "quantity": 789,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 3,
+      "quantity": 420,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "count": 6,
+      "quantity": 1691,
+      "count_label": "Active Directory categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 7,
+      "quantity": 1671,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 2025,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "quantity": 1015,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 789,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 420,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "quantity": 1691,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 1671,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    4,
+    5,
+    7,
+    8,
+    10,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Windows Servers (Overall Scoping Matrix!D9)='-'",
+    "non_numeric_quantity_skipped: Printers / IoT Devices (Overall Scoping Matrix!D15)='TBD'",
+    "non_numeric_quantity_skipped: Windows Servers (Overall Scoping Matrix!D9)='-'",
+    "non_numeric_quantity_skipped: AD Domains (Overall Scoping Matrix!D35)='ten'",
+    "non_numeric_quantity_skipped: Cloud Network (VPC / VNet / Subnets) (Overall Scoping Matrix!D31)='N/A'"
+  ],
+  "client": {
+    "client_organization_name": "Vantage Retail Group",
+    "primary_contact_name": "Kabir Malhotra",
+    "designation": "IT Head",
+    "email": "kabir.malhotra@example.com",
+    "phone": "+91 9821210110",
+    "alternate_contact_name": "Kabir Bhat",
+    "alternate_contact_email": "kabir.bhat@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-790",
+    "date_of_submission": "2026-01-08",
+    "preferred_start_date": "2026-01-12",
+    "preferred_end_date": "2026-01-28",
+    "project_classification": "Confidential",
+    "regulatory_driver": "DPDPA",
+    "nda_signed": "In Progress"
+  },
+  "reference_no": "CSS-ENG-2026-790",
+  "errors": []
+}

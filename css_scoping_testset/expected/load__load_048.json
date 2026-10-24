@@ -1,0 +1,88 @@
+{
+  "included_annexures": [
+    {
+      "type": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "count": 5,
+      "quantity": 1330,
+      "count_label": "Active Directory categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "count": 4,
+      "quantity": 957,
+      "count_label": "Source Code categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "count": 5,
+      "quantity": 1569,
+      "count_label": "Network Segmentation categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "quantity": 1330,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "quantity": 957,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1569,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    8,
+    13,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: AD Domains (Overall Scoping Matrix!D35)='Y'"
+  ],
+  "client": {
+    "client_organization_name": "Alpine Dairy Cooperative",
+    "primary_contact_name": "Rohan Joshi",
+    "designation": "DevOps Lead",
+    "email": "rohan.joshi@example.com",
+    "phone": "+91 9880390860",
+    "alternate_contact_name": "Diya Rao",
+    "alternate_contact_email": "diya.rao@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-281",
+    "date_of_submission": "2026-01-07",
+    "preferred_start_date": "2026-03-20",
+    "preferred_end_date": "2026-04-24",
+    "project_classification": "Internal",
+    "regulatory_driver": "SEBI",
+    "nda_signed": "Yes"
+  },
+  "reference_no": "CSS-ENG-2026-281",
+  "errors": []
+}

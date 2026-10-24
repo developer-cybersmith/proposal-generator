@@ -1,0 +1,238 @@
+{
+  "included_annexures": [
+    {
+      "type": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 6,
+      "quantity": 1364,
+      "count_label": "External Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 9,
+      "quantity": 1734,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "count": 5,
+      "quantity": 1606,
+      "count_label": "Web Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 5,
+      "quantity": 622,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 3,
+      "quantity": 1054,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "count": 5,
+      "quantity": 939,
+      "count_label": "Active Directory categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 9,
+      "quantity": 1958,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "count": 2,
+      "quantity": 610,
+      "count_label": "API categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "count": 4,
+      "quantity": 1883,
+      "count_label": "Source Code categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "count": 5,
+      "quantity": 1320,
+      "count_label": "Network Segmentation categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "count": 5,
+      "quantity": 1963,
+      "count_label": "SaaS Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 1364,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 1734,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "quantity": 1606,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 622,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 1054,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "quantity": 939,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 1958,
+      "frequency": "One Time"
+    },
+    {
+      "label": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "quantity": 610,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "quantity": 1883,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1320,
+      "frequency": "One Time"
+    },
+    {
+      "label": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1963,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    4,
+    5,
+    7,
+    8,
+    10,
+    11,
+    13,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Endpoints / Desktops (Overall Scoping Matrix!D13)='10.0.0.0/24'",
+    "non_numeric_quantity_skipped: Printers / IoT Devices (Overall Scoping Matrix!D15)='many'",
+    "non_numeric_quantity_skipped: Authentication Mechanism (Overall Scoping Matrix!D58)='10.0.0.0/24'",
+    "non_numeric_quantity_skipped: Android Application (Overall Scoping Matrix!D62)='10.0.0.0/24'",
+    "non_numeric_quantity_skipped: Cloud Databases (RDS / CosmosDB / Cloud SQL) (Overall Scoping Matrix!D27)='TBD'"
+  ],
+  "client": {
+    "client_organization_name": "Meridian Textiles Pvt. Ltd.",
+    "primary_contact_name": "Priya Ghosh",
+    "designation": "Security Analyst",
+    "email": "priya.ghosh@example.com",
+    "phone": "+91 9850071900",
+    "alternate_contact_name": "Meera Iyer",
+    "alternate_contact_email": "meera.iyer@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-162",
+    "date_of_submission": "2026-01-22",
+    "preferred_start_date": "2026-05-10",
+    "preferred_end_date": "2026-06-06",
+    "project_classification": "Confidential",
+    "regulatory_driver": "RBI",
+    "nda_signed": "Yes"
+  },
+  "reference_no": "CSS-ENG-2026-162",
+  "errors": []
+}

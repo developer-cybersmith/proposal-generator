@@ -1,0 +1,57 @@
+{
+  "included_annexures": [
+    {
+      "type": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "count": 5,
+      "quantity": 1441,
+      "count_label": "Web Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "count": 4,
+      "quantity": 554,
+      "count_label": "Network Segmentation categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "quantity": 1441,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "quantity": 554,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    4,
+    "custom"
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Alpine Dairy Cooperative",
+    "primary_contact_name": "Ananya Sethi",
+    "designation": "IT Head",
+    "email": "ananya.sethi@example.com",
+    "phone": "+91 9873808810",
+    "alternate_contact_name": "Ananya Deshpande",
+    "alternate_contact_email": "ananya.deshpande@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-837",
+    "date_of_submission": "2026-01-10",
+    "preferred_start_date": "2026-05-03",
+    "preferred_end_date": "2026-05-14",
+    "project_classification": "Confidential",
+    "regulatory_driver": "DPDPA",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-837",
+  "errors": []
+}

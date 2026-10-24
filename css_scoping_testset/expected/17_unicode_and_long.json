@@ -1,0 +1,44 @@
+{
+  "included_annexures": [
+    {
+      "type": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "count": 1,
+      "quantity": 2,
+      "count_label": "Web Application categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "quantity": 2,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    4
+  ],
+  "warnings": [
+    "reference_required"
+  ],
+  "client": {
+    "client_organization_name": "Société आईए & <Global> \"Holdings\" 'Ltd' XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+    "primary_contact_name": "Zoë अर्जुन",
+    "designation": "Dir. of <Security> & \"Risk\"",
+    "email": "verylongemailaddress.department.security.operations.team.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx@example.com",
+    "phone": "+91 9888311420",
+    "alternate_contact_name": null,
+    "alternate_contact_email": null,
+    "engagement_reference_no": null,
+    "date_of_submission": null,
+    "preferred_start_date": null,
+    "preferred_end_date": null,
+    "project_classification": null,
+    "regulatory_driver": null,
+    "nda_signed": null
+  },
+  "reference_no": null,
+  "errors": []
+}

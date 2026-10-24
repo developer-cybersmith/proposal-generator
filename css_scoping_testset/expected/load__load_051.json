@@ -1,0 +1,57 @@
+{
+  "included_annexures": [
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 12,
+      "quantity": 2451,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 4,
+      "quantity": 713,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 2451,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 713,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    7
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Kaveri Infrastructure Ltd.",
+    "primary_contact_name": "Sameer Joshi",
+    "designation": "Head of Infrastructure",
+    "email": "sameer.joshi@example.com",
+    "phone": "+91 9875678110",
+    "alternate_contact_name": "Sameer Deshpande",
+    "alternate_contact_email": "sameer.deshpande@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-618",
+    "date_of_submission": "2026-01-22",
+    "preferred_start_date": "2026-02-02",
+    "preferred_end_date": "2026-02-21",
+    "project_classification": "Confidential",
+    "regulatory_driver": "SEBI",
+    "nda_signed": "Yes"
+  },
+  "reference_no": "CSS-ENG-2026-618",
+  "errors": []
+}

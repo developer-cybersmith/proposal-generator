@@ -1,0 +1,104 @@
+{
+  "included_annexures": [
+    {
+      "type": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "count": 6,
+      "quantity": 1042,
+      "count_label": "Active Directory categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 7,
+      "quantity": 1323,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "count": 2,
+      "quantity": 366,
+      "count_label": "API categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "count": 4,
+      "quantity": 689,
+      "count_label": "SaaS Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "quantity": 1042,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 1323,
+      "frequency": "One Time"
+    },
+    {
+      "label": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "quantity": 366,
+      "frequency": "One Time"
+    },
+    {
+      "label": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "quantity": 689,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    8,
+    10,
+    11,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: AD Domains (Overall Scoping Matrix!D35)='TBD'",
+    "non_numeric_quantity_skipped: SaaS App Name & URL (Overall Scoping Matrix!D49)='ten'"
+  ],
+  "client": {
+    "client_organization_name": "Northwind Pharma Labs",
+    "primary_contact_name": "Rohan Malhotra",
+    "designation": "Compliance Officer",
+    "email": "rohan.malhotra@example.com",
+    "phone": "+91 9843573850",
+    "alternate_contact_name": "Neha Malhotra",
+    "alternate_contact_email": "neha.malhotra@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-244",
+    "date_of_submission": "2026-01-17",
+    "preferred_start_date": "2026-03-13",
+    "preferred_end_date": "2026-04-05",
+    "project_classification": "Confidential",
+    "regulatory_driver": "ISO 27001",
+    "nda_signed": "Yes"
+  },
+  "reference_no": "CSS-ENG-2026-244",
+  "errors": []
+}

@@ -1,0 +1,79 @@
+{
+  "included_annexures": [
+    {
+      "type": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 2,
+      "quantity": 8,
+      "count_label": "External Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 4,
+      "quantity": 28,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 2,
+      "quantity": 11,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 8,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 28,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 11,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    10
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Internet-Facing Web Applications (Overall Scoping Matrix!D18)='twelve'",
+    "non_numeric_quantity_skipped: Core Routers (Overall Scoping Matrix!D4)='ten'",
+    "non_numeric_quantity_skipped: Firewalls (NGFW / UTM) (Overall Scoping Matrix!D6)='N/A'",
+    "non_numeric_quantity_skipped: Linux / Unix Servers (Overall Scoping Matrix!D10)='10.0.0.0/24'",
+    "non_numeric_quantity_skipped: Endpoints / Desktops (Overall Scoping Matrix!D13)='Y'",
+    "non_numeric_quantity_skipped: VoIP / OT / SCADA Devices (Overall Scoping Matrix!D14)='-'",
+    "non_numeric_quantity_skipped: Virtual Machines / EC2 / Compute Instances (Overall Scoping Matrix!D25)='many'"
+  ],
+  "client": {
+    "client_organization_name": "Orbital Tech Solutions",
+    "primary_contact_name": "Tarun Banerjee",
+    "designation": "CISO",
+    "email": "tarun.banerjee@example.com",
+    "phone": "+91 9884362300",
+    "alternate_contact_name": "Kavya Rao",
+    "alternate_contact_email": "kavya.rao@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-514",
+    "date_of_submission": "2026-01-20",
+    "preferred_start_date": "2026-05-10",
+    "preferred_end_date": "2026-05-29",
+    "project_classification": "Confidential",
+    "regulatory_driver": "Other",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-514",
+  "errors": []
+}

@@ -1,0 +1,232 @@
+{
+  "included_annexures": [
+    {
+      "type": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 6,
+      "quantity": 1904,
+      "count_label": "External Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 12,
+      "quantity": 4565,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "count": 6,
+      "quantity": 2312,
+      "count_label": "Web Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 6,
+      "quantity": 853,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 4,
+      "quantity": 2365,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "count": 7,
+      "quantity": 2893,
+      "count_label": "Active Directory categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 10,
+      "quantity": 4732,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "count": 2,
+      "quantity": 1192,
+      "count_label": "API categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "count": 4,
+      "quantity": 2378,
+      "count_label": "Source Code categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "count": 5,
+      "quantity": 2270,
+      "count_label": "Network Segmentation categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "count": 5,
+      "quantity": 3334,
+      "count_label": "SaaS Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 1904,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 4565,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "quantity": 2312,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 853,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 2365,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "quantity": 2893,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 4732,
+      "frequency": "One Time"
+    },
+    {
+      "label": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "quantity": 1192,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "quantity": 2378,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "quantity": 2270,
+      "frequency": "One Time"
+    },
+    {
+      "label": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "quantity": 3334,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    4,
+    5,
+    7,
+    8,
+    10,
+    11,
+    13,
+    "custom"
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Alpine Dairy Cooperative",
+    "primary_contact_name": "Priya Pillai",
+    "designation": "Compliance Officer",
+    "email": "priya.pillai@example.com",
+    "phone": "+91 9865910700",
+    "alternate_contact_name": "Aarav Iyer",
+    "alternate_contact_email": "aarav.iyer@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-598",
+    "date_of_submission": "2026-01-21",
+    "preferred_start_date": "2026-06-27",
+    "preferred_end_date": "2026-08-06",
+    "project_classification": "Confidential",
+    "regulatory_driver": "Other",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-598",
+  "errors": []
+}

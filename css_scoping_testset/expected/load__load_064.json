@@ -1,0 +1,148 @@
+{
+  "included_annexures": [
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 9,
+      "quantity": 1422,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "count": 5,
+      "quantity": 1147,
+      "count_label": "Web Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 6,
+      "quantity": 1326,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "count": 2,
+      "quantity": 300,
+      "count_label": "Source Code categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "count": 5,
+      "quantity": 1279,
+      "count_label": "Network Segmentation categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "count": 3,
+      "quantity": 821,
+      "count_label": "SaaS Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 1422,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "quantity": 1147,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 1326,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "quantity": 300,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1279,
+      "frequency": "One Time"
+    },
+    {
+      "label": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "quantity": 821,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    4,
+    5,
+    13,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Active Directory Domain Controllers (Overall Scoping Matrix!D12)='TBD'",
+    "non_numeric_quantity_skipped: Number of Modules / Sub-modules (Overall Scoping Matrix!D56)='Y'",
+    "non_numeric_quantity_skipped: Number of User Roles / Permission Levels (Overall Scoping Matrix!D50)='Y'"
+  ],
+  "client": {
+    "client_organization_name": "Zephyr Media House",
+    "primary_contact_name": "Isha Iyer",
+    "designation": "CISO",
+    "email": "isha.iyer@example.com",
+    "phone": "+91 9884107280",
+    "alternate_contact_name": "Rohan Reddy",
+    "alternate_contact_email": "rohan.reddy@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-767",
+    "date_of_submission": "2026-01-22",
+    "preferred_start_date": "2026-06-09",
+    "preferred_end_date": "2026-07-09",
+    "project_classification": "Confidential",
+    "regulatory_driver": "DPDPA",
+    "nda_signed": "Yes"
+  },
+  "reference_no": "CSS-ENG-2026-767",
+  "errors": []
+}

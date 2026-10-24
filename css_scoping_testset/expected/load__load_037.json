@@ -1,0 +1,87 @@
+{
+  "included_annexures": [
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 6,
+      "quantity": 1662,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 4,
+      "quantity": 899,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "count": 2,
+      "quantity": 548,
+      "count_label": "API categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "count": 5,
+      "quantity": 904,
+      "count_label": "SaaS Application categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 1662,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 899,
+      "frequency": "One Time"
+    },
+    {
+      "label": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "quantity": 548,
+      "frequency": "One Time"
+    },
+    {
+      "label": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "quantity": 904,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    5,
+    7,
+    11,
+    "custom"
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Orbital Tech Solutions",
+    "primary_contact_name": "Kavya Reddy",
+    "designation": "Security Analyst",
+    "email": "kavya.reddy@example.com",
+    "phone": "+91 9813899540",
+    "alternate_contact_name": "Sameer Chauhan",
+    "alternate_contact_email": "sameer.chauhan@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-236",
+    "date_of_submission": "2026-01-13",
+    "preferred_start_date": "2026-03-20",
+    "preferred_end_date": "2026-04-18",
+    "project_classification": "Restricted",
+    "regulatory_driver": "Other",
+    "nda_signed": "In Progress"
+  },
+  "reference_no": "CSS-ENG-2026-236",
+  "errors": []
+}

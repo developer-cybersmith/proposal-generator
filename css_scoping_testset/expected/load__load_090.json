@@ -1,0 +1,135 @@
+{
+  "included_annexures": [
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 9,
+      "quantity": 1744,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 4,
+      "quantity": 835,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 4,
+      "quantity": 1170,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "count": 2,
+      "quantity": 189,
+      "count_label": "API categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "count": 4,
+      "quantity": 1074,
+      "count_label": "Source Code categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "count": 4,
+      "quantity": 1358,
+      "count_label": "Network Segmentation categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 1744,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 835,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 1170,
+      "frequency": "One Time"
+    },
+    {
+      "label": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "quantity": 189,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "quantity": 1074,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1358,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    5,
+    7,
+    11,
+    13,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Windows Servers (Overall Scoping Matrix!D9)='TBD'",
+    "non_numeric_quantity_skipped: Windows Servers (Overall Scoping Matrix!D9)='TBD'",
+    "non_numeric_quantity_skipped: Number of VLANs (Overall Scoping Matrix!D43)='many'"
+  ],
+  "client": {
+    "client_organization_name": "Blue Harbour Logistics",
+    "primary_contact_name": "Neha Joshi",
+    "designation": "IT Head",
+    "email": "neha.joshi@example.com",
+    "phone": "+91 9883368720",
+    "alternate_contact_name": "Diya Chauhan",
+    "alternate_contact_email": "diya.chauhan@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-702",
+    "date_of_submission": "2026-01-27",
+    "preferred_start_date": "2026-04-05",
+    "preferred_end_date": "2026-04-26",
+    "project_classification": "Restricted",
+    "regulatory_driver": "DPDPA",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-702",
+  "errors": []
+}

@@ -1,0 +1,118 @@
+{
+  "included_annexures": [
+    {
+      "type": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 5,
+      "quantity": 749,
+      "count_label": "External Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 6,
+      "quantity": 1304,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "count": 6,
+      "quantity": 1248,
+      "count_label": "Active Directory categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 8,
+      "quantity": 2177,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "count": 5,
+      "quantity": 758,
+      "count_label": "SaaS Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 749,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 1304,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "quantity": 1248,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 2177,
+      "frequency": "One Time"
+    },
+    {
+      "label": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "quantity": 758,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    5,
+    8,
+    10,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Cloud Security Groups / NACLs (Overall Scoping Matrix!D33)='ten'"
+  ],
+  "client": {
+    "client_organization_name": "Ironclad Manufacturing Co.",
+    "primary_contact_name": "Rohan Nair",
+    "designation": "IT Manager",
+    "email": "rohan.nair@example.com",
+    "phone": "+91 9834838780",
+    "alternate_contact_name": "Priya Iyer",
+    "alternate_contact_email": "priya.iyer@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-790",
+    "date_of_submission": "2026-01-26",
+    "preferred_start_date": "2026-05-04",
+    "preferred_end_date": "2026-06-03",
+    "project_classification": "Confidential",
+    "regulatory_driver": "CERT-In",
+    "nda_signed": "Yes"
+  },
+  "reference_no": "CSS-ENG-2026-790",
+  "errors": []
+}

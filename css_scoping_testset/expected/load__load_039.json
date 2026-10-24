@@ -1,0 +1,57 @@
+{
+  "included_annexures": [
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 4,
+      "quantity": 857,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 857,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    7,
+    "custom"
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Vantage Retail Group",
+    "primary_contact_name": "Rohan Joshi",
+    "designation": "DevOps Lead",
+    "email": "rohan.joshi@example.com",
+    "phone": "+91 9851918190",
+    "alternate_contact_name": "Rohan Deshpande",
+    "alternate_contact_email": "rohan.deshpande@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-833",
+    "date_of_submission": "2026-01-17",
+    "preferred_start_date": "2026-03-15",
+    "preferred_end_date": "2026-04-18",
+    "project_classification": "Restricted",
+    "regulatory_driver": "SEBI",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-833",
+  "errors": []
+}

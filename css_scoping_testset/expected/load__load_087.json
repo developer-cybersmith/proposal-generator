@@ -1,0 +1,165 @@
+{
+  "included_annexures": [
+    {
+      "type": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 4,
+      "quantity": 762,
+      "count_label": "External Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 10,
+      "quantity": 1680,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "count": 5,
+      "quantity": 959,
+      "count_label": "Web Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 4,
+      "quantity": 1138,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "count": 5,
+      "quantity": 1409,
+      "count_label": "Active Directory categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 8,
+      "quantity": 1689,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "count": 2,
+      "quantity": 656,
+      "count_label": "API categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 762,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 1680,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "quantity": 959,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 1138,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "quantity": 1409,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 1689,
+      "frequency": "One Time"
+    },
+    {
+      "label": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "quantity": 656,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    4,
+    7,
+    8,
+    10,
+    11,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Database Servers (Overall Scoping Matrix!D11)='Y'",
+    "non_numeric_quantity_skipped: Application Name & URL (Overall Scoping Matrix!D55)='ten'",
+    "non_numeric_quantity_skipped: MFA / Conditional Access Policies (Overall Scoping Matrix!D41)='many'",
+    "non_numeric_quantity_skipped: Object Storage (S3 / Blob / GCS) (Overall Scoping Matrix!D26)='10.0.0.0/24'"
+  ],
+  "client": {
+    "client_organization_name": "Meridian Textiles Pvt. Ltd.",
+    "primary_contact_name": "Kabir Pillai",
+    "designation": "IT Head",
+    "email": "kabir.pillai@example.com",
+    "phone": "+91 9847827720",
+    "alternate_contact_name": "Meera Rao",
+    "alternate_contact_email": "meera.rao@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-723",
+    "date_of_submission": "2026-01-11",
+    "preferred_start_date": "2026-03-10",
+    "preferred_end_date": "2026-04-09",
+    "project_classification": "Confidential",
+    "regulatory_driver": "SEBI",
+    "nda_signed": "In Progress"
+  },
+  "reference_no": "CSS-ENG-2026-723",
+  "errors": []
+}

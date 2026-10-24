@@ -1,0 +1,104 @@
+{
+  "included_annexures": [
+    {
+      "type": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 5,
+      "quantity": 1270,
+      "count_label": "External Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "count": 3,
+      "quantity": 793,
+      "count_label": "Active Directory categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "count": 2,
+      "quantity": 68,
+      "count_label": "Source Code categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "count": 4,
+      "quantity": 866,
+      "count_label": "SaaS Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 1270,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "quantity": 793,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "quantity": 68,
+      "frequency": "One Time"
+    },
+    {
+      "label": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "quantity": 866,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    8,
+    13,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Organizational Units (OUs) (Overall Scoping Matrix!D37)='TBD'",
+    "non_numeric_quantity_skipped: Lines of Code (approx.) (Overall Scoping Matrix!D69)='10.0.0.0/24'"
+  ],
+  "client": {
+    "client_organization_name": "Pinnacle Health Systems",
+    "primary_contact_name": "Vikram Menon",
+    "designation": "Security Analyst",
+    "email": "vikram.menon@example.com",
+    "phone": "+91 9831798360",
+    "alternate_contact_name": "Tarun Menon",
+    "alternate_contact_email": "tarun.menon@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-457",
+    "date_of_submission": "2026-01-21",
+    "preferred_start_date": "2026-05-26",
+    "preferred_end_date": "2026-07-04",
+    "project_classification": "Restricted",
+    "regulatory_driver": "ISO 27001",
+    "nda_signed": "In Progress"
+  },
+  "reference_no": "CSS-ENG-2026-457",
+  "errors": []
+}

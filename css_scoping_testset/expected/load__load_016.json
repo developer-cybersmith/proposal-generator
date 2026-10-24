@@ -1,0 +1,73 @@
+{
+  "included_annexures": [
+    {
+      "type": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 5,
+      "quantity": 1711,
+      "count_label": "External Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 10,
+      "quantity": 2642,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 1711,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 2642,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Internet-Facing Web Applications (Overall Scoping Matrix!D18)='N/A'"
+  ],
+  "client": {
+    "client_organization_name": "Meridian Textiles Pvt. Ltd.",
+    "primary_contact_name": "Vikram Malhotra",
+    "designation": "Compliance Officer",
+    "email": "vikram.malhotra@example.com",
+    "phone": "+91 9808005290",
+    "alternate_contact_name": "Ananya Rao",
+    "alternate_contact_email": "ananya.rao@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-501",
+    "date_of_submission": "2026-01-10",
+    "preferred_start_date": "2026-02-07",
+    "preferred_end_date": "2026-03-15",
+    "project_classification": "Internal",
+    "regulatory_driver": "RBI",
+    "nda_signed": "Yes"
+  },
+  "reference_no": "CSS-ENG-2026-501",
+  "errors": []
+}

@@ -1,0 +1,116 @@
+{
+  "included_annexures": [
+    {
+      "type": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 5,
+      "quantity": 1560,
+      "count_label": "External Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 3,
+      "quantity": 719,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "count": 7,
+      "quantity": 1336,
+      "count_label": "Active Directory categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 10,
+      "quantity": 3340,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "count": 5,
+      "quantity": 1086,
+      "count_label": "Network Segmentation categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "count": 5,
+      "quantity": 1367,
+      "count_label": "SaaS Application categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 1560,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 719,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "quantity": 1336,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 3340,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1086,
+      "frequency": "One Time"
+    },
+    {
+      "label": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1367,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    7,
+    8,
+    10,
+    "custom"
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Pinnacle Health Systems",
+    "primary_contact_name": "Kavya Menon",
+    "designation": "Head of Infrastructure",
+    "email": "kavya.menon@example.com",
+    "phone": "+91 9833785290",
+    "alternate_contact_name": "Meera Nair",
+    "alternate_contact_email": "meera.nair@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-602",
+    "date_of_submission": "2026-01-27",
+    "preferred_start_date": "2026-02-16",
+    "preferred_end_date": "2026-03-07",
+    "project_classification": "Internal",
+    "regulatory_driver": "RBI",
+    "nda_signed": "In Progress"
+  },
+  "reference_no": "CSS-ENG-2026-602",
+  "errors": []
+}

@@ -1,0 +1,72 @@
+{
+  "included_annexures": [
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 10,
+      "quantity": 2207,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "count": 1,
+      "quantity": 133,
+      "count_label": "API categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "count": 3,
+      "quantity": 1038,
+      "count_label": "Source Code categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 2207,
+      "frequency": "One Time"
+    },
+    {
+      "label": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "quantity": 133,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "quantity": 1038,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    11,
+    13
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Kaveri Infrastructure Ltd.",
+    "primary_contact_name": "Meera Menon",
+    "designation": "CISO",
+    "email": "meera.menon@example.com",
+    "phone": "+91 9802472850",
+    "alternate_contact_name": "Ananya Malhotra",
+    "alternate_contact_email": "ananya.malhotra@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-685",
+    "date_of_submission": "2026-01-28",
+    "preferred_start_date": "2026-02-06",
+    "preferred_end_date": "2026-02-24",
+    "project_classification": "Internal",
+    "regulatory_driver": "ISO 27001",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-685",
+  "errors": []
+}

@@ -1,0 +1,57 @@
+{
+  "included_annexures": [
+    {
+      "type": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "count": 1,
+      "quantity": 3,
+      "count_label": "Web Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 1,
+      "quantity": 4,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "quantity": 3,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 4,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    4,
+    10
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Kaveri Infrastructure Ltd.",
+    "primary_contact_name": "Priya Malhotra",
+    "designation": "DevOps Lead",
+    "email": "priya.malhotra@example.com",
+    "phone": "+91 9814862480",
+    "alternate_contact_name": "Meera Rao",
+    "alternate_contact_email": "meera.rao@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-802",
+    "date_of_submission": "2026-01-19",
+    "preferred_start_date": "2026-04-14",
+    "preferred_end_date": "2026-05-02",
+    "project_classification": "Restricted",
+    "regulatory_driver": "Other",
+    "nda_signed": "Yes"
+  },
+  "reference_no": "CSS-ENG-2026-802",
+  "errors": []
+}

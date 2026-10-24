@@ -1,0 +1,42 @@
+{
+  "included_annexures": [
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 5,
+      "quantity": 1110,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 1110,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    5
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Pinnacle Health Systems",
+    "primary_contact_name": "Tarun Deshpande",
+    "designation": "IT Manager",
+    "email": "tarun.deshpande@example.com",
+    "phone": "+91 9828687290",
+    "alternate_contact_name": "Arjun Pillai",
+    "alternate_contact_email": "arjun.pillai@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-174",
+    "date_of_submission": "2026-01-28",
+    "preferred_start_date": "2026-01-17",
+    "preferred_end_date": "2026-02-22",
+    "project_classification": "Restricted",
+    "regulatory_driver": "ISO 27001",
+    "nda_signed": "Yes"
+  },
+  "reference_no": "CSS-ENG-2026-174",
+  "errors": []
+}

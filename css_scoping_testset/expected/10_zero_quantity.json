@@ -1,0 +1,76 @@
+{
+  "included_annexures": [
+    {
+      "type": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "count": 0,
+      "quantity": 0,
+      "count_label": "Web Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "count": 0,
+      "quantity": 0,
+      "count_label": "Active Directory categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 0,
+      "quantity": 0,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Web Application VAPT",
+      "annexure_no_or_custom": 4,
+      "quantity": 0,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "quantity": 0,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 0,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    4,
+    8,
+    10
+  ],
+  "warnings": [
+    "quantity_zero_confirm: Web Application VAPT",
+    "quantity_zero_confirm: Active Directory (AD) Security Assessment",
+    "quantity_zero_confirm: Cloud Security Assessment"
+  ],
+  "client": {
+    "client_organization_name": "Sunder Agro Industries",
+    "primary_contact_name": "Rahul Reddy",
+    "designation": "DevOps Lead",
+    "email": "rahul.reddy@example.com",
+    "phone": "+91 9882549190",
+    "alternate_contact_name": "Arjun Deshpande",
+    "alternate_contact_email": "arjun.deshpande@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-658",
+    "date_of_submission": "2026-01-01",
+    "preferred_start_date": "2026-02-10",
+    "preferred_end_date": "2026-02-25",
+    "project_classification": "Confidential",
+    "regulatory_driver": "ISO 27001",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-658",
+  "errors": []
+}

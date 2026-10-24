@@ -1,0 +1,76 @@
+{
+  "included_annexures": [
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 2,
+      "quantity": 14,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 2,
+      "quantity": 5,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "count": 0,
+      "quantity": 0,
+      "count_label": "Source Code categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 14,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 5,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "quantity": 0,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    7,
+    10,
+    13
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Data Stored Locally (Y/N) (Overall Scoping Matrix!D65)='Y'",
+    "negative_quantity_skipped: Container Workloads (EKS / AKS / GKE) (Overall Scoping Matrix!D29)=-4",
+    "quantity_zero_confirm: Source Code Review / SAST"
+  ],
+  "client": {
+    "client_organization_name": "Blue Harbour Logistics",
+    "primary_contact_name": "Meera Nair",
+    "designation": "Security Analyst",
+    "email": "meera.nair@example.com",
+    "phone": "+91 9887613540",
+    "alternate_contact_name": "Arjun Sethi",
+    "alternate_contact_email": "arjun.sethi@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-308",
+    "date_of_submission": "2026-01-25",
+    "preferred_start_date": "2026-01-15",
+    "preferred_end_date": "2026-02-07",
+    "project_classification": "Confidential",
+    "regulatory_driver": "Other",
+    "nda_signed": "In Progress"
+  },
+  "reference_no": "CSS-ENG-2026-308",
+  "errors": []
+}

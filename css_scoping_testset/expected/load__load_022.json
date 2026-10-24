@@ -1,0 +1,57 @@
+{
+  "included_annexures": [
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 4,
+      "quantity": 1138,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 1138,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Compliance Gap Assessment (ISO/DPDPA/SEBI)",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    7,
+    "custom"
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Meridian Textiles Pvt. Ltd.",
+    "primary_contact_name": "Neha Sethi",
+    "designation": "Head of Infrastructure",
+    "email": "neha.sethi@example.com",
+    "phone": "+91 9897672780",
+    "alternate_contact_name": "Meera Bhat",
+    "alternate_contact_email": "meera.bhat@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-494",
+    "date_of_submission": "2026-01-22",
+    "preferred_start_date": "2026-03-25",
+    "preferred_end_date": "2026-04-09",
+    "project_classification": "Internal",
+    "regulatory_driver": "DPDPA",
+    "nda_signed": "Yes"
+  },
+  "reference_no": "CSS-ENG-2026-494",
+  "errors": []
+}

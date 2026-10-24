@@ -1,0 +1,77 @@
+{
+  "included_annexures": [
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 8,
+      "quantity": 2248,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 4,
+      "quantity": 977,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "count": 4,
+      "quantity": 481,
+      "count_label": "SaaS Application categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 2248,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 977,
+      "frequency": "One Time"
+    },
+    {
+      "label": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "quantity": 481,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    5,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Firewalls (NGFW / UTM) (Overall Scoping Matrix!D6)='-'",
+    "non_numeric_quantity_skipped: Database Servers (Overall Scoping Matrix!D11)='10.0.0.0/24'",
+    "non_numeric_quantity_skipped: Firewalls (NGFW / UTM) (Overall Scoping Matrix!D6)='-'",
+    "non_numeric_quantity_skipped: Database Servers (Overall Scoping Matrix!D11)='10.0.0.0/24'"
+  ],
+  "client": {
+    "client_organization_name": "Vantage Retail Group",
+    "primary_contact_name": "Diya Sethi",
+    "designation": "CISO",
+    "email": "diya.sethi@example.com",
+    "phone": "+91 9818183560",
+    "alternate_contact_name": "Isha Rao",
+    "alternate_contact_email": "isha.rao@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-590",
+    "date_of_submission": "2026-01-07",
+    "preferred_start_date": "2026-02-14",
+    "preferred_end_date": "2026-03-08",
+    "project_classification": "Confidential",
+    "regulatory_driver": "DPDPA",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-590",
+  "errors": []
+}

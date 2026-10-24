@@ -1,0 +1,89 @@
+{
+  "included_annexures": [
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 5,
+      "quantity": 712,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "count": 2,
+      "quantity": 772,
+      "count_label": "API categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "count": 3,
+      "quantity": 1053,
+      "count_label": "Source Code categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "count": 5,
+      "quantity": 1517,
+      "count_label": "Network Segmentation categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 712,
+      "frequency": "One Time"
+    },
+    {
+      "label": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "quantity": 772,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "quantity": 1053,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Network Segmentation / VLAN Testing",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1517,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    5,
+    11,
+    13,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Database Servers (Overall Scoping Matrix!D11)='ten'"
+  ],
+  "client": {
+    "client_organization_name": "Meridian Textiles Pvt. Ltd.",
+    "primary_contact_name": "Tarun Iyer",
+    "designation": "IT Head",
+    "email": "tarun.iyer@example.com",
+    "phone": "+91 9888029610",
+    "alternate_contact_name": "Neha Sethi",
+    "alternate_contact_email": "neha.sethi@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-388",
+    "date_of_submission": "2026-01-05",
+    "preferred_start_date": "2026-02-16",
+    "preferred_end_date": "2026-02-26",
+    "project_classification": "Internal",
+    "regulatory_driver": "ISO 27001",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-388",
+  "errors": []
+}

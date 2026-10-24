@@ -1,0 +1,60 @@
+{
+  "included_annexures": [
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 10,
+      "quantity": 1733,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 9,
+      "quantity": 2222,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 1733,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 2222,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    10
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Linux / Unix Servers (Overall Scoping Matrix!D10)='10.0.0.0/24'",
+    "non_numeric_quantity_skipped: Printers / IoT Devices (Overall Scoping Matrix!D15)='Y'"
+  ],
+  "client": {
+    "client_organization_name": "Northwind Pharma Labs",
+    "primary_contact_name": "Rohan Reddy",
+    "designation": "VP Engineering",
+    "email": "rohan.reddy@example.com",
+    "phone": "+91 9867797940",
+    "alternate_contact_name": "Arjun Joshi",
+    "alternate_contact_email": "arjun.joshi@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-146",
+    "date_of_submission": "2026-01-28",
+    "preferred_start_date": "2026-03-04",
+    "preferred_end_date": "2026-03-24",
+    "project_classification": "Confidential",
+    "regulatory_driver": "CERT-In",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-146",
+  "errors": []
+}

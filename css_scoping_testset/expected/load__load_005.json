@@ -1,0 +1,91 @@
+{
+  "included_annexures": [
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 10,
+      "quantity": 2406,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "count": 9,
+      "quantity": 2419,
+      "count_label": "Cloud Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "count": 2,
+      "quantity": 826,
+      "count_label": "API categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 2406,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Cloud Security Assessment",
+      "annexure_no_or_custom": 10,
+      "quantity": 2419,
+      "frequency": "One Time"
+    },
+    {
+      "label": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "quantity": 826,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    10,
+    11,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Core Routers (Overall Scoping Matrix!D4)='10.0.0.0/24'",
+    "non_numeric_quantity_skipped: VoIP / OT / SCADA Devices (Overall Scoping Matrix!D14)='ten'",
+    "non_numeric_quantity_skipped: Serverless Functions (Lambda / Azure Functions) (Overall Scoping Matrix!D30)='N/A'"
+  ],
+  "client": {
+    "client_organization_name": "Blue Harbour Logistics",
+    "primary_contact_name": "Ananya Deshpande",
+    "designation": "Compliance Officer",
+    "email": "ananya.deshpande@example.com",
+    "phone": "+91 9837864210",
+    "alternate_contact_name": "Diya Nair",
+    "alternate_contact_email": "diya.nair@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-292",
+    "date_of_submission": "2026-01-07",
+    "preferred_start_date": "2026-05-09",
+    "preferred_end_date": "2026-06-12",
+    "project_classification": "Internal",
+    "regulatory_driver": "ISO 27001",
+    "nda_signed": "Yes"
+  },
+  "reference_no": "CSS-ENG-2026-292",
+  "errors": []
+}

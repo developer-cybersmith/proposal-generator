@@ -1,0 +1,44 @@
+{
+  "included_annexures": [
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 5,
+      "quantity": 1034,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 1034,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    5
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Core Routers (Overall Scoping Matrix!D4)='N/A'"
+  ],
+  "client": {
+    "client_organization_name": "Zephyr Media House",
+    "primary_contact_name": "Arjun Rao",
+    "designation": "IT Manager",
+    "email": "arjun.rao@example.com",
+    "phone": "+91 9899670250",
+    "alternate_contact_name": "Kabir Bhat",
+    "alternate_contact_email": "kabir.bhat@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-377",
+    "date_of_submission": "2026-01-20",
+    "preferred_start_date": "2026-03-08",
+    "preferred_end_date": "2026-03-31",
+    "project_classification": "Restricted",
+    "regulatory_driver": "Other",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-377",
+  "errors": []
+}

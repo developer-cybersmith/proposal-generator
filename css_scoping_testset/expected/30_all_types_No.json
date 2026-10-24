@@ -1,0 +1,26 @@
+{
+  "included_annexures": [],
+  "pricing_lines": [],
+  "distinct_annexures": [],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Blue Harbour Logistics",
+    "primary_contact_name": "Aarav Malhotra",
+    "designation": "VP Engineering",
+    "email": "aarav.malhotra@example.com",
+    "phone": "+91 9803263160",
+    "alternate_contact_name": "Tarun Kulkarni",
+    "alternate_contact_email": "tarun.kulkarni@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-363",
+    "date_of_submission": "2026-01-25",
+    "preferred_start_date": "2026-05-01",
+    "preferred_end_date": "2026-05-14",
+    "project_classification": "Internal",
+    "regulatory_driver": "RBI",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-363",
+  "errors": [
+    "no_assessment_types_in_scope"
+  ]
+}

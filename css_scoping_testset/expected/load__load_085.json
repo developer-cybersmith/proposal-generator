@@ -1,0 +1,72 @@
+{
+  "included_annexures": [
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 9,
+      "quantity": 1667,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "count": 2,
+      "quantity": 506,
+      "count_label": "API categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "count": 4,
+      "quantity": 930,
+      "count_label": "Source Code categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 1667,
+      "frequency": "One Time"
+    },
+    {
+      "label": "API Security Testing",
+      "annexure_no_or_custom": 11,
+      "quantity": 506,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "quantity": 930,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    11,
+    13
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Blue Harbour Logistics",
+    "primary_contact_name": "Rahul Banerjee",
+    "designation": "Head of Infrastructure",
+    "email": "rahul.banerjee@example.com",
+    "phone": "+91 9861861390",
+    "alternate_contact_name": "Rohan Menon",
+    "alternate_contact_email": "rohan.menon@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-109",
+    "date_of_submission": "2026-01-24",
+    "preferred_start_date": "2026-06-07",
+    "preferred_end_date": "2026-07-02",
+    "project_classification": "Internal",
+    "regulatory_driver": "ISO 27001",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-109",
+  "errors": []
+}

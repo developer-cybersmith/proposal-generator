@@ -1,0 +1,87 @@
+{
+  "included_annexures": [
+    {
+      "type": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 5,
+      "quantity": 740,
+      "count_label": "External Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "count": 7,
+      "quantity": 1629,
+      "count_label": "Active Directory categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "count": 4,
+      "quantity": 1498,
+      "count_label": "Source Code categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "External Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 740,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Active Directory (AD) Security Assessment",
+      "annexure_no_or_custom": 8,
+      "quantity": 1629,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "quantity": 1498,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Social Engineering / Phishing Simulation",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    8,
+    13,
+    "custom"
+  ],
+  "warnings": [],
+  "client": {
+    "client_organization_name": "Ironclad Manufacturing Co.",
+    "primary_contact_name": "Tarun Deshpande",
+    "designation": "VP Engineering",
+    "email": "tarun.deshpande@example.com",
+    "phone": "+91 9871202770",
+    "alternate_contact_name": "Arjun Rao",
+    "alternate_contact_email": "arjun.rao@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-570",
+    "date_of_submission": "2026-01-04",
+    "preferred_start_date": "2026-03-06",
+    "preferred_end_date": "2026-03-29",
+    "project_classification": "Internal",
+    "regulatory_driver": "SEBI",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-570",
+  "errors": []
+}

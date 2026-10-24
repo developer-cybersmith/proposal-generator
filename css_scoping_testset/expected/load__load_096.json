@@ -1,0 +1,59 @@
+{
+  "included_annexures": [
+    {
+      "type": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "count": 3,
+      "quantity": 719,
+      "count_label": "Source Code categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "count": 5,
+      "quantity": 1362,
+      "count_label": "SaaS Application categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Source Code Review / SAST",
+      "annexure_no_or_custom": 13,
+      "quantity": 719,
+      "frequency": "One Time"
+    },
+    {
+      "label": "SaaS Security Assessment",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1362,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    13,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Repository / Application Name (Overall Scoping Matrix!D67)='-'"
+  ],
+  "client": {
+    "client_organization_name": "Vantage Retail Group",
+    "primary_contact_name": "Aarav Pillai",
+    "designation": "Security Analyst",
+    "email": "aarav.pillai@example.com",
+    "phone": "+91 9855840740",
+    "alternate_contact_name": "Rohan Chauhan",
+    "alternate_contact_email": "rohan.chauhan@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-423",
+    "date_of_submission": "2026-01-18",
+    "preferred_start_date": "2026-05-19",
+    "preferred_end_date": "2026-06-06",
+    "project_classification": "Confidential",
+    "regulatory_driver": "RBI",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-423",
+  "errors": []
+}

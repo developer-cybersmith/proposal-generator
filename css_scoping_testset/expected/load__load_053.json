@@ -1,0 +1,90 @@
+{
+  "included_annexures": [
+    {
+      "type": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "count": 9,
+      "quantity": 1132,
+      "count_label": "Internal Infrastructure categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "count": 3,
+      "quantity": 544,
+      "count_label": "Device & Server categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "count": 4,
+      "quantity": 1082,
+      "count_label": "Mobile Application categories",
+      "frequency": "One Time"
+    },
+    {
+      "type": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "count": 1,
+      "quantity": 1,
+      "count_label": "Engagement categories",
+      "frequency": "One Time"
+    }
+  ],
+  "pricing_lines": [
+    {
+      "label": "Internal Network Penetration Testing",
+      "annexure_no_or_custom": 3,
+      "quantity": 1132,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Configuration / Hardening Review",
+      "annexure_no_or_custom": 5,
+      "quantity": 544,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Mobile Application VAPT (Android/iOS)",
+      "annexure_no_or_custom": 7,
+      "quantity": 1082,
+      "frequency": "One Time"
+    },
+    {
+      "label": "Red Team Engagement",
+      "annexure_no_or_custom": "custom",
+      "quantity": 1,
+      "frequency": "One Time"
+    }
+  ],
+  "distinct_annexures": [
+    3,
+    5,
+    7,
+    "custom"
+  ],
+  "warnings": [
+    "non_numeric_quantity_skipped: Managed Switches (L2/L3) (Overall Scoping Matrix!D5)='10.0.0.0/24'",
+    "non_numeric_quantity_skipped: Managed Switches (L2/L3) (Overall Scoping Matrix!D5)='10.0.0.0/24'"
+  ],
+  "client": {
+    "client_organization_name": "Blue Harbour Logistics",
+    "primary_contact_name": "Diya Joshi",
+    "designation": "CISO",
+    "email": "diya.joshi@example.com",
+    "phone": "+91 9873472440",
+    "alternate_contact_name": "Meera Sethi",
+    "alternate_contact_email": "meera.sethi@example.com",
+    "engagement_reference_no": "CSS-ENG-2026-758",
+    "date_of_submission": "2026-01-07",
+    "preferred_start_date": "2026-02-06",
+    "preferred_end_date": "2026-02-18",
+    "project_classification": "Internal",
+    "regulatory_driver": "RBI",
+    "nda_signed": "No"
+  },
+  "reference_no": "CSS-ENG-2026-758",
+  "errors": []
+}

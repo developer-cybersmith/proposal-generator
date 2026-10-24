@@ -27,7 +27,7 @@ import time
 import traceback
 import zipfile
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +37,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 from docxtpl import DocxTemplate, InlineImage
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 
@@ -65,8 +65,11 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 import proposal_fields  # noqa: E402
+import proposal_lint  # noqa: E402
+import proposal_pdf  # noqa: E402
 import proposal_pricing  # noqa: E402
 import proposal_tokens  # noqa: E402
+from proposal_ratelimit import rate_limit  # noqa: E402
 
 SOURCE_TEMPLATE = HERE / "CSS_Proposal_Source.docx"
 BASE_TEMPLATE = HERE / "CSS_Proposal_Base_Template.docx"
@@ -80,17 +83,19 @@ DEFAULT_PORT = 8010
 # CyberSmithSECURE brand formatting constants — LOCKED, DO NOT CHANGE
 # Verified against CyberSmithSECURE Annexures 2.docx
 # ---------------------------------------------------------------------------
-CSS_FONT_NAME = "Corbel"
-CSS_ANNEXURE_HEADING_SIZE = Pt(16)   # Bold + Italic
-CSS_SECTION_LABEL_SIZE = Pt(14)      # Bold
-CSS_BODY_SIZE = Pt(11)               # Regular
-CSS_HEADING_COLOR = RGBColor(0x70, 0x30, 0xA0)  # #7030A0 — matches static template annexures
-CSS_BODY_COLOR = RGBColor(0, 0, 0)   # Black — body text and bullets only
-CSS_MAIN_BULLET = "\u2022"           # U+2022 •
-CSS_SUB_BULLET = "o"                 # lowercase o (per Master BD Prompt)
-CSS_MAIN_BULLET_INDENT = "360"       # twips (~0.63 cm)
-CSS_SUB_BULLET_INDENT = "720"        # twips (~1.27 cm)
-CSS_BULLET_HANGING = "240"           # twips
+# Values are defined once, in proposal_tokens.py (Formatting Specification); these names remain
+# for the existing code and tests.
+CSS_FONT_NAME = proposal_tokens.FONT
+CSS_ANNEXURE_HEADING_SIZE = Pt(proposal_tokens.SIZE_ANNEXURE_TITLE)   # Bold + Italic
+CSS_SECTION_LABEL_SIZE = Pt(proposal_tokens.SIZE_HEADING_3)           # Bold
+CSS_BODY_SIZE = Pt(proposal_tokens.SIZE_BODY)                         # Regular
+CSS_HEADING_COLOR = RGBColor(*proposal_tokens.rgb(proposal_tokens.BRAND_PURPLE))  # #7030A0
+CSS_BODY_COLOR = RGBColor(*proposal_tokens.rgb(proposal_tokens.BODY_BLACK))       # body text and bullets
+CSS_MAIN_BULLET = proposal_tokens.LIST_GLYPHS[0]                      # U+2022
+CSS_SUB_BULLET = proposal_tokens.LIST_GLYPHS[1]                       # lowercase o (per Master BD Prompt)
+CSS_MAIN_BULLET_INDENT = str(int(proposal_tokens.LIST_LEVEL_INDENT_IN[0] * 1440))  # twips
+CSS_SUB_BULLET_INDENT = str(int(proposal_tokens.LIST_LEVEL_INDENT_IN[1] * 1440))   # twips
+CSS_BULLET_HANGING = str(int(proposal_tokens.LIST_HANGING_IN * 1440))              # twips
 
 # ---------------------------------------------------------------------------
 # AI annexure key pattern and required output sections (from Master BD Prompt)
@@ -279,6 +284,10 @@ if PYDANTIC_AVAILABLE:
         key: str
         title: str
         scope: str
+        # Excel flow only (all optional, so the manual form is unchanged)
+        count_text: str = ""
+        quantity: str = ""
+        excel_context: str = ""
 
     class AIContextSchema(BaseModel):  # type: ignore[misc]
         sector: str = ""
@@ -313,6 +322,9 @@ else:
         key: str = ""
         title: str = ""
         scope: str = ""
+        count_text: str = ""
+        quantity: str = ""
+        excel_context: str = ""
 
     @dataclass
     class AIContextSchema:  # type: ignore[no-redef]
@@ -365,21 +377,28 @@ def _parse_ai_context(raw: str) -> "AIContextSchema":
             key=str(ca.get("key", "")),
             title=str(ca.get("title", "")),
             scope=str(ca.get("scope", "")),
+            count_text=str(ca.get("count_text", "")),
+            quantity=str(ca.get("quantity", "")),
+            excel_context=str(ca.get("excel_context", "")),
         )
         for ca in data.get("custom_annexures", [])
     ]
     return ctx
 
 
-def _validate_ai_context(ctx: "AIContextSchema") -> None:
-    """Raise ValueError for missing required AI context fields."""
+def _validate_ai_context(ctx: "AIContextSchema", *, require_total_cost: bool = True) -> None:
+    """Raise ValueError for missing required AI context fields.
+
+    *require_total_cost* is True for the manual form (unchanged). The Excel flow passes False
+    (plan D18): prices are entered later in the pricing preview, so a total may not exist yet.
+    """
     if not ctx.sector.strip():
         raise ValueError("AI context: 'sector' is required when generating a custom annexure.")
     if len(ctx.engagement_summary.strip()) < 10:
         raise ValueError("AI context: 'engagement_summary' must be at least 10 characters.")
     if not ctx.counts.duration.strip():
         raise ValueError("AI context: 'counts.duration' is required.")
-    if not ctx.commercials.total_cost.strip():
+    if require_total_cost and not ctx.commercials.total_cost.strip():
         raise ValueError("AI context: 'commercials.total_cost' is required.")
     if ctx.payment_model not in VALID_PAYMENT_MODELS:
         raise ValueError(
@@ -513,6 +532,17 @@ def _build_ai_user_message(
 
     payment_desc = PAYMENT_MODEL_DESCRIPTIONS.get(context.payment_model, context.payment_model)
 
+    excel_block = ""
+    count_text = getattr(custom_annexure, "count_text", "") or ""
+    if count_text or getattr(custom_annexure, "excel_context", ""):
+        excel_block = "\nFrom the client's pre-engagement scoping sheet (state only what is given here; never invent figures):\n"
+        if count_text:
+            excel_block += (f"Count for this annexure: {count_text}\n"
+                            f"Total quantity: {getattr(custom_annexure, 'quantity', '') or 'not specified'}\n"
+                            f"The annexure's Count line must read exactly: Count: {count_text}\n")
+        if custom_annexure.excel_context:
+            excel_block += custom_annexure.excel_context + "\n"
+
     return f"""A. INPUTS (I WILL FILL THESE BEFORE YOU GENERATE)
 
 Client Name: {company_name}
@@ -526,7 +556,7 @@ Annexures to Generate (complete list):
 Annexure {slot_number} \u2013 {custom_annexure.title}
 High-level scope:
 {custom_annexure.scope}
-
+{excel_block}
 Tiering Model:
 We use these 4 standard tiers (for internal clarity; only mention tier where necessary):
 Tier 1 \u2013 Essential
@@ -544,7 +574,7 @@ Counts / Volumes:
 {counts_block}
 
 Total Commercials:
-TOTAL COST (before tax): {context.commercials.total_cost}
+TOTAL COST (before tax): {context.commercials.total_cost or "Not yet specified"}
 Taxes: {context.commercials.taxes}
 
 Preferred Payment Model (choose ONE):
@@ -566,6 +596,18 @@ and ending after the "Comments:" section.
 Use exactly "\\u2022 " (bullet character + space) for main bullets and "o " for sub-bullets.
 Do NOT use markdown headers (no ## or **). Use plain text headings ending with colon.
 """
+
+
+def _build_ai_retry_message(problem: str) -> str:
+    """Corrective follow-up sent once when the first answer fails validation."""
+    return (
+        "Your previous answer was rejected by the structure check: "
+        f"{problem}\n"
+        "Regenerate the COMPLETE annexure again. It must include every one of these section "
+        f"labels, each on its own line: {', '.join(AI_REQUIRED_SECTIONS)}, plus 'Frequency:' and "
+        "'Count:'. Keep the same formatting rules (plain text, bullets as the bullet character, "
+        "sub-bullets as 'o', no markdown). Output only the annexure block."
+    )
 
 
 def validate_ai_annexure_output(text: str, title: str) -> None:
@@ -616,18 +658,34 @@ async def generate_custom_annexure_text(
         client = AsyncOpenAI(api_key=api_key)
         model = (os.getenv("OPENAI_MODEL") or "gpt-4o").strip()
 
-        response = await client.chat.completions.create(
-            model=model,
-            temperature=0.2,
-            max_tokens=3500,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+        last_error: ValueError | None = None
+        for attempt in (1, 2):                      # one automatic retry on a structural failure
+            response = await client.chat.completions.create(
+                model=model,
+                temperature=0.2,
+                max_tokens=3500,
+                messages=messages,
+            )
+            raw_text = (response.choices[0].message.content or "").strip()
+            try:
+                validate_ai_annexure_output(raw_text, custom_annexure.title)
+                return raw_text
+            except ValueError as exc:
+                last_error = exc
+                if attempt == 1:
+                    messages = messages + [
+                        {"role": "assistant", "content": raw_text},
+                        {"role": "user", "content": _build_ai_retry_message(str(exc))},
+                    ]
+        raise HTTPException(
+            status_code=502,
+            detail=("The AI output did not meet the required structure, even after one automatic "
+                    f"retry. {last_error} Please try again."),
         )
-        raw_text = (response.choices[0].message.content or "").strip()
-        validate_ai_annexure_output(raw_text, custom_annexure.title)
-        return raw_text
 
     except ImportError:
         raise HTTPException(
@@ -700,14 +758,7 @@ def _add_formatted_paragraph(doc: Document, parsed: dict[str, Any]) -> None:
     text = parsed["text"]
 
     if style_name == "blank":
-        p = doc.add_paragraph()
-        # Keep a small spacing to match template blank lines
-        pPr = p._p.get_or_add_pPr()
-        sp = OxmlElement("w:spacing")
-        sp.set(qn("w:before"), "0")
-        sp.set(qn("w:after"), "0")
-        pPr.append(sp)
-        return
+        return  # spacing comes from paragraph spacing below, never from empty paragraphs
 
     p = doc.add_paragraph()
 
@@ -745,12 +796,21 @@ def _add_formatted_paragraph(doc: Document, parsed: dict[str, Any]) -> None:
         ind.set(qn("w:hanging"), CSS_BULLET_HANGING)
         pPr.append(ind)
 
-    # Zero spacing before/after body text (matches template)
+    # Paragraph spacing (Formatting Specification): labels open a new block, lists are tight,
+    # body text gets the standard gap.
+    before_pt, after_pt = {
+        "annexure_heading": (0, 6),
+        "section_label": (12, 4),
+        "main_bullet": (0, proposal_tokens.LIST_SPACE_AFTER_PT),
+        "sub_bullet": (0, proposal_tokens.LIST_SPACE_AFTER_PT),
+    }.get(style_name, (proposal_tokens.BODY_SPACE_BEFORE_PT, proposal_tokens.BODY_SPACE_AFTER_PT))
     pPr = p._p.get_or_add_pPr()
     sp = OxmlElement("w:spacing")
-    sp.set(qn("w:before"), "0")
-    sp.set(qn("w:after"), "0")
+    sp.set(qn("w:before"), str(int(before_pt * 20)))
+    sp.set(qn("w:after"), str(int(after_pt * 20)))
     pPr.append(sp)
+    if style_name in ("annexure_heading", "section_label"):
+        pPr.append(OxmlElement("w:keepNext"))        # a heading never ends a page on its own
 
 
 def build_custom_annexure_block(
@@ -773,12 +833,24 @@ def build_custom_annexure_block(
     text = re.sub(r"(?m)^#{1,3}\s*", "", raw_ai_text)
     text = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", text)
 
+    # The heading always carries this annexure's real position and title (numbering rule),
+    # whatever number the model wrote.
+    lines = text.split("\n")
+    heading = f"Annexure {slot_number}: {title}"
+    first = next((i for i, line in enumerate(lines) if line.strip()), None)
+    if first is None:
+        lines = [heading]
+    elif ANNEXURE_HEADING_RE.match(lines[first].strip()):
+        lines[first] = heading
+    else:
+        lines.insert(first, heading)
+
     scratch = Document()
     # Remove the default empty paragraph python-docx always adds
     for p in list(scratch.paragraphs):
         p._element.getparent().remove(p._element)
 
-    for line in text.split("\n"):
+    for line in lines:
         parsed = _parse_annexure_line(line)
         _add_formatted_paragraph(scratch, parsed)
 
@@ -944,6 +1016,116 @@ def _has_page_break_before(ppr) -> bool:
     if node is None:
         return False
     return (node.get(qn("w:val")) or "true").strip().lower() not in ("0", "false", "off")
+
+
+def _ensure_final_section(doc: Document) -> bool:
+    """Make sure the body ends with a ``<w:sectPr>`` (the document's last section).
+
+    Assembly removes the template's closing section properties together with the old body
+    content. Without them Word falls back to application defaults for the annexures, terms and
+    pricing pages (which can be Letter instead of A4). The properties of the last section break
+    are copied, as a *continuous* section so no extra page is created. Returns True if added.
+    """
+    body = doc.element.body
+    if body.find(qn("w:sectPr")) is not None:
+        return False
+    in_paragraph = [s for s in body.iter(qn("w:sectPr")) if s.getparent().tag == qn("w:pPr")]
+    if not in_paragraph:
+        return False
+    final = copy.deepcopy(in_paragraph[-1])
+    for tag in ("w:type", "w:titlePg"):
+        for node in final.findall(qn(tag)):
+            final.remove(node)
+    kind = OxmlElement("w:type")
+    kind.set(qn("w:val"), "continuous")
+    final.insert(len(final.findall(qn("w:headerReference"))) + len(final.findall(qn("w:footerReference"))), kind)
+    body.append(final)
+    return True
+
+
+def _is_blank_paragraph(el) -> bool:
+    """Empty paragraph: no text, no break, no drawing/picture, no section break."""
+    return (
+        el.tag == qn("w:p")
+        and not _paragraph_text(el).strip()
+        and not _has_page_break(el)
+        and el.find(f".//{PIC_TAG}") is None
+        and el.find(f".//{{{W_NS}}}pict") is None
+        and el.find(f".//{{{W_NS}}}sectPr") is None
+    )
+
+
+def _set_page_break_before(p) -> None:
+    """Give paragraph *p* ``<w:pageBreakBefore/>`` in schema order (after pStyle/keepNext/keepLines)."""
+    ppr = p.find(qn("w:pPr"))
+    if ppr is None:
+        ppr = OxmlElement("w:pPr")
+        p.insert(0, ppr)
+    node = ppr.find(qn("w:pageBreakBefore"))
+    if node is None:
+        node = OxmlElement("w:pageBreakBefore")
+        anchor = None
+        for tag in ("w:pStyle", "w:keepNext", "w:keepLines"):
+            found = ppr.find(qn(tag))
+            if found is not None:
+                anchor = found
+        if anchor is not None:
+            anchor.addnext(node)
+        else:
+            ppr.insert(0, node)
+    node.attrib.pop(qn("w:val"), None)  # no val = on
+
+
+def _normalize_page_breaks(doc: Document) -> dict[str, int]:
+    """Make empty pages structurally impossible (hard acceptance rule).
+
+    1. a page-break-only paragraph directly after another break is dropped,
+    2. every remaining break paragraph (and the blank paragraphs after it) is replaced by
+       ``pageBreakBefore`` on the next real paragraph: a free-standing break paragraph can itself
+       spill onto a new page when the previous page is exactly full, which is how blank pages
+       appeared between sections,
+    3. blank paragraphs right before a page-start paragraph, and at the end of the document, go:
+       they have no visible purpose and are the other cause of spill-over pages.
+    """
+    stats = {"stacked": _remove_stacked_page_breaks(doc), "converted": 0, "blank_removed": 0}
+    body = doc.element.body
+    children = list(body)
+    removed: set[int] = set()
+    for i, el in enumerate(children):
+        if id(el) in removed or el.tag != qn("w:p") or not _is_page_break_only_paragraph(el):
+            continue
+        j, blanks = i + 1, []
+        while j < len(children) and _is_blank_paragraph(children[j]):
+            blanks.append(children[j])
+            j += 1
+        target = children[j] if j < len(children) else None
+        if target is not None and target.tag != qn("w:sectPr"):
+            first_p = target if target.tag == qn("w:p") else target.find(f".//{qn('w:p')}")
+            if first_p is not None:
+                _set_page_break_before(first_p)
+        for dead in [el, *blanks]:
+            body.remove(dead)
+            removed.add(id(dead))
+        stats["converted"] += 1
+
+    def preceding_blank_run(start_el):
+        run, prev = [], start_el.getprevious()
+        while prev is not None and _is_blank_paragraph(prev):
+            run.append(prev)
+            prev = prev.getprevious()
+        return run
+
+    for p in list(body.iter(qn("w:p"))):
+        if _has_page_break_before(p.find(qn("w:pPr"))) and p.getparent() is body:
+            for blank in preceding_blank_run(p):
+                body.remove(blank)
+                stats["blank_removed"] += 1
+    last = body.find(qn("w:sectPr"))
+    tail = preceding_blank_run(last) if last is not None else []
+    for blank in tail:
+        body.remove(blank)
+        stats["blank_removed"] += 1
+    return stats
 
 
 def _remove_stacked_page_breaks(doc: Document) -> int:
@@ -1323,6 +1505,32 @@ def _toc_title_for_key(
     return str(item.get("toc_title") or item.get("title") or key)
 
 
+def _prune_static_toc_entries(doc: Document) -> list[str]:
+    """Remove Contents lines whose heading does not exist in the document body.
+
+    The template's Contents lists "Our Understanding of Your Requirement", "Methodology
+    Overview" and "Vulnerability Assessment Methodology", but the body has no such sections, so
+    those lines pointed nowhere (hard rule: Contents must match the body). Returns the labels removed.
+    """
+    contents_idx, first_assessment_idx, _, conclusion_idx = _find_contents_region(doc)
+    if contents_idx is None or conclusion_idx is None:
+        return []
+    body_min = conclusion_idx + 1
+    limit = first_assessment_idx if first_assessment_idx is not None else contents_idx + 1 + len(STATIC_TOC_ANCHORS)
+    fixed_labels = {a for a, _ in STATIC_TOC_ANCHORS}
+    doomed: list[tuple[int, str]] = []                 # decide first, on unshifted indices
+    for i in range(contents_idx + 1, min(limit, len(doc.paragraphs))):
+        text = doc.paragraphs[i].text or ""
+        if "\t" not in text:
+            continue
+        label = _parse_toc_line(text)[0]
+        if label in fixed_labels and _find_body_heading_idx(doc, label, min_index=body_min, exact=True) is None:
+            doomed.append((i, label))
+    for i, _label in reversed(doomed):                 # then delete from the bottom up
+        _remove_paragraph_at(doc, i)
+    return [label for _i, label in doomed]
+
+
 def _finalize_document(
     docx_path: Path,
     ordered_keys: list[str] | None = None,
@@ -1335,8 +1543,10 @@ def _finalize_document(
 
     doc = Document(str(docx_path))
     _normalize_contents_section(doc)
+    _prune_static_toc_entries(doc)
     _ensure_page_break_before_introduction(doc)
-    _remove_stacked_page_breaks(doc)
+    _ensure_final_section(doc)
+    _normalize_page_breaks(doc)
 
     pages = _compute_layout_pages(doc)
     _refresh_all_toc_pages(doc, ordered_keys, pages, catalog=request_catalog)
@@ -1345,6 +1555,64 @@ def _finalize_document(
     _strip_all_yellow_highlights(doc)
     doc.save(str(docx_path))
     _set_update_fields_on_open(docx_path)
+
+
+def _apply_measured_toc_pages(docx_path: Path, measured: dict[str, int]) -> int:
+    """Write page numbers measured from a real render into the Contents lines.
+
+    *measured* comes from proposal_pdf.measure_heading_pages. The Contents lines are plain text,
+    so this is the only way they can be exact; the layout estimator is only a fallback.
+    Returns how many lines changed.
+    """
+    doc = Document(str(docx_path))
+    contents_idx, first_assessment_idx, terms_idx, conclusion_idx = _find_contents_region(doc)
+    if contents_idx is None or conclusion_idx is None:
+        return 0
+    changed = 0
+    for i in range(contents_idx + 1, conclusion_idx + 1):
+        p = doc.paragraphs[i]
+        if "\t" not in (p.text or ""):
+            continue
+        title, page = _parse_toc_line(p.text)
+        if i == conclusion_idx:
+            key = "conclusion & pricing"
+        elif i == terms_idx:
+            key = "terms & conditions"
+        elif first_assessment_idx is not None and i >= first_assessment_idx:
+            key = f"annexure {i - first_assessment_idx + 1}"
+        else:
+            key = title.strip().lower()
+        new_page = measured.get(key)
+        if new_page and new_page != page:
+            _set_toc_line(p._element, title, int(new_page), first_line=(i == contents_idx + 1))
+            changed += 1
+    if changed:
+        doc.save(str(docx_path))
+    return changed
+
+
+def finalize_with_render(docx_path: Path, ordered_keys: list[str], company_name: str = "") -> "proposal_pdf.PdfCheck":
+    """Render the finished proposal, correct Contents from the real pagination, verify.
+
+    Steps: render -> measure where each heading really starts -> rewrite the Contents numbers ->
+    render again only if something changed -> report blank pages. Never raises: with no PDF engine
+    (or a render failure) the proposal is returned unverified and the Contents keep the estimate.
+    The PDF stays next to the .docx as <name>.pdf.
+    """
+    import proposal_pdf
+
+    pdf_path = docx_path.with_suffix(".pdf")
+    check = proposal_pdf.check_document(docx_path, len(ordered_keys), pdf_path=pdf_path)
+    if not check.verified:
+        return check
+    try:
+        if _apply_measured_toc_pages(docx_path, check.headings):
+            _repair_core_properties(docx_path, title=f"Statement of Work & Proposal - {company_name}")
+            check = proposal_pdf.check_document(docx_path, len(ordered_keys), pdf_path=pdf_path)
+    except Exception as exc:  # the unverified document is still delivered
+        traceback.print_exc()
+        check.note = f"contents correction failed: {exc}"[:200]
+    return check
 
 
 def _clone_toc_paragraph(doc: Document) -> OxmlElement:
@@ -1546,10 +1814,18 @@ def _refresh_all_toc_pages(
     intro_idx = _find_introduction_body_idx(doc)
     intro_page = int(pages.get(intro_idx, 1)) if intro_idx is not None else 1
 
-    for offset, (label, _anchor) in enumerate(STATIC_TOC_ANCHORS):
-        toc_idx = contents_idx + 1 + offset
-        if toc_idx >= len(doc.paragraphs):
-            break
+    # Fixed intro entries are matched by their label (some may have been pruned because the
+    # body has no such heading), never by position.
+    limit = first_assessment_idx if first_assessment_idx is not None else contents_idx + 1 + len(STATIC_TOC_ANCHORS)
+    label_to_idx = {
+        _parse_toc_line(doc.paragraphs[i].text or "")[0]: i
+        for i in range(contents_idx + 1, min(limit, len(doc.paragraphs)))
+        if "\t" in (doc.paragraphs[i].text or "")
+    }
+    for label, _anchor in STATIC_TOC_ANCHORS:
+        toc_idx = label_to_idx.get(label)
+        if toc_idx is None:
+            continue
         page = int(_find_body_anchor_page(doc, label, pages, min_index=body_min, exact=True))
         if page <= 1 and intro_page > 1:
             page = intro_page
@@ -1557,7 +1833,7 @@ def _refresh_all_toc_pages(
             doc.paragraphs[toc_idx]._element,
             label,
             page,
-            first_line=(offset == 0),
+            first_line=(toc_idx == contents_idx + 1),
         )
 
     if first_assessment_idx is None or conclusion_idx is None:
@@ -1628,6 +1904,53 @@ def _set_update_fields_on_open(docx_path: Path) -> None:
     with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as zout:
         for name, data in entries.items():
             zout.writestr(name, data)
+    shutil.move(str(tmp), str(docx_path))
+
+
+_CORE_NS = {
+    "cp": "http://schemas.openxmlformats.org/package/2006/metadata/core-properties",
+    "dc": "http://purl.org/dc/elements/1.1/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "xsi": "http://www.w3.org/2001/XMLSchema-instance",
+}
+
+
+def _repair_core_properties(docx_path: Path, title: str = "") -> None:
+    """Rewrite docProps/core.xml in valid form.
+
+    docxtpl/python-docx create this part when the template has none, and (because the template
+    carries docProps/custom.xml) bind ``cp:lastModifiedBy`` and ``cp:revision`` to the
+    *custom-properties* namespace. Microsoft Word treats that as a corrupt file and refuses to
+    open it. This runs last, after every python-docx save, so the final file is always valid.
+    """
+    from xml.sax.saxutils import escape
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    core = (
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n"
+        + "<cp:coreProperties " + " ".join(f'xmlns:{k}="{v}"' for k, v in _CORE_NS.items()) + ">"
+        + f"<dc:title>{escape(title or 'Statement of Work & Proposal')}</dc:title>"
+        + "<dc:creator>CyberSmithSECURE</dc:creator>"
+        + "<cp:lastModifiedBy>CyberSmithSECURE</cp:lastModifiedBy>"
+        + "<cp:revision>1</cp:revision>"
+        + f'<dcterms:created xsi:type="dcterms:W3CDTF">{now}</dcterms:created>'
+        + f'<dcterms:modified xsi:type="dcterms:W3CDTF">{now}</dcterms:modified>'
+        + "</cp:coreProperties>"
+    )
+    try:
+        with zipfile.ZipFile(docx_path, "r") as zin:
+            entries = [(info, zin.read(info.filename)) for info in zin.infolist()]
+    except (zipfile.BadZipFile, OSError):
+        return
+    names = {info.filename for info, _ in entries}
+    tmp = docx_path.with_suffix(".core.tmp")
+    with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_DEFLATED) as zout:
+        for info, data in entries:
+            if info.filename == "docProps/core.xml":
+                data = core.encode("utf-8")
+            zout.writestr(info.filename, data)
+        if "docProps/core.xml" not in names:       # nothing to repair (and nothing to add)
+            pass
     shutil.move(str(tmp), str(docx_path))
 
 
@@ -2106,7 +2429,8 @@ def generate_proposal(
         "report_date": datetime.now().strftime("%d %B %Y"),
     }
     try:
-        tpl.render(context)
+        # autoescape: a client name such as "L&T" or "Smith & Sons" must not break the Word XML
+        tpl.render(context, autoescape=True)
     except Exception as exc:
         raise RuntimeError(f"Template render failed: {exc}") from exc
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -2147,6 +2471,7 @@ def generate_proposal(
         raise RuntimeError(f"Annexure layout failed: {exc}") from exc
 
     _finalize_document(output, ordered_keys, request_catalog=request_catalog)
+    _repair_core_properties(output, title=f"Statement of Work & Proposal - {company_name}")
     return output
 
 
@@ -2159,12 +2484,16 @@ def _safe_filename(name: str, ext: str = ".docx") -> str:
 # FastAPI app (self-hosted — not mounted in app.py)
 # ---------------------------------------------------------------------------
 app = FastAPI(title="CSS Proposal Generator", version=VERSION)
+# Credentials are not allowed cross-origin: the page is served from the same origin, and the
+# login cookie must never be usable by another site (a wildcard origin with credentials would
+# echo any origin). API-key clients are unaffected.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Proposal-Lint", "X-Proposal-Lint-Errors", "X-Proposal-Pdf"],
 )
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -2249,6 +2578,7 @@ async def proposal_form() -> HTMLResponse:
   <div class="container">
     <h1>CSS Proposal Generator</h1>
     <p class="hint">CyberSmithSECURE &mdash; generates polished client proposals with annexure ordering and AI custom services.</p>
+    <p class="hint"><a href="excel/" style="color:#b388ff">Have the filled scoping Excel? Upload it instead &rarr;</a></p>
     <form id="proposalForm">
       <!-- Basic fields -->
       <div class="form-group">
@@ -2712,7 +3042,7 @@ async def proposal_form() -> HTMLResponse:
     return HTMLResponse(content=html)
 
 
-@app.post("/generate/")
+@app.post("/generate/", dependencies=[Depends(rate_limit("generate"))])
 async def generate_proposal_endpoint(
     company_name: str = Form(...),
     proposal_ref: str = Form(""),
@@ -2805,12 +3135,15 @@ async def generate_proposal_endpoint(
             assessments=assessments,
             request_catalog=request_catalog,
         )
+        keys = annexure_order or [item["key"] for item in ASSESSMENT_CATALOG]
+        check = await asyncio.to_thread(finalize_with_render, output_path, keys, company_name)
         final_path = UPLOAD_DIR / out_name
         shutil.copy2(output_path, final_path)
         return FileResponse(
             path=str(final_path),
             filename=out_name,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"X-Proposal-Pdf": check.header_value()},
         )
     except HTTPException:
         raise
@@ -2824,6 +3157,99 @@ async def generate_proposal_endpoint(
     finally:
         if tmp_dir and os.path.isdir(tmp_dir):
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# Excel-driven flow (upload -> two previews -> generate); see proposal_workflow.py
+# ---------------------------------------------------------------------------
+async def generate_from_plan(draft, plan, ai_inputs_fn, client_logo, store, draft_id) -> FileResponse:
+    """Build the proposal from a reviewed draft (called by the workflow router).
+
+    AI annexures are written first (with Excel context, one automatic retry), then the document
+    is assembled through the same generate_proposal() the manual flow uses.
+    """
+    tmp_dir: str | None = None
+    try:
+        company_name = plan["company_name"]
+        request_catalog: dict[str, dict[str, Any]] | None = None
+
+        if plan["customs"]:
+            ai_context = _parse_ai_context(json.dumps(ai_inputs_fn(draft, plan)))
+            _validate_ai_context(ai_context, require_total_cost=False)   # D18
+            request_catalog = _make_request_catalog()
+            by_key = {ca.key: ca for ca in ai_context.custom_annexures}
+            for c in plan["customs"]:
+                ca = by_key[c["key"]]
+                slot_number = plan["ordered_keys"].index(c["key"]) + 1
+                raw_text = await generate_custom_annexure_text(
+                    company_name=company_name, context=ai_context,
+                    custom_annexure=ca, slot_number=slot_number)
+                _register_custom_annexure(
+                    catalog=request_catalog, key=c["key"], title=ca.title, toc_title=ca.title,
+                    slot=slot_number,
+                    ai_elements=build_custom_annexure_block(
+                        raw_ai_text=raw_text, slot_number=slot_number, title=ca.title,
+                        client_name=company_name))
+
+        tmp_dir = tempfile.mkdtemp(prefix="css_proposal_")
+        logo_path: Path | None = None
+        if client_logo is not None and client_logo.filename:
+            ext = Path(client_logo.filename).suffix.lower()
+            if ext not in (".png", ".jpg", ".jpeg"):
+                raise HTTPException(status_code=400, detail="The logo must be a PNG or JPG image.")
+            data = await client_logo.read()
+            if len(data) > 5 * 1024 * 1024:
+                raise HTTPException(status_code=413, detail="The logo is larger than 5 MB.")
+            logo_path = Path(tmp_dir) / f"client_logo{ext}"
+            logo_path.write_bytes(data)
+
+        out_name = _safe_filename(company_name)
+        output_path = Path(tmp_dir) / out_name
+        generate_proposal(
+            company_name=company_name,
+            proposal_ref=plan["reference"],
+            logo_path=str(logo_path) if logo_path else None,
+            output_path=output_path,
+            annexure_order=plan["ordered_keys"],
+            request_catalog=request_catalog,
+            annexure_details=plan["annexure_details"],
+            pricing_rows=plan["pricing_rows"],
+        )
+        # Real pagination: correct the Contents numbers and look for blank pages (needs a PDF engine).
+        check = await asyncio.to_thread(finalize_with_render, output_path, plan["ordered_keys"], company_name)
+        report = proposal_lint.lint_docx(output_path)
+        final_path = UPLOAD_DIR / out_name
+        shutil.copy2(output_path, final_path)
+        headers = {"X-Proposal-Lint": f"{len(report.errors)} error(s), {len(report.warnings)} warning(s)",
+                   "X-Proposal-Pdf": check.header_value()}
+        problems = [f.message for f in report.errors[:3]]
+        if check.verified and check.blank_pages:
+            problems.append(f"blank page(s) {check.blank_pages}")
+        if problems:
+            headers["X-Proposal-Lint-Errors"] = "; ".join(problems).encode("ascii", "replace").decode("ascii")
+        if check.verified and check.pdf_path and store is not None:
+            store.attach(draft_id, ".pdf", check.pdf_path)       # offered as a PDF proof download
+        if store is not None:
+            store.attach(draft_id, ".docx", final_path)
+        return FileResponse(
+            path=str(final_path), filename=out_name, headers=headers,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        if tmp_dir and os.path.isdir(tmp_dir):
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+import proposal_workflow  # noqa: E402  (after app/helpers exist; the router gets this module)
+
+proposal_router = proposal_workflow.create_router(sys.modules[__name__])
+app.include_router(proposal_router)
 
 
 # ---------------------------------------------------------------------------

@@ -10,7 +10,6 @@ Run from Automation/backend/:   python -m pytest tests/test_proposal_excel.py -v
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -25,14 +24,6 @@ TESTSET = BACKEND.parents[1] / "css_scoping_testset"
 
 pytestmark = pytest.mark.skipif(
     not (TESTSET / "generate.py").is_file(), reason="css_scoping_testset/ not present")
-
-
-@pytest.fixture(scope="session")
-def fixtures(tmp_path_factory) -> Path:
-    out = tmp_path_factory.mktemp("scoping_fixtures")
-    subprocess.run([sys.executable, str(TESTSET / "generate.py"), "--out", str(out)],
-                   check=True, capture_output=True, timeout=600)
-    return out
 
 
 def _expected_files(root: Path):

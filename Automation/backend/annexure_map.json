@@ -1,4 +1,4 @@
-{
+﻿{
   "_comment": "Mapping from the CSS Pre-Engagement Scoping v2.xlsx to proposal annexures. See docs/ADVANCED_FEATURE_PLAN.md section 4 (D11, D15, D19, D30-D33). Edit here, not in code. 'rows' are Excel rows of 'Overall Scoping Matrix' column D. Count = rows holding a number above 0; Quantity = their sum.",
   "version": 1,
   "max_file_bytes": 5242880,
@@ -93,5 +93,52 @@
     {"annexure": 6, "catalog_key": "insider_threat"},
     {"annexure": 9, "catalog_key": "soc_simulation"},
     {"annexure": 12, "catalog_key": "offensive_defensive_training"}
-  ]
+  ],
+  "manual_toggle_defaults": {"count": 1, "quantity": 1, "count_label": "Assessment categories"},
+
+  "sector_suggestions": {
+    "rbi": "Banking, Financial Services and Insurance (BFSI)",
+    "sebi": "Banking, Financial Services and Insurance (BFSI)"
+  },
+
+  "context": {
+    "_comment": "Where the AI-context answers live (D13). Contact details in Rules of Engagement are deliberately NOT sent to the AI.",
+    "max_answer_chars": 500,
+    "max_block_chars": 6000,
+    "general_sheet": "General Scoping Questions",
+    "general_question_column": "D",
+    "general_answer_columns": ["E", "F", "G", "H", "I"],
+    "general_sections": {
+      "external": [4, 11], "internal": [13, 22], "web": [24, 35], "mobile": [37, 46], "cloud": [48, 57],
+      "ad": [59, 68], "segmentation": [70, 77], "saas": [79, 86], "config": [88, 94], "source_code": [96, 103]
+    },
+    "detail_sheets": {
+      "web": {"sheet": "Web Application Assessment", "question_column": "C", "answer_columns": ["D", "E"], "rows": [3, 58]},
+      "mobile": {"sheet": "Mobile Application Assessment", "question_column": "C", "answer_columns": ["D", "E"], "rows": [3, 55]},
+      "cloud": {"sheet": "Cloud Security Assessment", "question_column": "C", "answer_columns": ["D"], "rows": [3, 57]},
+      "ad": {"sheet": "AD Security Assessment", "question_column": "C", "answer_columns": ["D"], "rows": [3, 48]},
+      "segmentation": {"sheet": "Network Segmentation Testing", "question_column": "C", "answer_columns": ["D"], "rows": [3, 43]}
+    },
+    "roe": {
+      "sheet": "Rules of Engagement",
+      "parameter_rows": [13, 25], "compliance_rows": [29, 35], "label_column": "B", "answer_column": "C"
+    },
+    "type_sources": {
+      "external_network_pt": {"general": "external"},
+      "internal_network_pt": {"general": "internal"},
+      "web_app_vapt": {"general": "web", "detail": "web"},
+      "mobile_vapt": {"general": "mobile", "detail": "mobile"},
+      "cloud_security": {"general": "cloud", "detail": "cloud"},
+      "ad_security": {"general": "ad", "detail": "ad"},
+      "network_segmentation": {"general": "segmentation", "detail": "segmentation"},
+      "saas_security": {"general": "saas"},
+      "config_hardening": {"general": "config"},
+      "source_code_review": {"general": "source_code"},
+      "api_security": {"general": "web"},
+      "social_engineering": {},
+      "red_team": {},
+      "compliance_gap": {}
+    }
+  }
 }
+

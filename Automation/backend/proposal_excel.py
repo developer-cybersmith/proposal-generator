@@ -30,7 +30,7 @@ ALLOWED_EXTENSIONS = {".xlsx"}
 
 @lru_cache(maxsize=1)
 def load_map() -> dict[str, Any]:
-    with open(MAP_FILE, encoding="utf-8") as fh:
+    with open(MAP_FILE, encoding="utf-8-sig") as fh:  # tolerates an editor-added BOM
         return json.load(fh)
 
 
@@ -85,6 +85,8 @@ class ScopingResult:
     included: list[AnnexureEntry] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    # Answers from the other sheets, kept for the AI prompt only (plan D13); see extract_context().
+    context: dict[str, Any] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -290,4 +292,94 @@ def parse_scoping_workbook(path: str | Path) -> ScopingResult:
             result.included.append(AnnexureEntry(
                 t["key"], t["label"], t["annexure"], t["catalog_key"],
                 t["default_count"], t["default_quantity"], t["count_label"], frequency))
+
+    try:
+        result.context = extract_context(wb_val, cfg)
+    except Exception as exc:  # context is a bonus for the AI; it must never fail the upload
+        result.warnings.append(f"context_unreadable: {type(exc).__name__}")
     return result
+
+
+# --------------------------------------------------------------------------- AI context (D13)
+def _clip(value: Any, limit: int) -> str:
+    text = " ".join(str(value).split()) if value is not None else ""
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _qa_rows(ws, rows: tuple[int, int], q_col: str, a_cols: list[str], limit: int) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for r in range(rows[0], rows[1] + 1):
+        question = ws[f"{q_col}{r}"].value
+        if question is None or not str(question).strip():
+            continue
+        answers = [_clip(ws[f"{c}{r}"].value, limit) for c in a_cols]
+        answers = [a for a in answers if a]
+        if answers:                       # unanswered questions carry no information
+            items.append({"question": _clip(question, 200), "answers": answers})
+    return items
+
+
+def extract_context(wb, cfg: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Read the answered questions of the non-driving sheets.
+
+    Returns {"general": {section: [{question, answers}]}, "detail": {key: [...]},
+             "roe": {"parameters": [...], "compliance": [...]}}.
+    Rules of Engagement contacts are personal data and are not read at all.
+    """
+    cfg = cfg or load_map()
+    ctx = cfg["context"]
+    limit = ctx["max_answer_chars"]
+    out: dict[str, Any] = {"general": {}, "detail": {}, "roe": {"parameters": [], "compliance": []}}
+
+    if ctx["general_sheet"] in wb.sheetnames:
+        ws = wb[ctx["general_sheet"]]
+        for section, rows in ctx["general_sections"].items():
+            out["general"][section] = _qa_rows(ws, tuple(rows), ctx["general_question_column"],
+                                               ctx["general_answer_columns"], limit)
+    for key, spec in ctx["detail_sheets"].items():
+        if spec["sheet"] in wb.sheetnames:
+            out["detail"][key] = _qa_rows(wb[spec["sheet"]], tuple(spec["rows"]), spec["question_column"],
+                                          spec["answer_columns"], limit)
+    roe = ctx["roe"]
+    if roe["sheet"] in wb.sheetnames:
+        ws = wb[roe["sheet"]]
+        out["roe"]["parameters"] = _qa_rows(ws, tuple(roe["parameter_rows"]), roe["label_column"],
+                                            [roe["answer_column"]], limit)
+        out["roe"]["compliance"] = _qa_rows(ws, tuple(roe["compliance_rows"]), roe["label_column"],
+                                            [roe["answer_column"]], limit)
+    return out
+
+
+def context_block_for_type(context: dict[str, Any], type_key: str, cfg: dict[str, Any] | None = None) -> str:
+    """Plain-text block of the answers relevant to one assessment type (for the AI prompt)."""
+    cfg = cfg or load_map()
+    ctx_cfg = cfg["context"]
+    sources = ctx_cfg["type_sources"].get(type_key, {})
+    lines: list[str] = []
+
+    def add(title: str, items: list[dict[str, Any]]) -> None:
+        if not items:
+            return
+        lines.append(f"{title}:")
+        for it in items:
+            lines.append(f"- {it['question']} => {' | '.join(it['answers'])}")
+
+    if sources.get("general"):
+        add("Scoping answers", context.get("general", {}).get(sources["general"], []))
+    if sources.get("detail"):
+        add("Detailed information gathering", context.get("detail", {}).get(sources["detail"], []))
+    add("Rules of engagement", context.get("roe", {}).get("parameters", []))
+    add("Compliance requirements", context.get("roe", {}).get("compliance", []))
+    block = "\n".join(lines)
+    limit = ctx_cfg["max_block_chars"]
+    return block if len(block) <= limit else block[: limit - 1] + "…"
+
+
+def suggest_sector(regulatory_driver: str | None, cfg: dict[str, Any] | None = None) -> str:
+    """D20: a suggestion only (e.g. RBI/SEBI -> BFSI); the user always confirms."""
+    cfg = cfg or load_map()
+    text = (regulatory_driver or "").lower()
+    for token, sector in cfg["sector_suggestions"].items():
+        if token in text:
+            return sector
+    return ""

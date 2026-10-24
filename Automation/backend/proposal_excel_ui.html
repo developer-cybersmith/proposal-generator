@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CSS Proposal from Excel</title>
+<style>
+  :root {
+    --bg: #1a1a2e; --panel: #16213e; --panel2: #0f2744; --line: #394867; --text: #ffffff;
+    --muted: #aab4c8; --purple: #8a2be2; --purple-soft: #b388ff; --amber: #f5a623; --red: #ff6b6b;
+    --green: #69db7c; --input: #0f3460;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+  .container { max-width: 1060px; margin: 0 auto; background: var(--panel); border-radius: 8px; padding: 24px; }
+  h1 { color: var(--purple); text-align: center; margin: 0 0 4px; }
+  h2 { color: var(--purple-soft); font-size: 1.1rem; margin: 22px 0 10px; }
+  .hint { color: var(--muted); font-size: .9em; }
+  a { color: var(--purple-soft); }
+  label { display: block; font-weight: bold; margin-bottom: 4px; }
+  input[type=text], input[type=number], input[type=file], select, textarea {
+    width: 100%; padding: 8px; border: 1px solid #444; border-radius: 4px; background: var(--input); color: var(--text);
+  }
+  textarea { min-height: 64px; resize: vertical; }
+  button { background: var(--purple); color: #fff; border: 0; padding: 10px 16px; border-radius: 4px; cursor: pointer; font-size: 15px; }
+  button:hover:enabled { background: #7a1fd2; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.secondary { background: var(--line); }
+  button.small { padding: 5px 9px; font-size: 13px; }
+  button.danger { background: #7a2230; }
+  .hidden { display: none; }
+  .row { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-bottom: 12px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th { background: var(--purple); color: #fff; padding: 9px 8px; text-align: center; font-size: .9rem; }
+  td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr.amber td { background: rgba(245, 166, 35, .12); }
+  tr.off td { opacity: .55; }
+  td.num { width: 70px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: .75rem; background: var(--line); }
+  .badge.ai { background: #5e35b1; }
+  .warn { color: var(--amber); font-size: .88rem; margin-top: 4px; }
+  .error { color: var(--red); } .success { color: var(--green); }
+  .issues { background: rgba(255, 107, 107, .1); border: 1px solid var(--red); border-radius: 6px; padding: 10px 14px; margin-top: 14px; }
+  .issues li { margin: 3px 0; }
+  .panel { border: 1px solid var(--line); border-radius: 6px; padding: 14px; background: var(--panel2); margin-top: 14px; }
+  .actions { display: flex; gap: 10px; justify-content: space-between; margin-top: 18px; flex-wrap: wrap; }
+  .total { text-align: right; font-weight: bold; margin-top: 10px; color: var(--purple-soft); }
+  .steps { display: flex; gap: 8px; justify-content: center; margin: 10px 0 18px; font-size: .85rem; color: var(--muted); }
+  .steps span { padding: 4px 12px; border-radius: 12px; background: var(--line); }
+  .steps span.on { background: var(--purple); color: #fff; }
+  details summary { cursor: pointer; color: var(--purple-soft); font-size: .85rem; }
+  .breakdown { font-size: .82rem; color: var(--muted); margin: 4px 0 0 14px; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; }
+  .checkbox-row input { width: auto; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Proposal from Scoping Excel</h1>
+  <p class="hint" style="text-align:center">CyberSmithSECURE &mdash; upload the filled pre-engagement sheet, review, then generate.
+     <a href="../">Back to the manual form</a></p>
+  <div class="steps" id="steps"><span id="st0" class="on">1 Upload</span><span id="st1">2 Annexures</span><span id="st2">3 Conclusion &amp; Pricing</span></div>
+
+  <!-- Upload -->
+  <section id="screen-upload">
+    <div class="panel">
+      <label for="xlsx">Filled "CSS Pre-Engagement Scoping v2.xlsx" (.xlsx, up to 5 MB)</label>
+      <input type="file" id="xlsx" accept=".xlsx" />
+      <p class="hint">Only the Cover Page and Overall Scoping Matrix drive the proposal; other sheets are used as context for AI-written annexures.
+         The uploaded file is not kept.</p>
+      <button id="btnUpload">Upload and review</button>
+      <p id="uploadStatus" role="status"></p>
+    </div>
+  </section>
+
+  <!-- Preview 1 -->
+  <section id="screen-p1" class="hidden">
+    <h2>Preview 1 &mdash; Annexures</h2>
+    <div class="row">
+      <div><label for="clientName">Client name *</label><input type="text" id="clientName" maxlength="150" /></div>
+      <div><label for="refNo">Reference number *</label><input type="text" id="refNo" maxlength="60" />
+           <div class="hint">From the Excel's Engagement Reference No.; edit if needed.</div></div>
+    </div>
+    <div><label for="logo">Client logo (optional, PNG/JPG)</label><input type="file" id="logo" accept=".png,.jpg,.jpeg" /></div>
+    <ul id="warnList" class="warn"></ul>
+    <div class="table-wrap"><table id="p1Table"><thead><tr>
+      <th>Include</th><th>Annexure</th><th>Source</th><th>Count</th><th>Frequency</th><th>Order</th></tr></thead><tbody></tbody></table></div>
+    <h2>Other template annexures (not in the Excel)</h2>
+    <div class="table-wrap"><table id="p1Manual"><thead><tr>
+      <th>Include</th><th>Annexure</th><th>Source</th><th>Count</th><th>Frequency</th><th>Order</th></tr></thead><tbody></tbody></table></div>
+    <div id="aiPanel" class="panel hidden">
+      <h2 style="margin-top:0">AI-written annexures &mdash; context</h2>
+      <p class="hint">At least one included annexure has no template, so it is written by AI in the CyberSmithSECURE format. Review what was taken from the Excel.</p>
+      <div class="row">
+        <div><label for="aiSector">Sector *</label><input type="text" id="aiSector" maxlength="120" />
+             <div class="hint" id="sectorHint"></div></div>
+        <div><label for="aiDuration">Duration *</label><input type="text" id="aiDuration" maxlength="60" placeholder="e.g. 30 days" /></div>
+      </div>
+      <label for="aiSummary">Engagement summary *</label><textarea id="aiSummary" maxlength="1500"></textarea>
+      <div class="row" style="margin-top:12px">
+        <div><label for="aiTier">Primary tier</label><select id="aiTier">
+          <option>Tier 1 &ndash; Essential</option><option>Tier 2 &ndash; Enhanced</option>
+          <option selected>Tier 3 &ndash; Advanced</option><option>Tier 4 &ndash; Offensive</option></select></div>
+        <div><label for="aiPayment">Payment model</label><select id="aiPayment">
+          <option value="milestone_v1">Milestone</option><option value="hybrid_v2" selected>Hybrid</option>
+          <option value="retainer_v3">Retainer</option><option value="tier_v4">Per tier</option></select></div>
+      </div>
+      <label for="aiConstraints">Special constraints (optional)</label><textarea id="aiConstraints" maxlength="1000"></textarea>
+    </div>
+    <div id="issues1" class="issues hidden"></div>
+    <div class="actions"><button class="secondary" id="btnRestart">Start over</button>
+      <button id="btnNext">Next: Conclusion &amp; Pricing &rarr;</button></div>
+  </section>
+
+  <!-- Preview 2 -->
+  <section id="screen-p2" class="hidden">
+    <h2>Preview 2 &mdash; Conclusion &amp; Pricing</h2>
+    <p class="hint">This is the table that goes into the proposal. Prices are optional: type them now, or leave them blank and fill them in Word afterwards.</p>
+    <div class="table-wrap"><table id="p2Table"><thead><tr>
+      <th>Sr. No.</th><th>Assessment Type</th><th>Quantity</th><th>Frequency</th><th>Cost Per Annexure</th><th></th></tr></thead><tbody></tbody></table></div>
+    <div class="total" id="totalText"></div>
+    <div style="margin-top:10px"><button class="secondary small" id="btnAddRow">+ Add row</button></div>
+    <div id="issues2" class="issues hidden"></div>
+    <p id="genStatus" role="status"></p>
+    <p id="pdfLink" class="hint"></p>
+    <div class="actions"><button class="secondary" id="btnBack">&larr; Back</button>
+      <button id="btnGenerate">Generate proposal</button></div>
+  </section>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const base = location.pathname.replace(/excel\/?$/, '');          // /proposal-generator/
+  let draftId = null, draft = null, issues = [];
+
+  // ---------- helpers (user text only ever goes through textContent / .value) ----------
+  function h(tag, attrs, ...kids) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (k === 'class') el.className = v; else if (k === 'text') el.textContent = v;
+      else if (k.startsWith('on')) el.addEventListener(k.slice(2), v); else if (v !== false && v != null) el.setAttribute(k, v === true ? '' : v);
+    }
+    kids.flat().forEach((c) => el.append(c instanceof Node ? c : document.createTextNode(c)));
+    return el;
+  }
+  function setStatus(id, msg, cls) { const el = $(id); el.textContent = msg || ''; el.className = cls || ''; }
+  function step(n) {
+    ['screen-upload', 'screen-p1', 'screen-p2'].forEach((s, i) => $(s).classList.toggle('hidden', i !== n));
+    [0, 1, 2].forEach((i) => $('st' + i).classList.toggle('on', i === n));
+  }
+  async function api(path, opts) {
+    const resp = await fetch(base + path, Object.assign({ credentials: 'same-origin' }, opts));
+    if (resp.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); throw new Error('Please sign in.'); }
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(typeof err.detail === 'string' ? err.detail : 'Request failed');
+    }
+    return resp;
+  }
+  // Indian grouping, same rule as the server: 125000 -> 1,25,000
+  function inr(n) { return '₹ ' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
+  function parseAmount(t) {
+    const s = String(t || '').replace(/rs\.?|inr|₹|\/-|,|\s/gi, '');
+    if (!s || !/^\d+(\.\d+)?$/.test(s)) return null;
+    return Number(s);
+  }
+  function totalText(rows) {
+    const amounts = rows.map((r) => parseAmount(r.cost));
+    if (rows.length && amounts.every((a) => a !== null)) return inr(amounts.reduce((a, b) => a + b, 0)) + ' /- * + 18% GST';
+    return '₹ /- * + 18% GST';
+  }
+
+  // ---------- state <-> DOM ----------
+  function collect() {
+    const entries = [];
+    document.querySelectorAll('#screen-p1 tr[data-entry]').forEach((tr) => {
+      const q = (cls) => tr.querySelector('.' + cls);
+      const e = { id: tr.dataset.entry, include: q('f-include').checked, count: q('f-count').value,
+                  count_label: q('f-label').value, frequency: q('f-freq').value };
+      if (q('f-confirm')) e.confirmed = q('f-confirm').checked;
+      if (q('f-title')) { e.title = q('f-title').value; e.scope = q('f-scope').value; }
+      entries.push(e);
+    });
+    const pricing = [];
+    document.querySelectorAll('#p2Table tbody tr').forEach((tr) => {
+      pricing.push({ entry_id: tr.dataset.entry || null, title: tr.querySelector('.p-title').value,
+                     quantity: tr.querySelector('.p-qty').value, frequency: tr.querySelector('.p-freq').value,
+                     cost: tr.querySelector('.p-cost').value });
+    });
+    return {
+      client: { name: $('clientName').value, reference_no: $('refNo').value }, entries,
+      ai: { sector: $('aiSector').value, engagement_summary: $('aiSummary').value, primary_tier: $('aiTier').value,
+            payment_model: $('aiPayment').value, special_constraints: $('aiConstraints').value, duration: $('aiDuration').value },
+      pricing: $('screen-p2').classList.contains('hidden') ? undefined : pricing,
+    };
+  }
+  async function save() {
+    const body = collect(); if (body.pricing === undefined) delete body.pricing;
+    const r = await (await api('draft/' + draftId, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+    draft = r.draft; issues = r.issues; return r;
+  }
+  function showIssues(boxId) {
+    const box = $(boxId);
+    box.classList.toggle('hidden', issues.length === 0);
+    box.replaceChildren(h('strong', { text: 'Before you can generate:' }), h('ul', {}, issues.map((i) => h('li', { text: i }))));
+  }
+
+  // ---------- Preview 1 ----------
+  function entryRow(e, idx, list) {
+    const needs = e.needs_confirmation && Number(e.count) === 0 && !e.confirmed;
+    const tr = h('tr', { 'data-entry': e.id, class: (needs ? 'amber ' : '') + (e.include ? '' : 'off') });
+    const cInc = h('input', { type: 'checkbox', class: 'f-include', 'aria-label': 'Include ' + e.title, checked: e.include || false, onchange: refresh });
+    cInc.checked = e.include;
+    const titleCell = h('td', {});
+    if (e.catalog_key === null) {
+      titleCell.append(h('input', { type: 'text', class: 'f-title', maxlength: 120, value: e.title, 'aria-label': 'Annexure title', onchange: refresh }),
+                       h('textarea', { class: 'f-scope', maxlength: 2000, 'aria-label': 'Scope', onchange: refresh }));
+      titleCell.querySelector('.f-scope').value = e.scope;
+    } else {
+      titleCell.append(h('div', { text: e.title }));
+    }
+    if (needs) {
+      const confirm = h('input', { type: 'checkbox', class: 'f-confirm', onchange: refresh });
+      titleCell.append(h('div', { class: 'warn' }, 'Nothing above 0 was found in the Excel. Enter a count, or ',
+        h('label', { class: 'checkbox-row', style: 'display:inline-flex' }, confirm, ' confirm it as is'), ', or untick Include.'));
+    } else if (e.needs_confirmation && e.confirmed) {
+      titleCell.append(h('input', { type: 'checkbox', class: 'f-confirm hidden', checked: true }));
+      titleCell.querySelector('.f-confirm').checked = true;
+      titleCell.append(h('div', { class: 'hint', text: 'Confirmed as is.' }));
+    }
+    if (e.rows && e.rows.length) {
+      titleCell.append(h('details', {}, h('summary', { text: 'Row breakdown from the Excel' }),
+        h('div', { class: 'breakdown' }, e.rows.map((r) => h('div', { text: `Row ${r.row}: ${r.category || '-'} = ${r.value === null ? '(blank)' : r.value} [${r.status}]` })))));
+    }
+    const count = h('input', { type: 'number', min: 0, max: 1000000, class: 'f-count', value: e.count, 'aria-label': 'Count', onchange: refresh });
+    const label = h('input', { type: 'text', class: 'f-label', maxlength: 80, value: e.count_label, 'aria-label': 'Count label', onchange: refresh });
+    const freq = h('input', { type: 'text', class: 'f-freq', maxlength: 60, value: e.frequency, 'aria-label': 'Frequency', onchange: refresh });
+    const move = h('td', { style: 'white-space:nowrap' },
+      h('button', { class: 'secondary small', title: 'Move up', disabled: idx === 0, onclick: () => moveEntry(e.id, -1), text: '↑' }), ' ',
+      h('button', { class: 'secondary small', title: 'Move down', disabled: idx === list.length - 1, onclick: () => moveEntry(e.id, 1), text: '↓' }));
+    tr.append(h('td', { style: 'text-align:center' }, cInc), titleCell,
+      h('td', { style: 'text-align:center' }, h('span', { class: 'badge' + (e.catalog_key === null ? ' ai' : ''), text: e.catalog_key === null ? 'AI-written' : 'Template' })),
+      h('td', {}, count, h('div', { style: 'margin-top:4px' }, label)), h('td', {}, freq), move);
+    return tr;
+  }
+  function renderP1() {
+    $('clientName').value = draft.client.name || '';
+    $('refNo').value = draft.client.reference_no || '';
+    $('warnList').replaceChildren(...draft.warnings.filter((w) => !w.startsWith('reference_required')).map((w) => h('li', { text: friendly(w) })));
+    const main = draft.entries.filter((e) => e.origin === 'excel'), manual = draft.entries.filter((e) => e.origin === 'manual');
+    $('p1Table').tBodies[0].replaceChildren(...main.map((e, i) => entryRow(e, i, main)));
+    $('p1Manual').tBodies[0].replaceChildren(...manual.map((e, i) => entryRow(e, i, manual)));
+    const customOn = draft.entries.some((e) => e.include && e.catalog_key === null);
+    $('aiPanel').classList.toggle('hidden', !customOn);
+    $('aiSector').value = draft.ai.sector; $('aiSummary').value = draft.ai.engagement_summary;
+    $('aiDuration').value = draft.ai.duration; $('aiTier').value = draft.ai.primary_tier;
+    $('aiPayment').value = draft.ai.payment_model; $('aiConstraints').value = draft.ai.special_constraints;
+    $('sectorHint').replaceChildren();
+    if (draft.ai.sector_suggestion && !draft.ai.sector) {
+      $('sectorHint').append('Suggested from the Regulatory Driver: ', h('a', { href: '#', text: draft.ai.sector_suggestion,
+        onclick: (ev) => { ev.preventDefault(); $('aiSector').value = draft.ai.sector_suggestion; } }), ' (please confirm).');
+    }
+    showIssues('issues1'); $('btnNext').disabled = false;
+  }
+  function friendly(w) {
+    const [kind, rest] = [w.split(':')[0], w.slice(w.indexOf(':') + 1).trim()];
+    return ({ non_numeric_quantity_skipped: 'Skipped a non-numeric quantity: ', negative_quantity_skipped: 'Skipped a negative quantity: ',
+      quantity_zero_confirm: 'Nothing above 0 in the Excel for: ', formula_no_cached_value: 'A formula has no saved value (open and re-save the Excel): ',
+      date_not_real_date: 'Date is typed as text: ' }[kind] || (kind + ': ')) + rest;
+  }
+  async function refresh() { try { await save(); renderP1(); } catch (e) { setStatus('uploadStatus', e.message, 'error'); } }
+  async function moveEntry(id, delta) {
+    const body = collect(); const i = body.entries.findIndex((e) => e.id === id);
+    const j = i + delta; if (j < 0 || j >= body.entries.length) return;
+    [body.entries[i], body.entries[j]] = [body.entries[j], body.entries[i]]; delete body.pricing;
+    const r = await (await api('draft/' + draftId, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+    draft = r.draft; issues = r.issues; renderP1();
+  }
+
+  // ---------- Preview 2 ----------
+  function priceRow(r, i) {
+    const tr = h('tr', { 'data-entry': r.entry_id || '' });
+    const linked = !!r.entry_id;
+    tr.append(h('td', { class: 'num', style: 'text-align:center', text: String(i + 1) }),
+      h('td', {}, h('input', { type: 'text', class: 'p-title', maxlength: 150, value: r.title, 'aria-label': 'Assessment type', onchange: recalc })),
+      h('td', {}, h('input', { type: 'text', class: 'p-qty', maxlength: 40, value: r.quantity, 'aria-label': 'Quantity', onchange: recalc })),
+      h('td', {}, h('input', { type: 'text', class: 'p-freq', maxlength: 60, value: r.frequency, 'aria-label': 'Frequency', onchange: recalc })),
+      h('td', {}, h('input', { type: 'text', class: 'p-cost', maxlength: 40, value: r.cost, placeholder: 'optional', 'aria-label': 'Cost', oninput: recalc })),
+      h('td', {}, h('button', { class: 'danger small', title: 'Remove row', onclick: () => { tr.remove(); renumber(); recalc(); }, text: '✕' })));
+    tr.dataset.linked = linked ? '1' : '';
+    return tr;
+  }
+  function renumber() { document.querySelectorAll('#p2Table tbody tr').forEach((tr, i) => { tr.children[0].textContent = String(i + 1); }); }
+  function recalc() {
+    const rows = [...document.querySelectorAll('#p2Table tbody tr')].map((tr) => ({ cost: tr.querySelector('.p-cost').value }));
+    $('totalText').textContent = 'Total: ' + totalText(rows);
+  }
+  function renderP2() {
+    $('p2Table').tBodies[0].replaceChildren(...draft.pricing.map(priceRow)); recalc(); showIssues('issues2');
+    $('btnGenerate').disabled = issues.length > 0;
+  }
+  // a linked row's Frequency is the annexure's single shared Frequency: push it to Preview 1 state on save
+  function syncSharedFrequency(body) {
+    (body.pricing || []).forEach((p) => { if (p.entry_id) { const e = body.entries.find((x) => x.id === p.entry_id); if (e) e.frequency = p.frequency; } });
+  }
+
+  // ---------- actions ----------
+  $('btnUpload').addEventListener('click', async () => {
+    const f = $('xlsx').files[0];
+    if (!f) return setStatus('uploadStatus', 'Choose the filled .xlsx first.', 'error');
+    if (!/\.xlsx$/i.test(f.name)) return setStatus('uploadStatus', 'Only .xlsx files are accepted.', 'error');
+    if (f.size > 5 * 1024 * 1024) return setStatus('uploadStatus', 'The file is larger than 5 MB.', 'error');
+    setStatus('uploadStatus', 'Reading the workbook…', 'hint'); $('btnUpload').disabled = true;
+    try {
+      const fd = new FormData(); fd.append('file', f);
+      const r = await (await api('upload-excel/', { method: 'POST', body: fd })).json();
+      draftId = r.draft_id; draft = r.draft; issues = r.issues; sessionStorage.setItem('css_draft', draftId);
+      setStatus('uploadStatus', ''); renderP1(); step(1);
+    } catch (e) { setStatus('uploadStatus', e.message, 'error'); } finally { $('btnUpload').disabled = false; }
+  });
+  $('btnNext').addEventListener('click', async () => {
+    try { await save(); draft.pricing = draft.pricing; renderP1(); renderP2(); step(2); } catch (e) { setStatus('uploadStatus', e.message, 'error'); }
+  });
+  $('btnBack').addEventListener('click', async () => {
+    const body = collect(); syncSharedFrequency(body);
+    try { const r = await (await api('draft/' + draftId, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+          draft = r.draft; issues = r.issues; renderP1(); step(1); } catch (e) { setStatus('genStatus', e.message, 'error'); }
+  });
+  $('btnAddRow').addEventListener('click', () => {
+    $('p2Table').tBodies[0].append(priceRow({ entry_id: null, title: '', quantity: '', frequency: 'One Time', cost: '' }, document.querySelectorAll('#p2Table tbody tr').length));
+    recalc();
+  });
+  $('btnRestart').addEventListener('click', async () => {
+    if (draftId) { try { await api('draft/' + draftId, { method: 'DELETE' }); } catch (e) {} }
+    sessionStorage.removeItem('css_draft'); draftId = null; $('xlsx').value = ''; step(0);
+  });
+  $('btnGenerate').addEventListener('click', async () => {
+    const body = collect(); syncSharedFrequency(body);
+    const fd = new FormData(); fd.append('edits_json', JSON.stringify(body));
+    const logo = $('logo').files[0]; if (logo) fd.append('client_logo', logo);
+    setStatus('genStatus', 'Generating… AI-written annexures can take 20–40 seconds each.', 'hint'); $('btnGenerate').disabled = true;
+    try {
+      const resp = await api('draft/' + draftId + '/generate/', { method: 'POST', body: fd });
+      const blob = await resp.blob(); const url = URL.createObjectURL(blob);
+      const cd = resp.headers.get('Content-Disposition') || ''; const m = /filename\*?=(?:UTF-8'')?"?([^";]+)/i.exec(cd);
+      const a = h('a', { href: url, download: m ? decodeURIComponent(m[1]) : 'CSS_Proposal.docx' }); document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      const lint = resp.headers.get('X-Proposal-Lint-Errors');
+      setStatus('genStatus', lint ? 'Downloaded, but the document check reported: ' + lint : 'Proposal downloaded.', lint ? 'error' : 'success');
+      const pdfInfo = resp.headers.get('X-Proposal-Pdf') || '';
+      const link = $('pdfLink'); link.replaceChildren();
+      if (pdfInfo && !pdfInfo.startsWith('not verified')) {
+        link.append('Layout checked (' + pdfInfo + '). ', h('a', { href: base + 'draft/' + draftId + '/download/pdf', text: 'Download the PDF proof' }));
+      } else if (pdfInfo) {
+        link.append('Page layout was not checked on this server (' + pdfInfo + '). Please review the Word file before sending it.');
+      }
+    } catch (e) { setStatus('genStatus', e.message, 'error'); } finally { $('btnGenerate').disabled = issues.length > 0; }
+  });
+
+  // resume after a refresh
+  const saved = sessionStorage.getItem('css_draft');
+  if (saved) api('draft/' + saved).then((r) => r.json()).then((r) => {
+    draftId = r.draft_id; draft = r.draft; issues = r.issues; renderP1(); step(1);
+  }).catch(() => sessionStorage.removeItem('css_draft'));
+})();
+</script>
+</body>
+</html>

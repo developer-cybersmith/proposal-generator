@@ -216,18 +216,74 @@ def check_run_formatting(doc) -> list[Finding]:
     return findings
 
 
+def check_final_section(doc) -> list[Finding]:
+    """The body must end with section properties, or Word falls back to application defaults."""
+    if doc.element.body.find(qn("w:sectPr")) is None:
+        return [Finding("error", "missing_final_section",
+                        "the document has no closing section properties (page size/margins undefined)")]
+    return []
+
+
+def check_contents_has_no_phantom_entries(doc) -> list[Finding]:
+    """Every fixed Contents entry must have a matching heading in the body."""
+    paragraphs = doc.paragraphs
+    start = next((i for i, p in enumerate(paragraphs) if p.text.strip() == "Contents"), None)
+    if start is None:
+        return []
+    entries, end = [], start
+    for i in range(start + 1, len(paragraphs)):
+        t = paragraphs[i].text
+        if "\t" in t and t.strip():
+            entries.append(t.split("\t")[0].strip())
+            end = i
+        elif paragraphs[i].style is not None and paragraphs[i].style.name.lower().startswith("heading") and t.strip():
+            break
+    body = {p.text.strip().lower() for p in paragraphs[end + 1:] if "\t" not in p.text}
+    fixed = {"introduction", "our understanding of your requirement", "methodology overview",
+             "vulnerability assessment methodology", "proposed timelines & project management", "team overview"}
+    return [Finding("error", "contents_entry_without_heading", f"Contents lists {e!r} but the body has no such heading")
+            for e in entries if e.lower() in fixed and e.lower() not in body]
+
+
+def check_package(path: str | Path) -> list[Finding]:
+    """OOXML package checks that Microsoft Word is strict about."""
+    import zipfile
+    from lxml import etree
+    findings: list[Finding] = []
+    try:
+        with zipfile.ZipFile(path) as z:
+            if "docProps/core.xml" in z.namelist():
+                root = etree.fromstring(z.read("docProps/core.xml"))
+                core_ns = "http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+                for tag in ("lastModifiedBy", "revision", "keywords", "category", "contentStatus", "lastPrinted"):
+                    for el in root.iter():
+                        local = etree.QName(el).localname
+                        if local == tag and etree.QName(el).namespace != core_ns:
+                            findings.append(Finding("error", "core_properties_invalid",
+                                                    f"docProps/core.xml: <{tag}> is in namespace "
+                                                    f"{etree.QName(el).namespace!r}; Word rejects the file as corrupt"))
+    except (zipfile.BadZipFile, etree.XMLSyntaxError, KeyError) as exc:
+        findings.append(Finding("error", "package_unreadable", f"{type(exc).__name__}: {exc}"))
+    return findings
+
+
 CHECKS = (
     check_annexure_numbering,
     check_toc_lists_all_annexures,
+    check_contents_has_no_phantom_entries,
     check_blank_spacing,
+    check_final_section,
     check_tables_within_width,
     check_run_formatting,
 )
 
 
 def lint_docx(path_or_doc) -> LintReport:
-    doc = Document(str(path_or_doc)) if isinstance(path_or_doc, (str, Path)) else path_or_doc
+    is_path = isinstance(path_or_doc, (str, Path))
+    doc = Document(str(path_or_doc)) if is_path else path_or_doc
     report = LintReport()
+    if is_path:
+        report.findings.extend(check_package(path_or_doc))
     for check in CHECKS:
         report.findings.extend(check(doc))
     return report

@@ -45,6 +45,23 @@ async function until(fn, label, ms = 20000) { const t = Date.now(); while (Date.
   const MODE = process.argv[4] || 'edit';
   const rows = [...document.querySelectorAll('#p1Table tbody tr')];
   check('Preview 1 lists the in-scope annexures', rows.length >= 2, rows.length + ' rows');
+  if (MODE === 'generate-ai') {
+    // a workbook with AI-written annexures: the user confirms the sector on Preview 1 (REAL OpenAI is called)
+    check('AI panel is shown because an annexure has no template', !document.getElementById('aiPanel').classList.contains('hidden'));
+    check('Generate is blocked until the sector is given', /Sector is required/.test(document.getElementById('issues1').textContent));
+    check('duration was pre-filled from the Excel dates', document.getElementById('aiDuration').value.length > 0, document.getElementById('aiDuration').value);
+    const sector = document.getElementById('aiSector'); sector.value = 'Banking, Financial Services and Insurance (BFSI)';
+    sector.dispatchEvent(new window.Event('change'));
+    document.getElementById('btnNext').click();
+    await until(() => !document.getElementById('screen-p2').classList.contains('hidden'), 'Preview 2 shown');
+    await until(() => !document.getElementById('btnGenerate').disabled, 'Generate enabled once the sector is set');
+    check('Generate becomes enabled after the sector is entered', true);
+    document.getElementById('btnGenerate').click();
+    await until(() => /downloaded|check reported/i.test(document.getElementById('genStatus').textContent), 'generation finished', 240000);
+    const st = document.getElementById('genStatus').textContent;
+    check('AI proposal generated and handed to the browser', /Proposal downloaded/.test(st) && downloaded && downloaded.size > 100000, st + ' | ' + (downloaded ? downloaded.size + ' bytes' : 'no blob'));
+    const bad = results.filter((r) => !r[0]); console.log(`\n${results.length - bad.length}/${results.length} UI checks passed`); process.exit(bad.length ? 1 : 0);
+  }
   if (MODE === 'generate') {
     check('Generate is enabled only when nothing blocks it', true);
     document.getElementById('btnNext').click();

@@ -381,7 +381,7 @@ The spec describes `Annexures 2.docx` (11 annexures, 1 section, 1 in margins). O
 | 1 Tokens, lint, parser, mapping, fixtures to D30–D33 | Done | 137 fixtures regenerated; parser equals the reference parser on all of them (SaaS 3/12 and Web 6/23 verified) |
 | 2 Upload, drafts, Preview 1 and 2 | Done | API tests; the real page driven in jsdom: 19/19 edit checks and 6/6 generate checks |
 | 3 Count/Frequency, pricing table, numbering | Done | Word renders; Design Sample Gate pages inspected as images |
-| 4 AI with Excel context, retry, validation | Done, **mocked only** | Retry, failure (HTTP 502), heading and Count override tested with a fake client; real OpenAI not exercised |
+| 4 AI with Excel context, retry, validation | Done; **real OpenAI verified locally** | Retry, failure (HTTP 502), heading and Count override tested with a fake client; then 3 real `gpt-4.1` generations (Excel and manual flows) and the review page driven end to end with an AI-written annexure (8/8 checks) |
 | 5 Rate limits, hardening, PDF, blank-page check | Done, **Word-verified** | LibreOffice not installed here (install was stopped for low memory), so Microsoft Word was the engine |
 | Track B Specification applied | Done except brand-owner items | Handoff §15; body of every generated proposal has 0 lint errors and 0 warnings |
 
@@ -390,4 +390,6 @@ The spec describes `Annexures 2.docx` (11 annexures, 1 section, 1 in margins). O
 
 **Defects in the original generator found and fixed along the way** (all Word-verified, all tested): files Word reported as corrupt, a company name with `&` corrupting the proposal, blank pages, a missing closing section, wrong and phantom Contents entries, the clipped cover reference. Details: handoff §14.5.
 
-**Still open (needs you):** a real filled client Excel; the brand-owner items in handoff §15; LibreOffice on Railway and real OpenAI output are unverified; nothing is deployed.
+**Local end-to-end check with the real key** (root `app.py`, real login, real OpenAI, Word rendering): login gate (anonymous 302/401, wrong password 401, correct password 303, logout closes it); Excel flow with two AI annexures (27 pages, no blank pages, lint 0/0); manual flow with one AI annexure (16 pages, no blank pages, lint 0/0); the review page in jsdom: 6/6 (known-only) and 8/8 (with AI, sector gate, pre-filled duration).
+
+**Still open (needs you):** a real filled client Excel; the brand-owner items in handoff §15; LibreOffice on Railway is unverified; nothing is deployed.

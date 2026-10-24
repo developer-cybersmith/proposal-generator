@@ -410,11 +410,11 @@ Found by rendering real output in Microsoft Word; all are covered by tests.
 
 | Check | Status |
 |---|---|
-| Test suite | **203 tests pass** in a fresh virtualenv built only from `requirements.txt` (the original 55 regression tests are among them). Run from `Automation/backend`: `python -m pytest tests -q`. |
+| Test suite | **204 tests pass** (a fresh virtualenv gave 203 before the key-priority test was added) built only from `requirements.txt` (the original 55 regression tests are among them). Run from `Automation/backend`: `python -m pytest tests -q`. |
 | Real layout in **Microsoft Word** | Verified here: every generated scenario opens in Word, has no blank pages, and its Contents numbers equal the measured pages; Word's own TOC update reproduces the same numbers. Tests that need an engine skip themselves when none is installed. |
 | Dummy workbook acceptance | `python css_scoping_testset/acceptance_run.py --engine word` (see the result in the plan, section 17). |
 | **LibreOffice on Railway** | **Not verified.** Configuration is in `nixpacks.toml`; LibreOffice could not be installed on the development machine, and pagination may differ slightly from Word (Corbel is a Microsoft font). Word remains the final authority. Without LibreOffice the app still works and reports `X-Proposal-Pdf: not verified`. |
-| **Real OpenAI output** | **Not verified.** All AI paths are tested with a fake client (structure, retry, failure, numbering, Count override). Run one real generation before relying on it. |
+| **Real OpenAI output** | **Verified locally with the real key** (`gpt-4.1`): 3 generations (2 in the Excel flow, 1 in the manual flow), about 5k tokens each, no retry needed; the annexures came back in the required structure, were numbered by position, passed the lint and rendered in Word with no blank pages. Retry/failure paths are covered with a fake client. Content accuracy still needs a human read: the model can add plausible specifics (e.g. an attempt count) that are not in the Excel. |
 | **Deployment to Railway** | **Not performed.** Set `PROPOSAL_ACCESS_PASSWORD`, `SESSION_SECRET_KEY`, `OPENAI_API_KEY` and `TEST_MODE=false`; see `.env.example`. |
 | A real filled client Excel | **Still needed.** Everything above was proven with generated dummy workbooks. |
 

@@ -28,6 +28,10 @@
   button.secondary { background: var(--line); }
   button.small { padding: 5px 9px; font-size: 13px; }
   button.danger { background: #7a2230; }
+  a.btnlink { display: inline-block; background: var(--purple); color: #fff; padding: 10px 16px; border-radius: 4px; text-decoration: none; font-size: 15px; }
+  a.btnlink.secondary { background: var(--line); }
+  a.btnlink:hover { filter: brightness(1.12); }
+  iframe.preview { width: 100%; height: 78vh; border: 0; background: #fff; display: block; }
   .hidden { display: none; }
   .row { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-bottom: 12px; }
   .table-wrap { overflow-x: auto; }
@@ -60,7 +64,7 @@
   <h1>Proposal from Scoping Excel</h1>
   <p class="hint" style="text-align:center">CyberSmithSECURE &mdash; upload the filled pre-engagement sheet, review, then generate.
      <a href="../">Back to the manual form</a></p>
-  <div class="steps" id="steps"><span id="st0" class="on">1 Upload</span><span id="st1">2 Annexures</span><span id="st2">3 Conclusion &amp; Pricing</span></div>
+  <div class="steps" id="steps"><span id="st0" class="on">1 Upload</span><span id="st1">2 Annexures</span><span id="st2">3 Conclusion &amp; Pricing</span><span id="st3">4 Final preview</span></div>
 
   <!-- Upload -->
   <section id="screen-upload">
@@ -123,9 +127,28 @@
     <div style="margin-top:10px"><button class="secondary small" id="btnAddRow">+ Add row</button></div>
     <div id="issues2" class="issues hidden"></div>
     <p id="genStatus" role="status"></p>
-    <p id="pdfLink" class="hint"></p>
+    <p class="hint">Building takes about 30 seconds (longer with AI-written annexures). You will see the real document
+       before anything is downloaded.</p>
     <div class="actions"><button class="secondary" id="btnBack">&larr; Back</button>
-      <button id="btnGenerate">Generate proposal</button></div>
+      <button id="btnGenerate">Build final document</button></div>
+  </section>
+
+  <!-- Preview 3: the real document -->
+  <section id="screen-p3" class="hidden">
+    <h2>Final preview &mdash; the document you will download</h2>
+    <p id="p3Summary" role="status"></p>
+    <div id="p3Warn" class="issues hidden"></div>
+    <div id="p3Frame" class="panel" style="padding:0;overflow:hidden"></div>
+    <p class="hint" id="p3Note"></p>
+    <div class="actions">
+      <button class="secondary" id="btnEdit">&larr; Back to edit</button>
+      <span style="display:flex;gap:10px;flex-wrap:wrap">
+        <a id="dlPdf" class="btnlink secondary hidden" download>&darr; Download PDF</a>
+        <a id="dlDocx" class="btnlink" download>&darr; Download Word (.docx, editable)</a>
+      </span>
+    </div>
+    <p class="hint">The Word file is a normal, fully editable document: change any text, type the prices, add pages. If Word asks to
+       update fields when you open it, choose <b>Yes</b>: it refreshes the Contents page numbers and changes no text.</p>
   </section>
 </div>
 
@@ -148,8 +171,8 @@
   }
   function setStatus(id, msg, cls) { const el = $(id); el.textContent = msg || ''; el.className = cls || ''; }
   function step(n) {
-    ['screen-upload', 'screen-p1', 'screen-p2'].forEach((s, i) => $(s).classList.toggle('hidden', i !== n));
-    [0, 1, 2].forEach((i) => $('st' + i).classList.toggle('on', i === n));
+    ['screen-upload', 'screen-p1', 'screen-p2', 'screen-p3'].forEach((s, i) => $(s).classList.toggle('hidden', i !== n));
+    [0, 1, 2, 3].forEach((i) => $('st' + i).classList.toggle('on', i === n));
   }
   async function api(path, opts) {
     const resp = await fetch(base + path, Object.assign({ credentials: 'same-origin' }, opts));
@@ -337,27 +360,44 @@
     if (draftId) { try { await api('draft/' + draftId, { method: 'DELETE' }); } catch (e) {} }
     sessionStorage.removeItem('css_draft'); draftId = null; $('xlsx').value = ''; step(0);
   });
+  // Build the real document once, then show it (Preview 3) before anything is downloaded.
   $('btnGenerate').addEventListener('click', async () => {
     const body = collect(); syncSharedFrequency(body);
     const fd = new FormData(); fd.append('edits_json', JSON.stringify(body));
     const logo = $('logo').files[0]; if (logo) fd.append('client_logo', logo);
-    setStatus('genStatus', 'Generating… AI-written annexures can take 20–40 seconds each.', 'hint'); $('btnGenerate').disabled = true;
+    setStatus('genStatus', 'Building the document\u2026 AI-written annexures take 20\u201340 seconds each, the layout check about 30 more.', 'hint');
+    $('btnGenerate').disabled = true;
     try {
-      const resp = await api('draft/' + draftId + '/generate/', { method: 'POST', body: fd });
-      const blob = await resp.blob(); const url = URL.createObjectURL(blob);
-      const cd = resp.headers.get('Content-Disposition') || ''; const m = /filename\*?=(?:UTF-8'')?"?([^";]+)/i.exec(cd);
-      const a = h('a', { href: url, download: m ? decodeURIComponent(m[1]) : 'CSS_Proposal.docx' }); document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-      const lint = resp.headers.get('X-Proposal-Lint-Errors');
-      setStatus('genStatus', lint ? 'Downloaded, but the document check reported: ' + lint : 'Proposal downloaded.', lint ? 'error' : 'success');
-      const pdfInfo = resp.headers.get('X-Proposal-Pdf') || '';
-      const link = $('pdfLink'); link.replaceChildren();
-      if (pdfInfo && !pdfInfo.startsWith('not verified')) {
-        link.append('Layout checked (' + pdfInfo + '). ', h('a', { href: base + 'draft/' + draftId + '/download/pdf', text: 'Download the PDF proof' }));
-      } else if (pdfInfo) {
-        link.append('Page layout was not checked on this server (' + pdfInfo + '). Please review the Word file before sending it.');
-      }
+      const r = await (await api('draft/' + draftId + '/build/', { method: 'POST', body: fd })).json();
+      showFinalPreview(r);
+      setStatus('genStatus', '');
     } catch (e) { setStatus('genStatus', e.message, 'error'); } finally { $('btnGenerate').disabled = issues.length > 0; }
   });
+
+  function showFinalPreview(r) {
+    const problems = [];
+    if (r.blank_pages && r.blank_pages.length) problems.push('Blank page(s) found: ' + r.blank_pages.join(', ') + '.');
+    (r.lint_errors || []).forEach((m) => problems.push(m));
+    $('p3Summary').className = problems.length ? 'error' : 'success';
+    $('p3Summary').textContent = r.layout_checked
+      ? 'Built: ' + r.pages + ' pages, layout checked with ' + (r.engine === 'word' ? 'Microsoft Word' : 'LibreOffice') + (problems.length ? '.' : ', no blank pages.')
+      : 'Built. The page layout could not be checked on this server (' + r.note + ').';
+    $('p3Warn').classList.toggle('hidden', problems.length === 0);
+    $('p3Warn').replaceChildren(h('strong', { text: 'Please review before sending:' }), h('ul', {}, problems.map((m) => h('li', { text: m }))));
+    const frame = $('p3Frame'); frame.replaceChildren();
+    if (r.pdf_url) {
+      frame.append(h('iframe', { class: 'preview', title: 'Final document preview', src: base + r.pdf_url + '?inline=1' }));
+      $('p3Note').textContent = 'This is the exact document that will be downloaded. Scroll through every page; use Back to edit if anything is wrong.';
+    } else {
+      frame.append(h('p', { style: 'padding:16px', class: 'hint', text: 'A page preview is not available on this server (no PDF engine). The Word file is ready: open it to check the pages before sending.' }));
+      $('p3Note').textContent = '';
+    }
+    const docx = $('dlDocx'); docx.href = base + r.docx_url; docx.setAttribute('download', r.docx_name);
+    const pdf = $('dlPdf'); pdf.classList.toggle('hidden', !r.pdf_url);
+    if (r.pdf_url) { pdf.href = base + r.pdf_url; pdf.setAttribute('download', r.pdf_name); }
+    step(3);
+  }
+  $('btnEdit').addEventListener('click', () => { $('p3Frame').replaceChildren(); step(2); });
 
   // resume after a refresh
   const saved = sessionStorage.getItem('css_draft');

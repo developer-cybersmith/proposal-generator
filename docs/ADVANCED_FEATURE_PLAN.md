@@ -84,7 +84,12 @@ Today the user ticks annexures by hand. We add a second way in: **upload the sco
 | D44 | *(derived)* Negative Quantity cells are skipped with a warning (`negative_quantity_skipped`), extending D33. |
 | D45 | *(refines D18)* "Total cost" is optional **only in the Excel flow**; the manual form keeps requiring it (an existing regression test pins that). |
 | D46 | *(derived)* Rate limits per client IP: 10 uploads and 5 generations per minute by default (`RATE_LIMIT_UPLOAD`, `RATE_LIMIT_GENERATE`); process-local. |
-| D47 | *(derived)* PDF engine: LibreOffice by default when installed (Railway), Microsoft Word only by explicit opt-in (`PROPOSAL_PDF_ENGINE=word`, development machines). |
+| D47 | *(derived)* PDF engine: LibreOffice by default when installed (Railway). *(Amended by D51.)* |
+| D48 | **Final preview step (Preview 3).** After Preview 2 the page builds the real document once ("Build final document") and shows it (PDF in a frame) before anything is downloaded. |
+| D49 | **Both files are offered:** Download Word (.docx, fully editable) and Download PDF. The preview, the Word file and the PDF are the same build; nothing is generated twice. |
+| D50 | **AI text is cached on the draft** (key = annexure request, excluding pricing and payment model), so going back to change a price or frequency and rebuilding does not call, or pay for, OpenAI again; changing what the AI is asked to write does. |
+| D51 | **PDF engine, amended:** `auto` = LibreOffice if installed, otherwise **Microsoft Word on a Windows PC that has it** (the answer to "where will people use this": a Windows PC with Word). Word renders are serialised with a lock. `PROPOSAL_PDF_ENGINE=off` disables it. |
+| D52 | **The Word file must be editable.** The pricing table sat in a `contentLocked` content control (a Google Docs export tag), so Word refused any typing in it; content controls are now unwrapped. Verified by having Word type into the table, edit the body, update the Contents and save. |
 
 ---
 

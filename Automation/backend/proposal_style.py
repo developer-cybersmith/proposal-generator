@@ -721,10 +721,34 @@ def wrap_contents_in_toc_field(doc) -> bool:
     return True
 
 
+# =============================================================================== editability
+def unlock_content_controls(doc) -> int:
+    """Unwrap every content control (w:sdt) so no part of the document is locked against editing.
+
+    The template (a Google Docs export) wraps the pricing table in a content control marked
+    ``contentLocked``: Word then refuses any typing inside the table ("You are not allowed to edit
+    this selection because it is protected"), so prices could not be filled in afterwards. The
+    controls hold nothing the proposal needs, so their content is kept and the wrapper removed.
+    Returns how many were unwrapped.
+    """
+    unwrapped = 0
+    for sdt in list(doc.element.body.iter(_w("w:sdt"))):
+        parent = sdt.getparent()
+        content = sdt.find(_w("w:sdtContent"))
+        if parent is None or content is None:
+            continue
+        for child in list(content):
+            sdt.addprevious(child)
+        parent.remove(sdt)
+        unwrapped += 1
+    return unwrapped
+
+
 # =============================================================================== entry point
 def apply_specification(doc) -> dict[str, int]:
     """Normalise the assembled document to the specification. Returns counters for logging/tests."""
-    stats = {"headings": 0, "labels": 0, "body": 0, "blank_removed": 0, "tables": 0, "signature": 0}
+    stats = {"headings": 0, "labels": 0, "body": 0, "blank_removed": 0, "tables": 0, "signature": 0,
+             "unlocked": unlock_content_controls(doc)}
     define_styles(doc)
     ensure_bullet_numbering(doc)
     body = doc.element.body

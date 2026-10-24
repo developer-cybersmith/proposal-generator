@@ -566,6 +566,124 @@ def test_ai_failure_after_one_retry_is_a_clear_error(client, fixtures, fake_ai):
     assert len(fake_ai.calls) == 2                                          # exactly one retry, no loop
 
 
+# ============================================================================ final preview + downloads
+def _fake_pdf_check(tmp_path, pages=3, blank=()):
+    """Stands in for a real PDF engine: a genuine PDF file plus the PdfCheck the engine would return."""
+    import pymupdf
+    import proposal_pdf
+    engine_dir = tmp_path / "engine_output"               # not the draft store's folder (its cleanup removes orphans)
+    engine_dir.mkdir(exist_ok=True)
+    pdf = engine_dir / "fake.pdf"
+    d = pymupdf.open()
+    for i in range(pages):
+        d.new_page().insert_text((72, 100), f"Page {i + 1}", fontsize=12)
+    d.save(str(pdf))
+    d.close()
+    return proposal_pdf.PdfCheck(engine="word", pdf_path=pdf, page_count=pages, blank_pages=list(blank))
+
+
+def test_build_without_a_pdf_engine_still_gives_an_editable_word_file(client, fixtures):
+    draft_id = _full_draft_id(client, fixtures, "02_known_only")
+    r = client.post(f"/draft/{draft_id}/build/")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] and body["layout_checked"] is False and body["pdf_url"] is None and body["pages"] is None
+    assert body["docx_url"] == f"draft/{draft_id}/download/docx" and body["docx_name"].endswith(".docx")
+    assert body["lint_errors"] == []
+    docx = client.get(f"/{body['docx_url']}")
+    assert docx.status_code == 200 and "wordprocessingml" in docx.headers["content-type"]
+    assert "attachment" in docx.headers["content-disposition"]
+    doc = Document(io.BytesIO(docx.content))                              # opens, so it is a real document
+    # editable: nothing locks, protects or marks it read-only
+    import zipfile
+    with zipfile.ZipFile(io.BytesIO(docx.content)) as z:
+        settings = z.read("word/settings.xml").decode("utf8")
+    assert "documentProtection" not in settings and "readOnlyRecommended" not in settings and "writeProtection" not in settings
+    assert len([p for p in doc.paragraphs if re.match(r"^Annexure \d+:", p.text.strip())]) == 5
+    assert client.get(f"/draft/{draft_id}/download/pdf").status_code == 404      # no engine: nothing to preview
+
+
+def test_build_with_an_engine_offers_the_pdf_preview_and_both_downloads(client, fixtures, tmp_path, monkeypatch):
+    check = _fake_pdf_check(tmp_path, pages=7)
+    monkeypatch.setattr(gen, "finalize_with_render", lambda docx, keys, company="": check)
+    draft_id = _full_draft_id(client, fixtures, "02_known_only")
+    body = client.post(f"/draft/{draft_id}/build/").json()
+    assert body["layout_checked"] and body["engine"] == "word" and body["pages"] == 7 and body["blank_pages"] == []
+    assert body["pdf_url"] == f"draft/{draft_id}/download/pdf" and body["pdf_name"].endswith(".pdf")
+    pdf = client.get(f"/{body['pdf_url']}")
+    assert pdf.status_code == 200 and pdf.headers["content-type"] == "application/pdf" and pdf.content[:4] == b"%PDF"
+    assert "attachment" in pdf.headers["content-disposition"]                    # download
+    shown = client.get(f"/{body['pdf_url']}?inline=1")                            # preview frame
+    assert "inline" in shown.headers["content-disposition"] and shown.content == pdf.content
+    # the preview is the downloaded file: the Word and PDF belong to the same build
+    assert client.get(f"/{body['docx_url']}").status_code == 200
+    inline_docx = client.get(f"/{body['docx_url']}?inline=1")
+    assert "attachment" in inline_docx.headers["content-disposition"]            # Word is never shown inline
+
+
+def test_blank_pages_found_by_the_check_are_reported_to_the_page(client, fixtures, tmp_path, monkeypatch):
+    monkeypatch.setattr(gen, "finalize_with_render", lambda docx, keys, company="": _fake_pdf_check(tmp_path, 4, blank=[3]))
+    draft_id = _full_draft_id(client, fixtures, "09_minimal")
+    body = client.post(f"/draft/{draft_id}/build/").json()
+    assert body["blank_pages"] == [3]
+
+
+def test_downloads_belong_to_one_draft_and_expire_with_it(client, fixtures):
+    a = _full_draft_id(client, fixtures, "09_minimal")
+    b = _full_draft_id(client, fixtures, "02_known_only")
+    client.post(f"/draft/{a}/build/")
+    assert client.get(f"/draft/{a}/download/docx").status_code == 200
+    assert client.get(f"/draft/{b}/download/docx").status_code == 404            # b was never built
+    assert client.get(f"/draft/{a}/download/exe").status_code == 404             # only docx and pdf exist
+    client.delete(f"/draft/{a}")
+    assert client.get(f"/draft/{a}/download/docx").status_code == 404            # deleted with the draft
+
+
+def test_build_is_blocked_by_the_same_issues_as_generate(client, fixtures):
+    draft_id = upload(client, sample(fixtures, "11_placeholders_untouched")).json()["draft_id"]
+    r = client.post(f"/draft/{draft_id}/build/")
+    assert r.status_code == 400 and "Reference number is required" in r.json()["detail"]
+
+
+def test_a_rebuild_reuses_the_ai_text_and_a_scope_change_regenerates_it(client, fixtures, fake_ai):
+    draft_id = _full_draft_id(client, fixtures, "04_mixed_known_and_custom", entries=[{"id": "red_team", "include": False}], **AI_FIELDS)
+    assert client.post(f"/draft/{draft_id}/build/").status_code == 200
+    assert len(fake_ai.calls) == 1
+    # the user goes back, types a price, builds again: no new (paid) AI call
+    pricing = client.get(f"/draft/{draft_id}").json()["draft"]["pricing"]
+    pricing[0]["cost"] = "50000"
+    assert client.post(f"/draft/{draft_id}/build/", data={"edits_json": json.dumps({"pricing": pricing})}).status_code == 200
+    assert len(fake_ai.calls) == 1
+    # changing what the AI is asked to write does regenerate it
+    seg = next(e for e in client.get(f"/draft/{draft_id}").json()["draft"]["entries"] if e["id"] == "network_segmentation")
+    edit = {"entries": [{"id": "network_segmentation", "scope": seg["scope"] + " Include the OT zone as well."}]}
+    assert client.post(f"/draft/{draft_id}/build/", data={"edits_json": json.dumps(edit)}).status_code == 200
+    assert len(fake_ai.calls) == 2
+    # the stored AI texts are never sent to the browser
+    assert "ai_cache" not in client.get(f"/draft/{draft_id}").json()["draft"]
+
+
+def test_the_page_has_the_final_preview_step_and_both_download_buttons(client):
+    html = client.get("/excel/").text
+    for needle in ("4 Final preview", 'id="screen-p3"', 'id="dlDocx"', 'id="dlPdf"', "Build final document", "/build/", "?inline=1"):
+        assert needle in html, needle
+
+
+def test_pdf_engine_choice_prefers_libreoffice_then_word_then_none(monkeypatch):
+    import proposal_pdf as pdf
+    monkeypatch.setenv("PROPOSAL_PDF_ENGINE", "auto")
+    monkeypatch.setattr(pdf, "find_soffice", lambda: "/usr/bin/soffice")
+    monkeypatch.setattr(pdf, "word_available", lambda: True)
+    assert pdf.available_engine() == "libreoffice"
+    monkeypatch.setattr(pdf, "find_soffice", lambda: None)
+    assert pdf.available_engine() == "word"                                        # a Windows PC with Word
+    monkeypatch.setattr(pdf, "word_available", lambda: False)
+    assert pdf.available_engine() is None
+    monkeypatch.setattr(pdf, "word_available", lambda: True)
+    monkeypatch.setenv("PROPOSAL_PDF_ENGINE", "off")
+    assert pdf.available_engine() is None
+
+
 def test_dedicated_proposal_key_and_model_take_priority(client, fixtures, fake_ai, monkeypatch):
     seen = {}
     real_init = FakeOpenAI.__init__

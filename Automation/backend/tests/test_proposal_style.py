@@ -196,6 +196,36 @@ def test_ai_annexure_bullets_are_real_list_items():
     assert _text(heading) == "Annexure 1: X"                                    # numbered by position, not by the model
 
 
+# ----------------------------------------------------------------------------- editability
+def test_nothing_in_the_document_is_locked_against_editing(proposal):
+    """The pricing table used to sit in a contentLocked content control: Word refused to let anyone type in it."""
+    import zipfile
+    doc = Document(str(proposal))
+    assert list(doc.element.body.iter(qn("w:sdt"))) == [] and list(doc.element.body.iter(qn("w:lock"))) == []
+    with zipfile.ZipFile(proposal) as z:
+        for name in z.namelist():
+            if name.startswith("word/") and name.endswith(".xml"):
+                text = z.read(name).decode("utf8", "ignore")
+                for marker in ("<w:lock ", "documentProtection", "writeProtection", "readOnlyRecommended", "<w:permStart"):
+                    assert marker not in text, f"{marker} found in {name}"
+    # the pricing table itself is still there, now directly in the body
+    assert gen._find_assessment_pricing_table(doc.element) is not None
+
+
+def test_unlock_keeps_the_content_of_a_locked_control():
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+    doc = Document()
+    body = doc.element.body
+    sect = body.find(qn("w:sectPr"))
+    sdt = parse_xml(f'<w:sdt {nsdecls("w")}><w:sdtPr><w:lock w:val="contentLocked"/></w:sdtPr>'
+                    f'<w:sdtContent><w:p><w:r><w:t>kept text</w:t></w:r></w:p></w:sdtContent></w:sdt>')
+    sect.addprevious(sdt)
+    assert style.unlock_content_controls(doc) == 1
+    assert list(body.iter(qn("w:sdt"))) == [] and [p.text for p in doc.paragraphs] == ["kept text"]
+    assert style.unlock_content_controls(doc) == 0                        # idempotent
+
+
 # ----------------------------------------------------------------------------- idempotence and text preservation
 def test_apply_specification_is_idempotent_and_keeps_the_text(proposal):
     doc = Document(str(proposal))

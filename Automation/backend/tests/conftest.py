@@ -19,6 +19,13 @@ sys.path.insert(0, str(BACKEND))
 TESTSET = BACKEND.parents[1] / "css_scoping_testset"
 
 
+@pytest.fixture(autouse=True)
+def _no_pdf_engine_by_default(monkeypatch):
+    """Tests must not start Word/LibreOffice implicitly (slow, machine-dependent).
+    Tests that verify real rendering opt in with monkeypatch.setenv('PROPOSAL_PDF_ENGINE', ...)."""
+    monkeypatch.setenv("PROPOSAL_PDF_ENGINE", "off")
+
+
 @pytest.fixture(scope="session")
 def fixtures(tmp_path_factory) -> Path:
     generator = TESTSET / "generate.py"

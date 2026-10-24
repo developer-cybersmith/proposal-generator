@@ -30,6 +30,27 @@ async function until(fn, label, ms = 20000) { const t = Date.now(); while (Date.
     }
     return fetch(u, Object.assign({}, opts, { body }));
   };
+
+  // Preview 3: the page must show the built document and offer both downloads (real files from the server)
+  async function checkFinalPreview(label) {
+    await until(() => !document.getElementById('screen-p3').classList.contains('hidden'), 'Final preview shown', 300000);
+    check(label + ': Final preview step is shown', true);
+    const summary = document.getElementById('p3Summary').textContent;
+    check(label + ': summary reports the layout check', /Built:/.test(summary) && !/Blank page/.test(document.getElementById('p3Warn').textContent), summary);
+    const frame = document.querySelector('#p3Frame iframe');
+    check(label + ': the PDF is shown in a frame before download', !!frame && /\/download\/pdf\?inline=1/.test(frame.getAttribute('src')), frame && frame.getAttribute('src'));
+    const docxHref = new URL(document.getElementById('dlDocx').getAttribute('href'), window.location.href).href;
+    const pdfHref = new URL(document.getElementById('dlPdf').getAttribute('href'), window.location.href).href;
+    check(label + ': both download buttons are visible', !document.getElementById('dlDocx').classList.contains('hidden') && !document.getElementById('dlPdf').classList.contains('hidden'));
+    const dx = await fetch(docxHref); const dxb = Buffer.from(await dx.arrayBuffer());
+    check(label + ': Word download is a real .docx (zip, > 100 KB, attachment)', dxb.slice(0, 2).toString() === 'PK' && dxb.length > 100000 && /attachment/.test(dx.headers.get('content-disposition') || ''), dxb.length + ' bytes');
+    const dp = await fetch(pdfHref); const dpb = Buffer.from(await dp.arrayBuffer());
+    check(label + ': PDF download is a real PDF', dpb.slice(0, 4).toString() === '%PDF' && dpb.length > 50000, dpb.length + ' bytes');
+    const inl = await fetch(pdfHref + '?inline=1');
+    check(label + ': the frame URL serves the PDF inline', /inline/.test(inl.headers.get('content-disposition') || ''));
+    require('fs').writeFileSync(process.env.UI_OUT_DOCX || 'ui_out.docx', dxb);
+    require('fs').writeFileSync(process.env.UI_OUT_PDF || 'ui_out.pdf', dpb);
+  }
   await until(() => document.getElementById('btnUpload'), 'page loaded');
   check('page loads with upload step visible', !document.getElementById('screen-upload').classList.contains('hidden'));
 
@@ -57,20 +78,18 @@ async function until(fn, label, ms = 20000) { const t = Date.now(); while (Date.
     await until(() => !document.getElementById('btnGenerate').disabled, 'Generate enabled once the sector is set');
     check('Generate becomes enabled after the sector is entered', true);
     document.getElementById('btnGenerate').click();
-    await until(() => /downloaded|check reported/i.test(document.getElementById('genStatus').textContent), 'generation finished', 240000);
-    const st = document.getElementById('genStatus').textContent;
-    check('AI proposal generated and handed to the browser', /Proposal downloaded/.test(st) && downloaded && downloaded.size > 100000, st + ' | ' + (downloaded ? downloaded.size + ' bytes' : 'no blob'));
+    await checkFinalPreview('AI proposal');
     const bad = results.filter((r) => !r[0]); console.log(`\n${results.length - bad.length}/${results.length} UI checks passed`); process.exit(bad.length ? 1 : 0);
   }
   if (MODE === 'generate') {
     check('Generate is enabled only when nothing blocks it', true);
     document.getElementById('btnNext').click();
     await until(() => !document.getElementById('screen-p2').classList.contains('hidden'), 'Preview 2 shown');
-    check('Generate button is enabled for a complete known-only workbook', !document.getElementById('btnGenerate').disabled);
+    check('Build button is enabled for a complete known-only workbook', !document.getElementById('btnGenerate').disabled);
     document.getElementById('btnGenerate').click();
-    await until(() => /downloaded|check reported/i.test(document.getElementById('genStatus').textContent), 'generation finished', 180000);
-    const st = document.getElementById('genStatus').textContent;
-    check('Generate finished and the file was handed to the browser', /Proposal downloaded/.test(st) && downloaded && downloaded.size > 100000, st + ' | ' + (downloaded ? downloaded.size + ' bytes' : 'no blob'));
+    await checkFinalPreview('Known-only proposal');
+    document.getElementById('btnEdit').click();
+    check('Back to edit returns to Preview 2 without losing the draft', !document.getElementById('screen-p2').classList.contains('hidden') && document.querySelectorAll('#p2Table tbody tr').length >= 3);
     const bad = results.filter((r) => !r[0]); console.log(`\n${results.length - bad.length}/${results.length} UI checks passed`); process.exit(bad.length ? 1 : 0);
   }
   const web = document.querySelector('#screen-p1 tr[data-entry="web_app_vapt"]');

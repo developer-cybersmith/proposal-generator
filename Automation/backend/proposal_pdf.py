@@ -6,9 +6,10 @@ A generated .docx is rendered to PDF by a real layout engine, then the PDF is an
   * the page on which each heading really lands is measured, so the Contents page numbers can be
     corrected from fact instead of the generator's line-count estimate.
 
-Engines (env PROPOSAL_PDF_ENGINE = libreoffice | word | off; default: LibreOffice if installed):
+Engines (env PROPOSAL_PDF_ENGINE = libreoffice | word | off; default "auto" = LibreOffice if installed,
+otherwise Microsoft Word on a Windows PC that has it):
   libreoffice  `soffice --headless` - used on Railway/Linux (see nixpacks.toml)
-  word         Microsoft Word through COM (Windows development machines, explicit opt-in only)
+  word         Microsoft Word through COM (Windows: exact pagination, the program the proposal is opened in)
 
 Pagination can differ slightly between engines (fonts); Microsoft Word is the final authority.
 Every function degrades gracefully: with no engine the proposal is still produced, unverified.
@@ -21,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -67,7 +69,11 @@ def available_engine() -> str | None:
         return "word" if word_available() else None
     if wanted == "libreoffice":
         return "libreoffice" if find_soffice() else None
-    return "libreoffice" if find_soffice() else None          # auto: Word is never started implicitly
+    if find_soffice():
+        return "libreoffice"
+    # auto: on a Windows PC with Microsoft Word installed, Word is the engine (it is also the program
+    # the proposal will be opened in, so the preview is exactly what the user will see)
+    return "word" if word_available() else None
 
 
 def _render_libreoffice(docx: Path, pdf: Path, timeout: int) -> None:
@@ -104,9 +110,17 @@ try {
 """
 
 
+_WORD_LOCK = threading.Lock()   # Word's COM automation is unreliable with simultaneous calls
+
+
 def _render_word(docx: Path, pdf: Path, timeout: int) -> None:
     if not word_available():
         raise RenderError("Microsoft Word is not available")
+    with _WORD_LOCK:
+        _render_word_locked(docx, pdf, timeout)
+
+
+def _render_word_locked(docx: Path, pdf: Path, timeout: int) -> None:
     started = time.time()
     env = dict(os.environ, CSS_DOCX=str(docx), CSS_PDF=str(pdf))
     try:

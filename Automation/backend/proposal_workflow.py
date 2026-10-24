@@ -415,7 +415,8 @@ def create_router(gen):
         return draft
 
     def _view(draft_id: str, draft: dict[str, Any]) -> dict[str, Any]:
-        return {"draft_id": draft_id, "draft": draft, "issues": readiness_issues(draft),
+        shown = {k: v for k, v in draft.items() if k != "ai_cache"}      # AI texts stay on the server
+        return {"draft_id": draft_id, "draft": shown, "issues": readiness_issues(draft),
                 "ttl_seconds": store.ttl}
 
     @router.get("/excel/", response_class=HTMLResponse)
@@ -464,8 +465,10 @@ def create_router(gen):
         return JSONResponse(_view(draft_id, merged))
 
     @router.get("/draft/{draft_id}/download/{kind}")
-    async def download_generated(draft_id: str, kind: str):
-        """The last generated proposal for this draft: kind = docx or pdf (the PDF proof)."""
+    async def download_generated(draft_id: str, kind: str, inline: int = 0):
+        """The last built proposal for this draft: kind = docx (editable Word file) or pdf.
+
+        ?inline=1 (pdf only) lets the page show the PDF in a frame instead of downloading it."""
         file = store.attachment(draft_id, f".{kind}")
         if file is None:
             raise HTTPException(status_code=404, detail="Nothing generated yet for this draft, or it expired.")
@@ -473,18 +476,18 @@ def create_router(gen):
                  else "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
         name = _download_name(_load(draft_id)["client"].get("name", ""), kind)
         return FileResponse(path=str(file), media_type=media, filename=name,
-                            headers={"Cache-Control": "no-store"})
+                            content_disposition_type="inline" if (inline and kind == "pdf") else "attachment",
+                            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     @router.delete("/draft/{draft_id}")
     async def delete_draft(draft_id: str):
         store.delete(draft_id)
         return {"deleted": True}
 
-    @router.post("/draft/{draft_id}/generate/", dependencies=[Depends(rate_limit("generate"))])
-    async def generate_from_draft(draft_id: str, client_logo: UploadFile | None = File(None),
-                                  edits_json: str = Form("")):
+    def _ready_draft(draft_id: str, edits_json: str) -> dict[str, Any]:
+        """Load the draft, apply the last edits that travel with the request, refuse if anything blocks."""
         draft = _load(draft_id)
-        if edits_json.strip():                                   # last edits travel with the request
+        if edits_json.strip():
             import json
             try:
                 draft = merge_edits(draft, json.loads(edits_json))
@@ -494,7 +497,42 @@ def create_router(gen):
         issues = readiness_issues(draft)
         if issues:
             raise HTTPException(status_code=400, detail=" ".join(issues))
+        return draft
+
+    @router.post("/draft/{draft_id}/generate/", dependencies=[Depends(rate_limit("generate"))])
+    async def generate_from_draft(draft_id: str, client_logo: UploadFile | None = File(None),
+                                  edits_json: str = Form("")):
+        """API clients: build and return the .docx directly."""
+        draft = _ready_draft(draft_id, edits_json)
         return await gen.generate_from_plan(draft, resolve_plan(draft), ai_inputs, client_logo, store, draft_id)
+
+    @router.post("/draft/{draft_id}/build/", dependencies=[Depends(rate_limit("generate"))])
+    async def build_final_document(draft_id: str, client_logo: UploadFile | None = File(None),
+                                   edits_json: str = Form("")):
+        """The page: build the real document once; the answer says what can be previewed and downloaded.
+
+        The Word file and (when a PDF engine exists) the PDF are kept with the draft, so the final
+        preview and both downloads are the very file that was built: nothing is generated twice.
+        """
+        draft = _ready_draft(draft_id, edits_json)
+        built = await gen.build_from_plan(draft, resolve_plan(draft), ai_inputs, client_logo, store, draft_id)
+        check, report = built["check"], built["report"]
+        pdf_ready = bool(check.verified and check.pdf_path)
+        stem = _download_name(draft["client"].get("name", ""), "docx")[:-5]
+        return JSONResponse({
+            "ok": True,
+            "docx_url": f"draft/{draft_id}/download/docx",
+            "docx_name": f"{stem}.docx",
+            "pdf_url": f"draft/{draft_id}/download/pdf" if pdf_ready else None,
+            "pdf_name": f"{stem}.pdf",
+            "layout_checked": bool(check.verified),
+            "engine": check.engine,
+            "pages": check.page_count if check.verified else None,
+            "blank_pages": list(check.blank_pages) if check.verified else [],
+            "lint_errors": [f.message for f in report.errors],
+            "lint_warnings": len(report.warnings),
+            "note": check.header_value(),
+        })
 
     return router
 

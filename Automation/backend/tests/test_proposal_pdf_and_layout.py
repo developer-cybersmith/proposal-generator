@@ -265,6 +265,39 @@ needs_engine = pytest.mark.skipif(not (pdfmod.find_soffice() or pdfmod.word_avai
                                   reason="neither LibreOffice nor Microsoft Word is installed")
 
 
+@pytest.mark.skipif(not pdfmod.word_available(), reason="Microsoft Word is not installed")
+def test_word_itself_can_edit_the_generated_document(tmp_path):
+    """The downloaded .docx must be editable in Word: type into the pricing table and the body, update the TOC."""
+    import subprocess
+    out = tmp_path / "p.docx"
+    gen.generate_proposal(company_name="Edit Co", proposal_ref="EN-E", logo_path=None, output_path=out,
+                          annexure_order=["web_app_pt", "cloud_pt"])
+    script = r"""
+$ErrorActionPreference = 'Stop'
+$word = New-Object -ComObject Word.Application
+try {
+  $word.Visible = $false; $word.DisplayAlerts = 0
+  $doc = $word.Documents.Open($env:CSS_DOCX, $false, $false)
+  if ($doc.ProtectionType -ne -1) { throw 'document is protected' }
+  $typed = $false
+  foreach ($t in $doc.Tables) { if ($t.Range.Text -match 'Cost Per Annexure') { $t.Cell(2, 5).Range.Text = '75,000'; $typed = $true } }
+  if (-not $typed) { throw 'pricing table not found' }
+  $r = $doc.Content; $null = $r.Find.Execute('CyberSmithSECURE is incorporated'); if (-not $r.Find.Found) { throw 'intro not found' }
+  $r.InsertBefore('EDITED: ')
+  $doc.TablesOfContents(1).Update()
+  $doc.Save(); $doc.Close(0); 'EDIT-OK'
+} finally { $word.Quit() }
+"""
+    env = dict(__import__("os").environ, CSS_DOCX=str(out))
+    done = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script], env=env,
+                          capture_output=True, text=True, timeout=180)
+    assert "EDIT-OK" in done.stdout, done.stdout + done.stderr
+    doc = Document(str(out))
+    assert any("EDITED: " in p.text for p in doc.paragraphs)
+    table = gen._find_assessment_pricing_table(doc.element)
+    assert "75,000" in "".join(t.text or "" for t in table.iter(qn("w:t")))
+
+
 @needs_engine
 @pytest.mark.parametrize("order", [["web_app_pt", "cloud_pt", "source_code_review"], None])
 def test_real_render_has_no_blank_pages_and_exact_contents(tmp_path, monkeypatch, order):

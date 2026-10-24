@@ -3227,11 +3227,38 @@ async def generate_proposal_endpoint(
 # ---------------------------------------------------------------------------
 # Excel-driven flow (upload -> two previews -> generate); see proposal_workflow.py
 # ---------------------------------------------------------------------------
-async def generate_from_plan(draft, plan, ai_inputs_fn, client_logo, store, draft_id) -> FileResponse:
+def _model_dict(obj) -> dict[str, Any]:
+    """pydantic model or dataclass -> plain dict."""
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    import dataclasses
+    return dataclasses.asdict(obj)
+
+
+def _ai_cache_key(company_name: str, context, annexure, slot_number: int) -> str:
+    """Identity of one AI annexure request, so a rebuild after a price/frequency edit reuses the text.
+
+    Pricing and payment model are left out on purpose: the annexure prompt forbids pricing content,
+    so changing them must not trigger (and pay for) a new generation.
+    """
+    import hashlib
+    ctx = _model_dict(context)
+    for volatile in ("custom_annexures", "commercials", "payment_model"):
+        ctx.pop(volatile, None)
+    ca = _model_dict(annexure)
+    ca.pop("key", None)                                   # random per build
+    payload = json.dumps({"c": company_name, "s": slot_number, "ctx": ctx, "ca": ca}, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+async def build_from_plan(draft, plan, ai_inputs_fn, client_logo, store, draft_id) -> dict[str, Any]:
     """Build the proposal from a reviewed draft (called by the workflow router).
 
-    AI annexures are written first (with Excel context, one automatic retry), then the document
-    is assembled through the same generate_proposal() the manual flow uses.
+    AI annexures are written first (with Excel context, one automatic retry; texts are cached on the
+    draft so a rebuild does not pay again), then the document is assembled through the same
+    generate_proposal() the manual flow uses, corrected from a real render and checked.
+    Returns {"final_path", "out_name", "check", "report", "headers"} and keeps the .docx (and the PDF
+    proof when an engine exists) with the draft for download.
     """
     tmp_dir: str | None = None
     try:
@@ -3243,12 +3270,17 @@ async def generate_from_plan(draft, plan, ai_inputs_fn, client_logo, store, draf
             _validate_ai_context(ai_context, require_total_cost=False)   # D18
             request_catalog = _make_request_catalog()
             by_key = {ca.key: ca for ca in ai_context.custom_annexures}
+            cache: dict[str, str] = draft.setdefault("ai_cache", {})
             for c in plan["customs"]:
                 ca = by_key[c["key"]]
                 slot_number = plan["ordered_keys"].index(c["key"]) + 1
-                raw_text = await generate_custom_annexure_text(
-                    company_name=company_name, context=ai_context,
-                    custom_annexure=ca, slot_number=slot_number)
+                cache_key = _ai_cache_key(company_name, ai_context, ca, slot_number)
+                raw_text = cache.get(cache_key)
+                if raw_text is None:
+                    raw_text = await generate_custom_annexure_text(
+                        company_name=company_name, context=ai_context,
+                        custom_annexure=ca, slot_number=slot_number)
+                    cache[cache_key] = raw_text
                 _register_custom_annexure(
                     catalog=request_catalog, key=c["key"], title=ca.title, toc_title=ca.title,
                     slot=slot_number,
@@ -3292,13 +3324,12 @@ async def generate_from_plan(draft, plan, ai_inputs_fn, client_logo, store, draf
             problems.append(f"blank page(s) {check.blank_pages}")
         if problems:
             headers["X-Proposal-Lint-Errors"] = "; ".join(problems).encode("ascii", "replace").decode("ascii")
-        if check.verified and check.pdf_path and store is not None:
-            store.attach(draft_id, ".pdf", check.pdf_path)       # offered as a PDF proof download
         if store is not None:
+            store.update(draft_id, draft)                        # keeps the AI texts for a cheap rebuild
             store.attach(draft_id, ".docx", final_path)
-        return FileResponse(
-            path=str(final_path), filename=out_name, headers=headers,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            if check.verified and check.pdf_path:
+                store.attach(draft_id, ".pdf", check.pdf_path)   # the PDF proof / final preview
+        return {"final_path": final_path, "out_name": out_name, "check": check, "report": report, "headers": headers}
     except HTTPException:
         raise
     except ValueError as exc:
@@ -3309,6 +3340,14 @@ async def generate_from_plan(draft, plan, ai_inputs_fn, client_logo, store, draf
     finally:
         if tmp_dir and os.path.isdir(tmp_dir):
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+async def generate_from_plan(draft, plan, ai_inputs_fn, client_logo, store, draft_id) -> FileResponse:
+    """Build the proposal and return the .docx directly (API clients; the page uses build_from_plan)."""
+    built = await build_from_plan(draft, plan, ai_inputs_fn, client_logo, store, draft_id)
+    return FileResponse(
+        path=str(built["final_path"]), filename=built["out_name"], headers=built["headers"],
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 import proposal_workflow  # noqa: E402  (after app/helpers exist; the router gets this module)

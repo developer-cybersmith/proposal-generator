@@ -338,7 +338,9 @@ A second way in: upload the filled **`CSS Pre-Engagement Scoping v2.xlsx`** at `
 1. **Upload** (`POST /upload-excel/`, `.xlsx` ≤ 5 MB, rate-limited, never stored) is parsed by `proposal_excel.py`.
 2. **Preview 1 – Annexures:** client name, editable reference number, include/exclude, **Count**, **Frequency**, order, manual toggles for the five annexures that have no Excel row (1, 2, 6, 9, 12), amber confirmation for a block that adds up to 0, AI context (sector, summary, duration, payment model) when an annexure has no template.
 3. **Preview 2 – Conclusion & Pricing:** the exact table that goes into the Word file (Sr. No., Assessment Type, **Quantity**, Frequency, Cost Per Annexure). Prices are optional; rows can be removed or added.
-4. **Generate** (`POST /draft/{id}/generate/`): `.docx` download plus, where a PDF engine exists, a PDF proof (`GET /draft/{id}/download/pdf`).
+4. **Build final document** (`POST /draft/{id}/build/`): builds the real file once (AI annexures, layout check, Contents numbers measured).
+5. **Preview 3 – Final preview:** the PDF is shown in the page before anything is downloaded (summary: pages, layout engine, blank-page check). Then **Download Word (.docx, editable)** (`GET /draft/{id}/download/docx`) and **Download PDF** (`GET /draft/{id}/download/pdf`; `?inline=1` is what the preview frame uses). "Back to edit" returns to Preview 2; rebuilding reuses the stored AI text, so it costs nothing extra. Without a PDF engine the preview is replaced by a note and the Word download still works.
+   API clients can still use `POST /draft/{id}/generate/` to get the `.docx` directly.
 
 ### 14.2 The two numbers (plan D30–D33)
 For each annexure's block of matrix rows: **Count** = rows holding a number above 0 → the annexure's `Count: N <label>` line. **Quantity** = their sum → the pricing table. Example: SaaS rows 5, blank, blank, 4, 3 → Count 3 / Quantity 12; Web 2, 1, 4, 5, 3, 8 → Count 6 / Quantity 23. The mapping (cover cell, rows, labels, annexure number) lives in **`annexure_map.json`**: edit it, not the code.
@@ -377,6 +379,7 @@ Found by rendering real output in Microsoft Word; all are covered by tests.
 5. **Wrong Contents numbers** (e.g. "Conclusion & Pricing … page 114"): `pageBreakBefore w:val="0"` was read as a break. Fixed, and the numbers are now **measured from a real render** when an engine exists.
 6. **Contents listed three sections that do not exist** in the body ("Our Understanding of Your Requirement", "Methodology Overview", "Vulnerability Assessment Methodology"): removed.
 7. **The first character of the cover reference was clipped** (`N-01-12-25`): a direct first-line indent doubled the style's indent. Fixed; long references are shrunk to fit.
+8. **The pricing table was locked against editing** (a hidden `contentLocked` content control from the Google Docs export): Word refused any typing in it, so prices could not be filled in after downloading. Content controls are unwrapped; Word itself is tested typing into the table.
 
 ---
 
@@ -410,7 +413,7 @@ Found by rendering real output in Microsoft Word; all are covered by tests.
 
 | Check | Status |
 |---|---|
-| Test suite | **204 tests pass** (a fresh virtualenv gave 203 before the key-priority test was added) built only from `requirements.txt` (the original 55 regression tests are among them). Run from `Automation/backend`: `python -m pytest tests -q`. |
+| Test suite | **215 tests pass** (the first clean-virtualenv run gave 203; the rest were added since: key priority, final preview, AI cache, unlock/edit-in-Word) built only from `requirements.txt` (the original 55 regression tests are among them). Run from `Automation/backend`: `python -m pytest tests -q`. |
 | Real layout in **Microsoft Word** | Verified here: every generated scenario opens in Word, has no blank pages, and its Contents numbers equal the measured pages; Word's own TOC update reproduces the same numbers. Tests that need an engine skip themselves when none is installed. |
 | Dummy workbook acceptance | `python css_scoping_testset/acceptance_run.py --engine word` (see the result in the plan, section 17). |
 | **LibreOffice on Railway** | **Not verified.** Configuration is in `nixpacks.toml`; LibreOffice could not be installed on the development machine, and pagination may differ slightly from Word (Corbel is a Microsoft font). Word remains the final authority. Without LibreOffice the app still works and reports `X-Proposal-Pdf: not verified`. |

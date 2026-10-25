@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "count": 5,
       "quantity": 1441,
       "count_label": "Web Application categories",
@@ -20,7 +20,7 @@
   "pricing_lines": [
     {
       "label": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "quantity": 1441,
       "frequency": "One Time"
     },
@@ -32,7 +32,7 @@
     }
   ],
   "distinct_annexures": [
-    4,
+    2,
     "custom"
   ],
   "warnings": [],

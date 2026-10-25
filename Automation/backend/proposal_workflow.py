@@ -36,6 +36,7 @@ DEFAULT_FREQUENCY = "One Time"
 MAX_ROWS = 40
 MAX_COUNT = 1_000_000
 SAFE_REF_RE = re.compile(r"^[A-Za-z0-9 ._\-/#()]{1,60}$")
+SAFE_DATE_RE = re.compile(r"^[0-9][0-9 ./\-]{5,19}$")
 CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 PAYMENT_MODELS = ("milestone_v1", "hybrid_v2", "retainer_v3", "tier_v4")
 
@@ -116,7 +117,8 @@ def build_draft(result: ScopingResult, filename: str, catalog: dict[str, dict],
         "warnings": list(result.warnings),
         "context": result.context,
         "client": {**client, "name": client.get("client_organization_name") or "",
-                   "reference_no": result.reference_no or ""},
+                   "reference_no": result.reference_no or "",
+                   "proposal_date": time.strftime("%d-%m-%Y")},         # printed on the cover; editable
         "entries": entries,
         "pricing": [],
         "pricing_removed": [],
@@ -207,6 +209,8 @@ def merge_edits(draft: dict[str, Any], incoming: dict[str, Any]) -> dict[str, An
             out["client"]["name"] = clean_text(inc_client["name"], 150)
         if "reference_no" in inc_client:
             out["client"]["reference_no"] = clean_text(inc_client["reference_no"], 60)
+        if "proposal_date" in inc_client:
+            out["client"]["proposal_date"] = clean_text(inc_client["proposal_date"], 20)
 
     known = {e["id"]: e for e in out["entries"]}
     incoming_entries = [x for x in (incoming.get("entries") or []) if isinstance(x, dict) and x.get("id") in known]
@@ -279,6 +283,11 @@ def readiness_issues(draft: dict[str, Any]) -> list[str]:
         issues.append("Reference number is required (the Excel's Engagement Reference No. was blank).")
     elif not SAFE_REF_RE.match(ref):
         issues.append("Reference number contains unsupported characters.")
+    date = draft["client"].get("proposal_date", "").strip()
+    if not date:
+        issues.append("Proposal date is required (it is printed on the cover).")
+    elif not SAFE_DATE_RE.match(date):
+        issues.append("Proposal date contains unsupported characters (use digits and - or /, e.g. 15-09-2025).")
     included = [e for e in draft["entries"] if e["include"]]
     if not included:
         issues.append("Select at least one annexure.")
@@ -349,6 +358,7 @@ def resolve_plan(draft: dict[str, Any]) -> dict[str, Any]:
                           "cost": r["cost"]} for r in draft["pricing"]],
         "company_name": draft["client"]["name"].strip(),
         "reference": draft["client"]["reference_no"].strip(),
+        "proposal_date": draft["client"].get("proposal_date", "").strip(),
     }
 
 

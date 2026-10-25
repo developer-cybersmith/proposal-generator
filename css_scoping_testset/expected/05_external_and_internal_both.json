@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "External Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 6,
       "quantity": 25,
       "count_label": "External Infrastructure categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 12,
       "quantity": 90,
       "count_label": "Internal Infrastructure categories",
@@ -20,19 +20,19 @@
   "pricing_lines": [
     {
       "label": "External Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 25,
       "frequency": "One Time"
     },
     {
       "label": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 90,
       "frequency": "One Time"
     }
   ],
   "distinct_annexures": [
-    3
+    1
   ],
   "warnings": [],
   "client": {

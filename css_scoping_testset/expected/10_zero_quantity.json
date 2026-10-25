@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "count": 0,
       "quantity": 0,
       "count_label": "Web Application categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "count": 0,
       "quantity": 0,
       "count_label": "Active Directory categories",
@@ -18,7 +18,7 @@
     },
     {
       "type": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "count": 0,
       "quantity": 0,
       "count_label": "Cloud Infrastructure categories",
@@ -28,27 +28,27 @@
   "pricing_lines": [
     {
       "label": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "quantity": 0,
       "frequency": "One Time"
     },
     {
       "label": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "quantity": 0,
       "frequency": "One Time"
     },
     {
       "label": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "quantity": 0,
       "frequency": "One Time"
     }
   ],
   "distinct_annexures": [
-    4,
-    8,
-    10
+    2,
+    6,
+    8
   ],
   "warnings": [
     "quantity_zero_confirm: Web Application VAPT",

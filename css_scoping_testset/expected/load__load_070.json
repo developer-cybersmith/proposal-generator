@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 10,
       "quantity": 2207,
       "count_label": "Internal Infrastructure categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "count": 1,
       "quantity": 133,
       "count_label": "API categories",
@@ -18,7 +18,7 @@
     },
     {
       "type": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "count": 3,
       "quantity": 1038,
       "count_label": "Source Code categories",
@@ -28,27 +28,27 @@
   "pricing_lines": [
     {
       "label": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 2207,
       "frequency": "One Time"
     },
     {
       "label": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "quantity": 133,
       "frequency": "One Time"
     },
     {
       "label": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "quantity": 1038,
       "frequency": "One Time"
     }
   ],
   "distinct_annexures": [
-    3,
-    11,
-    13
+    1,
+    9,
+    11
   ],
   "warnings": [],
   "client": {

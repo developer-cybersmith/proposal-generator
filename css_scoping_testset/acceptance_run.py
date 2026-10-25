@@ -126,16 +126,14 @@ def main() -> int:
 
     def contents_ok(docx: Path, check) -> list[str]:
         problems = []
+        import proposal_contents
         doc = Document(str(docx))
-        c_idx, first_assess, terms_idx, concl_idx = gen._find_contents_region(doc)
-        if c_idx is None:
+        cached = proposal_contents.read_pages(doc)
+        if not cached:
             return ["Contents not found"]
-        for i in range(c_idx + 1, concl_idx + 1):
-            title, page = gen._parse_toc_line(doc.paragraphs[i].text)
-            key = ("conclusion & pricing" if i == concl_idx else "terms & conditions" if i == terms_idx
-                   else f"annexure {i - first_assess + 1}" if i >= first_assess else title.lower())
+        for key, page in cached.items():
             if key in check.headings and check.headings[key] != page:
-                problems.append(f"Contents says {title!r} on {page}, render says {check.headings[key]}")
+                problems.append(f"Contents says {key!r} on {page}, render says {check.headings[key]}")
         return problems
 
     prefixes = [p.strip() for p in args.only.split(",") if p.strip()]
@@ -177,7 +175,7 @@ def main() -> int:
         report = proposal_lint.lint_docx(docx)
         if not report.ok:
             problems += [str(f) for f in report.errors]
-        heads = [p.text.strip() for p in doc.paragraphs if re.match(r"^Annexure \d+:", p.text.strip())]
+        heads = [p.text.strip() for p in doc.paragraphs if re.match(r"^Annexure \d+:[^\t]*$", p.text.strip())]   # not the Contents lines
         nums = [int(re.match(r"Annexure (\d+)", h).group(1)) for h in heads]
         if nums != list(range(1, len(nums) + 1)):
             problems.append(f"numbering {nums}")

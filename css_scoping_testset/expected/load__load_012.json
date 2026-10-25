@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "count": 5,
       "quantity": 1110,
       "count_label": "Device & Server categories",
@@ -12,13 +12,13 @@
   "pricing_lines": [
     {
       "label": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "quantity": 1110,
       "frequency": "One Time"
     }
   ],
   "distinct_annexures": [
-    5
+    3
   ],
   "warnings": [],
   "client": {

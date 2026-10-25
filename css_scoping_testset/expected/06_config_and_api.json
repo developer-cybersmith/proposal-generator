@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "count": 6,
       "quantity": 32,
       "count_label": "Device & Server categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "count": 2,
       "quantity": 9,
       "count_label": "API categories",
@@ -20,20 +20,20 @@
   "pricing_lines": [
     {
       "label": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "quantity": 32,
       "frequency": "One Time"
     },
     {
       "label": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "quantity": 9,
       "frequency": "One Time"
     }
   ],
   "distinct_annexures": [
-    5,
-    11
+    3,
+    9
   ],
   "warnings": [],
   "client": {

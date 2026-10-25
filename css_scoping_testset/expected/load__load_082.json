@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "count": 6,
       "quantity": 1392,
       "count_label": "Device & Server categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "count": 7,
       "quantity": 2636,
       "count_label": "Active Directory categories",
@@ -28,13 +28,13 @@
   "pricing_lines": [
     {
       "label": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "quantity": 1392,
       "frequency": "One Time"
     },
     {
       "label": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "quantity": 2636,
       "frequency": "One Time"
     },
@@ -46,8 +46,8 @@
     }
   ],
   "distinct_annexures": [
-    5,
-    8,
+    3,
+    6,
     "custom"
   ],
   "warnings": [],

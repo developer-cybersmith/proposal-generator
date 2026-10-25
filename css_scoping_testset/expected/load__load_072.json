@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 11,
       "quantity": 2920,
       "count_label": "Internal Infrastructure categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "count": 6,
       "quantity": 1394,
       "count_label": "Web Application categories",
@@ -18,7 +18,7 @@
     },
     {
       "type": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "count": 4,
       "quantity": 937,
       "count_label": "Mobile Application categories",
@@ -26,7 +26,7 @@
     },
     {
       "type": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "count": 5,
       "quantity": 908,
       "count_label": "Active Directory categories",
@@ -34,7 +34,7 @@
     },
     {
       "type": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "count": 8,
       "quantity": 2153,
       "count_label": "Cloud Infrastructure categories",
@@ -42,7 +42,7 @@
     },
     {
       "type": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "count": 3,
       "quantity": 563,
       "count_label": "Source Code categories",
@@ -92,37 +92,37 @@
   "pricing_lines": [
     {
       "label": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 2920,
       "frequency": "One Time"
     },
     {
       "label": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "quantity": 1394,
       "frequency": "One Time"
     },
     {
       "label": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "quantity": 937,
       "frequency": "One Time"
     },
     {
       "label": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "quantity": 908,
       "frequency": "One Time"
     },
     {
       "label": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "quantity": 2153,
       "frequency": "One Time"
     },
     {
       "label": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "quantity": 563,
       "frequency": "One Time"
     },
@@ -158,12 +158,12 @@
     }
   ],
   "distinct_annexures": [
-    3,
-    4,
-    7,
+    1,
+    2,
+    5,
+    6,
     8,
-    10,
-    13,
+    11,
     "custom"
   ],
   "warnings": [

@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 12,
       "quantity": 2893,
       "count_label": "Internal Infrastructure categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "count": 4,
       "quantity": 1405,
       "count_label": "Source Code categories",
@@ -44,13 +44,13 @@
   "pricing_lines": [
     {
       "label": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 2893,
       "frequency": "One Time"
     },
     {
       "label": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "quantity": 1405,
       "frequency": "One Time"
     },
@@ -74,8 +74,8 @@
     }
   ],
   "distinct_annexures": [
-    3,
-    13,
+    1,
+    11,
     "custom"
   ],
   "warnings": [],

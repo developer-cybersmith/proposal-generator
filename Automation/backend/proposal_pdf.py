@@ -214,8 +214,8 @@ def measure_heading_pages(analysis: PdfAnalysis, annexure_count: int) -> dict[st
     Keys: the fixed intro headings (lower-case), 'annexure N', 'terms & conditions',
     'conclusion & pricing'. Headings that cannot be found are omitted.
     """
-    static = ["introduction", "our understanding of your requirement", "methodology overview",
-              "vulnerability assessment methodology", "proposed timelines & project management", "team overview"]
+    static = ["introduction", "our understanding of your requirement", "team overview",
+              "methodology overview", "vulnerability assessment methodology"]
     pages = range(1, analysis.page_count + 1)
     contents_page = next((p for p in pages if "contents" in analysis.norm_lines(p)
                           and "introduction" in " ".join(analysis.norm_lines(p)).lower()), None)

@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "count": 1,
       "quantity": 3,
       "count_label": "Web Application categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "count": 1,
       "quantity": 4,
       "count_label": "Cloud Infrastructure categories",
@@ -20,20 +20,20 @@
   "pricing_lines": [
     {
       "label": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "quantity": 3,
       "frequency": "One Time"
     },
     {
       "label": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "quantity": 4,
       "frequency": "One Time"
     }
   ],
   "distinct_annexures": [
-    4,
-    10
+    2,
+    8
   ],
   "warnings": [],
   "client": {

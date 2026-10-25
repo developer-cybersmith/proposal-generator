@@ -101,7 +101,7 @@ def test_row_breakdown_is_reported_for_the_review_screen(fixtures):
 
 def test_external_and_internal_are_two_lines_under_one_annexure(fixtures):
     r = parse_scoping_workbook(fixtures / "samples" / "05_external_and_internal_both.xlsx")
-    assert r.distinct_annexures() == [3]
+    assert r.distinct_annexures() == [1]          # Network Penetration Testing is Annexure 1 in the master
     assert [(l["label"], l["quantity"]) for l in r.pricing_lines()] == [
         ("External Network Penetration Testing", 25), ("Internal Network Penetration Testing", 90)]
 

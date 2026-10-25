@@ -22,6 +22,7 @@ from pathlib import Path
 from docx import Document
 from docx.oxml.ns import qn
 
+import proposal_contents
 import proposal_tokens as tokens
 
 ANNEXURE_RE = re.compile(r"^Annexure\s+(\d+)\s*:\s*(.+)$", re.IGNORECASE)
@@ -64,21 +65,25 @@ class LintReport:
 def body_elements_after_cover(doc) -> list:
     """Top-level body elements from the INTRODUCTION heading on.
 
-    The cover page and the Contents block keep the template's own design (cover navy, artwork and
-    blank-line layout are brand-owner decisions, plan section 12), so formatting checks start at
-    the body. A document without that heading is checked in full.
+    The cover page, the Contents block and the fixed front pages (Introduction ... tools, pages 3-8
+    of the organisation's master) keep the organisation's own design: blank-line spacing places
+    their diagrams. Formatting checks therefore start at the first annexure. A document without
+    that heading is checked from INTRODUCTION, and one without either in full.
     """
     children = list(doc.element.body)
     seen_contents = False
+    intro = None
     for i, el in enumerate(children):
         if el.tag != qn("w:p"):
             continue
         t = " ".join(_text(el).split())
         if t == "Contents":
             seen_contents = True
-        elif seen_contents and t == "INTRODUCTION":
+        elif seen_contents and t == "INTRODUCTION" and intro is None:
+            intro = i
+        elif intro is not None and ANNEXURE_RE.match(t):
             return children[i:]
-    return children
+    return children[intro:] if intro is not None else children
 
 
 def _text(p) -> str:
@@ -104,10 +109,18 @@ def _body_paragraph_elements(doc) -> list:
 
 
 # --------------------------------------------------------------------------- checks
+def _body_annexure_headings(doc) -> list[str]:
+    """Annexure heading texts in the body (the Contents lines that repeat them are not headings)."""
+    block = proposal_contents.contents_block(doc.element.body)      # kept alive: lxml proxies must not be freed
+    contents = {id(el) for el in block}
+    return [_text(el) for el in doc.element.body
+            if el.tag == qn("w:p") and id(el) not in contents and ANNEXURE_RE.match(_text(el))]
+
+
 def check_annexure_numbering(doc) -> list[Finding]:
     numbers = []
-    for p in doc.paragraphs:
-        m = ANNEXURE_RE.match(p.text.strip())
+    for text in _body_annexure_headings(doc):
+        m = ANNEXURE_RE.match(text)
         if m:
             numbers.append(int(m.group(1)))
     findings: list[Finding] = []
@@ -122,39 +135,36 @@ def check_annexure_numbering(doc) -> list[Finding]:
     return findings
 
 
-def _toc_annexure_entries(doc) -> tuple[int, int | None]:
-    """Number of annexure lines in Contents.
-
-    Contents order is: fixed intro entries ... TEAM OVERVIEW, one line per annexure,
-    Terms & Conditions, Conclusion & Pricing. Returns (-1, None) when that frame is not found.
-    """
-    paragraphs = doc.paragraphs
-    start = next((i for i, p in enumerate(paragraphs) if p.text.strip() == "Contents"), None)
-    if start is None:
-        return -1, None
-    entries: list[str] = []
-    for p in paragraphs[start + 1:]:
-        t = p.text.strip()
-        if p.style is not None and p.style.name.lower().startswith("heading") and t:
-            break
-        if "\t" in p.text and t:
-            entries.append(t.split("\t")[0].strip())
-    try:
-        first = next(i for i, e in enumerate(entries) if e.lower().startswith("team overview"))
-        last = next(i for i, e in enumerate(entries) if e.lower().startswith("terms"))
-    except StopIteration:
-        return -1, None
-    return max(0, last - first - 1), None
+def _contents_entries(doc) -> list[str]:
+    """The label of every entry in the Contents block (hyperlink text, or text before the tab)."""
+    labels: list[str] = []
+    for p in proposal_contents.contents_block(doc.element.body):
+        link = p.find(qn("w:hyperlink"))
+        if link is not None:
+            texts = [t.text or "" for t in link.iter(qn("w:t"))]
+            if texts and texts[0].strip():
+                labels.append(texts[0].strip())
+        elif "\t" in "".join(t.text or "" for t in p.iter(qn("w:t"))):
+            labels.append(_text(p).split("\t")[0].strip())
+    return labels
 
 
 def check_toc_lists_all_annexures(doc) -> list[Finding]:
-    body_count = sum(1 for p in doc.paragraphs if ANNEXURE_RE.match(p.text.strip()))
-    toc_count, _ = _toc_annexure_entries(doc)
-    if toc_count < 0:
+    """The Contents lists exactly the headings the body has (fixed sections, every annexure, closing)."""
+    entries = _contents_entries(doc)
+    if not entries:
         return [Finding("warning", "toc_not_found", "could not locate the Contents entries to compare")]
-    if toc_count != body_count:
+    headings = [h.label for h in proposal_contents.find_headings(doc.element.body)]
+    toc_annexures = sum(1 for e in entries if ANNEXURE_RE.match(e))
+    body_annexures = sum(1 for h in headings if ANNEXURE_RE.match(h))
+    if toc_annexures != body_annexures:
         return [Finding("error", "toc_incomplete",
-                        f"Contents lists {toc_count} annexure(s) but the body has {body_count}")]
+                        f"Contents lists {toc_annexures} annexure(s) but the body has {body_annexures}")]
+    if entries != headings:
+        missing = [h for h in headings if h not in entries]
+        extra = [e for e in entries if e not in headings]
+        return [Finding("error", "toc_mismatch",
+                        f"Contents does not match the body headings (missing {missing}, extra {extra})")]
     return []
 
 

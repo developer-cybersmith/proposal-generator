@@ -66,7 +66,9 @@ def test_styles_come_from_the_tokens_and_normal_is_left_alone(proposal):
         assert s.find(f"{qn('w:pPr')}/{qn('w:keepNext')}") is not None
     assert styles["AnnexureTitle"].find(f"{qn('w:rPr')}/{qn('w:i')}").get(qn("w:val")) is None      # italic on
     assert styles["Normal"].get(qn("w:default")) == "1"
-    assert styles["Normal"].find(qn("w:pPr")) is None              # cover/Contents inherit it: not redefined
+    template = Document(str(gen.BASE_TEMPLATE))                     # cover/Contents/front pages inherit Normal: not redefined
+    original = next(s for s in template.styles.element.findall(qn("w:style")) if s.get(qn("w:styleId")) == "Normal")
+    assert etree.tostring(styles["Normal"]) == etree.tostring(original)
     assert "TOC1" in styles and "TOC2" in styles
 
 
@@ -91,8 +93,9 @@ def test_annexure_titles_and_labels_use_named_styles_without_direct_formatting(p
     labels = [p for p in _body_after_cover(doc) if p.tag == qn("w:p") and _style_of(p) == "Heading3"]
     assert len(labels) > 50
     assert {_text(p).strip() for p in labels} >= {"Sub-Activity:", "Methodologies:", "Deliverables:"}
-    h2 = {_text(p).strip() for p in _body_after_cover(doc) if p.tag == qn("w:p") and _style_of(p) == "Heading2"}
-    assert {"INTRODUCTION", "PROPOSED TIMELINES & PROJECT MANAGEMENT", "TEAM OVERVIEW", "Terms & Conditions"} <= h2
+    h2 = {_text(p).strip() for p in doc.element.body if p.tag == qn("w:p") and _style_of(p) == "Heading2"}
+    assert {"INTRODUCTION", "OUR UNDERSTANDING OF YOUR REQUIREMENT", "TEAM OVERVIEW", "METHODOLOGY OVERVIEW",
+            "VULNERABILITY ASSESSMENT METHODOLOGY", "Terms & Conditions"} <= h2
     h1 = {_text(p).strip() for p in _body_after_cover(doc) if p.tag == qn("w:p") and _style_of(p) == "Heading1"}
     assert h1 == {"Conclusion & Pricing"}
 

@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "External Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 4,
       "quantity": 942,
       "count_label": "External Infrastructure categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 9,
       "quantity": 1728,
       "count_label": "Internal Infrastructure categories",
@@ -18,7 +18,7 @@
     },
     {
       "type": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "count": 4,
       "quantity": 1030,
       "count_label": "Web Application categories",
@@ -26,7 +26,7 @@
     },
     {
       "type": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "count": 6,
       "quantity": 1926,
       "count_label": "Active Directory categories",
@@ -52,25 +52,25 @@
   "pricing_lines": [
     {
       "label": "External Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 942,
       "frequency": "One Time"
     },
     {
       "label": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 1728,
       "frequency": "One Time"
     },
     {
       "label": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "quantity": 1030,
       "frequency": "One Time"
     },
     {
       "label": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "quantity": 1926,
       "frequency": "One Time"
     },
@@ -88,9 +88,9 @@
     }
   ],
   "distinct_annexures": [
-    3,
-    4,
-    8,
+    1,
+    2,
+    6,
     "custom"
   ],
   "warnings": [

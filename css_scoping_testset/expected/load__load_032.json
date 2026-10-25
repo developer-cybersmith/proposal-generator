@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "count": 5,
       "quantity": 712,
       "count_label": "Device & Server categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "count": 2,
       "quantity": 772,
       "count_label": "API categories",
@@ -18,7 +18,7 @@
     },
     {
       "type": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "count": 3,
       "quantity": 1053,
       "count_label": "Source Code categories",
@@ -36,19 +36,19 @@
   "pricing_lines": [
     {
       "label": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "quantity": 712,
       "frequency": "One Time"
     },
     {
       "label": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "quantity": 772,
       "frequency": "One Time"
     },
     {
       "label": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "quantity": 1053,
       "frequency": "One Time"
     },
@@ -60,9 +60,9 @@
     }
   ],
   "distinct_annexures": [
-    5,
+    3,
+    9,
     11,
-    13,
     "custom"
   ],
   "warnings": [

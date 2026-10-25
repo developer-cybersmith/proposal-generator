@@ -169,10 +169,16 @@ def test_generated_proposals_have_valid_package_final_section_and_clean_contents
     report = lint.lint_docx(out)
     assert report.ok, [str(f) for f in report.errors]
     doc = Document(str(out))
-    contents = [p.text.split("\t")[0] for p in doc.paragraphs if "\t" in p.text][:12]
-    for phantom in ("OUR UNDERSTANDING OF YOUR REQUIREMENT", "METHODOLOGY OVERVIEW", "VULNERABILITY ASSESSMENT METHODOLOGY"):
-        assert phantom not in contents
-    assert "INTRODUCTION" in contents and "TEAM OVERVIEW" in contents
+    contents = [p.text.split("\t")[0] for p in doc.paragraphs if "\t" in p.text][:14]
+    # the master's five fixed sections are all real headings now, so all five are listed ...
+    for heading in ("INTRODUCTION", "OUR UNDERSTANDING OF YOUR REQUIREMENT", "TEAM OVERVIEW", "METHODOLOGY OVERVIEW",
+                    "VULNERABILITY ASSESSMENT METHODOLOGY"):
+        assert heading in contents
+    # ... and nothing the body does not have (the old template's Timelines section is gone)
+    assert "PROPOSED TIMELINES & PROJECT MANAGEMENT" not in contents
+    assert [c for c in contents if c.startswith("Annexure ")] == [
+        "Annexure 1: Web Application Penetration Testing Assessment", "Annexure 2: Cloud Penetration Testing",
+        "Annexure 3: Source Code Review"]
 
 
 @pytest.mark.parametrize("name", ["L&T Infotech", "Smith & Sons <Pvt> Ltd", 'Quote"s \'n\' Co', "अक्षय & 株式会社"])
@@ -183,9 +189,9 @@ def test_special_characters_in_the_client_name_do_not_corrupt_the_document(tmp_p
     doc = Document(str(out))
     text = "\n".join(p.text for p in doc.paragraphs)
     assert name in text                                              # shown exactly as typed
-    heads = [p.text for p in doc.paragraphs if p.text.startswith("Annexure ")]
+    heads = [p.text for p in doc.paragraphs if p.text.startswith("Annexure ") and "\t" not in p.text]
     assert len(heads) == 2                                           # the selection survived (not all 13)
-    assert "PROPOSED TIMELINES & PROJECT MANAGEMENT" in text and "Terms & Conditions" in text   # ampersands intact
+    assert "Conclusion & Pricing" in text and "Terms & Conditions" in text   # ampersands intact
     assert lint.lint_docx(out).ok
 
 
@@ -200,13 +206,14 @@ def test_measured_pages_are_written_into_the_contents(tmp_path):
     out = tmp_path / "p.docx"
     gen.generate_proposal(company_name="Acme", proposal_ref="EN-1", logo_path=None, output_path=out,
                           annexure_order=["web_app_pt", "cloud_pt"])
-    measured = {"introduction": 3, "proposed timelines & project management": 4, "team overview": 4,
-                "annexure 1": 5, "annexure 2": 9, "terms & conditions": 12, "conclusion & pricing": 15}
-    assert gen._apply_measured_toc_pages(out, measured) >= 6
-    lines = {p.text.split("\t")[0]: p.text.split("\t")[1] for p in Document(str(out)).paragraphs
-             if "\t" in p.text and p.text.count("\t") == 1 and p.text.split("\t")[1].strip().isdigit()}
-    assert lines["INTRODUCTION"] == "3" and lines["Terms & Conditions"] == "12" and lines["Conclusion & Pricing"] == "15"
-    assert lines["Web Application Penetration testing"] == "5" and lines["Cloud Penetration testing"] == "9"
+    measured = {"introduction": 3, "our understanding of your requirement": 4, "team overview": 4,
+                "methodology overview": 5, "vulnerability assessment methodology": 6,
+                "annexure 1": 9, "annexure 2": 13, "terms & conditions": 17, "conclusion & pricing": 19}
+    assert gen._apply_measured_toc_pages(out, measured) >= 1     # the estimate already matched some entries
+    import proposal_contents
+    pages = proposal_contents.read_pages(Document(str(out)))
+    assert pages["introduction"] == 3 and pages["terms & conditions"] == 17 and pages["conclusion & pricing"] == 19
+    assert pages["annexure 1"] == 9 and pages["annexure 2"] == 13
     assert gen._apply_measured_toc_pages(out, measured) == 0   # nothing left to change
 
 
@@ -238,12 +245,15 @@ def test_a_page_with_only_an_image_is_not_blank(tmp_path):
 
 def test_heading_pages_are_measured_after_the_contents_page(tmp_path):
     pdf = tmp_path / "h.pdf"
-    _make_pdf(pdf, ["Cover", "Contents\nINTRODUCTION\nTEAM OVERVIEW\nAnnexure listing", "INTRODUCTION\ntext", "PROPOSED TIMELINES & PROJECT MANAGEMENT\ntext\nTEAM OVERVIEW\nrows",
+    _make_pdf(pdf, ["Cover", "Contents\nINTRODUCTION\nTEAM OVERVIEW\nAnnexure listing", "INTRODUCTION\ntext",
+                    "OUR UNDERSTANDING OF YOUR REQUIREMENT\ntext\nTEAM OVERVIEW\nrows", "METHODOLOGY OVERVIEW\ntext",
+                    "VULNERABILITY ASSESSMENT METHODOLOGY\ntext",
                     "Annexure 1: Web Application Penetration Testing Assessment\ntext", "more text", "Annexure 2: Cloud Penetration Testing\ntext",
                     "Terms & Conditions\ntext", "Conclusion & Pricing\ntext"])
     found = pdfmod.measure_heading_pages(pdfmod.analyze_pdf(pdf), annexure_count=2)
-    assert found == {"introduction": 3, "proposed timelines & project management": 4, "team overview": 4,
-                     "annexure 1": 5, "annexure 2": 7, "terms & conditions": 8, "conclusion & pricing": 9}
+    assert found == {"introduction": 3, "our understanding of your requirement": 4, "team overview": 4,
+                     "methodology overview": 5, "vulnerability assessment methodology": 6,
+                     "annexure 1": 7, "annexure 2": 9, "terms & conditions": 10, "conclusion & pricing": 11}
 
 
 def test_no_engine_means_unverified_but_never_an_error(tmp_path, monkeypatch):
@@ -309,19 +319,12 @@ def test_real_render_has_no_blank_pages_and_exact_contents(tmp_path, monkeypatch
     assert check.verified, check.note
     assert check.blank_pages == [], f"blank pages: {check.blank_pages}"
     # every Contents number now equals the page the heading really starts on
-    doc = Document(str(out))
-    region = gen._find_contents_region(doc)
-    contents_idx, first_assessment_idx, terms_idx, conclusion_idx = region
-    for i in range(contents_idx + 1, conclusion_idx + 1):
-        title, page = gen._parse_toc_line(doc.paragraphs[i].text)
-        if i == conclusion_idx:
-            key = "conclusion & pricing"
-        elif i == terms_idx:
-            key = "terms & conditions"
-        elif i >= first_assessment_idx:
-            key = f"annexure {i - first_assessment_idx + 1}"
-        else:
-            key = title.lower()
+    import proposal_contents
+    cached = proposal_contents.read_pages(Document(str(out)))
+    assert len(cached) == 5 + len(keys) + 2                      # five fixed sections, annexures, Terms, Conclusion
+    for key, page in cached.items():
         if key in check.headings:
-            assert page == check.headings[key], f"{title}: Contents says {page}, render says {check.headings[key]}"
+            assert page == check.headings[key], f"{key}: Contents says {page}, render says {check.headings[key]}"
+    assert check.headings["introduction"] == 3                  # the master's cover + Contents + ...
+    assert check.headings["annexure 1"] == 9                    # ... eight fixed pages, then the annexures
     assert lint.lint_docx(out).ok

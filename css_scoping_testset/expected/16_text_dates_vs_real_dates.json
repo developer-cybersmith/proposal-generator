@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "count": 1,
       "quantity": 2,
       "count_label": "Web Application categories",
@@ -12,13 +12,13 @@
   "pricing_lines": [
     {
       "label": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "quantity": 2,
       "frequency": "One Time"
     }
   ],
   "distinct_annexures": [
-    4
+    2
   ],
   "warnings": [
     "date_not_real_date: Cover Page!F17='05-Jan-2026'",

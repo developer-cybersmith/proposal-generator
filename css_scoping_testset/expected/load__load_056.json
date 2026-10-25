@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "count": 4,
       "quantity": 989,
       "count_label": "Device & Server categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "count": 4,
       "quantity": 1638,
       "count_label": "Mobile Application categories",
@@ -44,13 +44,13 @@
   "pricing_lines": [
     {
       "label": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "quantity": 989,
       "frequency": "One Time"
     },
     {
       "label": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "quantity": 1638,
       "frequency": "One Time"
     },
@@ -74,8 +74,8 @@
     }
   ],
   "distinct_annexures": [
+    3,
     5,
-    7,
     "custom"
   ],
   "warnings": [

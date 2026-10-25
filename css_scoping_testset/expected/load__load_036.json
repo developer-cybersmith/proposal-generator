@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "External Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 5,
       "quantity": 1070,
       "count_label": "External Infrastructure categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "count": 4,
       "quantity": 886,
       "count_label": "Web Application categories",
@@ -18,7 +18,7 @@
     },
     {
       "type": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "count": 3,
       "quantity": 1251,
       "count_label": "Mobile Application categories",
@@ -60,19 +60,19 @@
   "pricing_lines": [
     {
       "label": "External Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 1070,
       "frequency": "One Time"
     },
     {
       "label": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "quantity": 886,
       "frequency": "One Time"
     },
     {
       "label": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "quantity": 1251,
       "frequency": "One Time"
     },
@@ -102,9 +102,9 @@
     }
   ],
   "distinct_annexures": [
-    3,
-    4,
-    7,
+    1,
+    2,
+    5,
     "custom"
   ],
   "warnings": [

@@ -57,7 +57,7 @@ def test_draft_for_the_screenshot_example(fixtures):
     assert (saas["count"], saas["quantity"], saas["catalog_key"]) == (3, 12, None)
     assert [e["id"] for e in d["entries"] if e["origin"] == "excel"] == ["web_app_vapt", "saas_security"]
     manual = [e for e in d["entries"] if e["origin"] == "manual"]
-    assert {e["annexure"] for e in manual} == {1, 2, 6, 9, 12} and not any(e["include"] for e in manual)
+    assert {e["annexure"] for e in manual} == {4, 7, 10, 12, 13} and not any(e["include"] for e in manual)
     assert [(r["title"], r["quantity"], r["frequency"], r["cost"]) for r in d["pricing"]] == [
         ("Web Application Penetration Testing Assessment", "23", "One Time", ""),
         ("SaaS Security Assessment", "12", "One Time", "")]
@@ -361,7 +361,7 @@ def test_known_only_generation_end_to_end(client, fixtures):
     draft_id = _full_draft_id(client, fixtures, "02_known_only")
     r = client.post(f"/draft/{draft_id}/generate/")
     doc = _doc(r)
-    headings = [p.text.strip() for p in doc.paragraphs if re.match(r"^Annexure \d+:", p.text.strip())]
+    headings = [p.text.strip() for p in doc.paragraphs if re.match(r"^Annexure \d+:[^\t]*$", p.text.strip())]
     assert [int(re.match(r"Annexure (\d+)", h).group(1)) for h in headings] == list(range(1, len(headings) + 1))
     counts = _field_lines(doc, "Count:")
     assert len(counts) == len(headings) == 5
@@ -425,8 +425,9 @@ def test_zero_quantity_flow_confirm_then_generate(client, fixtures):
 def test_manual_toggle_adds_an_annexure_without_excel_rows(client, fixtures):
     draft_id = _full_draft_id(client, fixtures, "09_minimal", entries=[{"id": "post_breach", "include": True}])
     doc = _doc(client.post(f"/draft/{draft_id}/generate/"))
-    titles = [p.text.strip() for p in doc.paragraphs if re.match(r"^Annexure \d+:", p.text.strip())]
-    assert titles == ["Annexure 1: Post Breach Scenario Assessment", "Annexure 2: Web Application Penetration Testing Assessment"]
+    titles = [p.text.strip() for p in doc.paragraphs if re.match(r"^Annexure \d+:[^\t]*$", p.text.strip())]
+    # default order follows the master's annexure order: Web Application PT is 2, Post Breach (extra) is 12
+    assert titles == ["Annexure 1: Web Application Penetration Testing Assessment", "Annexure 2: Post Breach Scenario Assessment"]
     assert "Count: 1 Assessment categories" in _field_lines(doc, "Count:")
 
 
@@ -435,7 +436,7 @@ def test_user_chosen_order_is_respected_and_renumbered(client, fixtures):
     ids = [e["id"] for e in client.get(f"/draft/{draft_id}").json()["draft"]["entries"]]   # the page sends them all
     reordered = [{"id": i} for i in reversed(ids)]
     doc = _doc(client.post(f"/draft/{draft_id}/generate/", data={"edits_json": json.dumps({"entries": reordered})}))
-    headings = [p.text.strip() for p in doc.paragraphs if re.match(r"^Annexure \d+:", p.text.strip())]
+    headings = [p.text.strip() for p in doc.paragraphs if re.match(r"^Annexure \d+:[^\t]*$", p.text.strip())]
     assert [int(re.match(r"Annexure (\d+)", h).group(1)) for h in headings] == [1, 2, 3, 4, 5]
     assert "Source Code Review" in headings[0]
     assert proposal_lint.lint_docx(doc).ok
@@ -445,7 +446,7 @@ def test_manual_flow_still_works(client):
     r = client.post("/generate/", data={"company_name": "Manual Co", "proposal_ref": "EN-M",
                     "annexure_order_json": json.dumps(["web_app_pt", "cloud_pt"])})
     doc = _doc(r)
-    assert len([p for p in doc.paragraphs if re.match(r"^Annexure \d+:", p.text.strip())]) == 2
+    assert len([p for p in doc.paragraphs if re.match(r"^Annexure \d+:[^\t]*$", p.text.strip())]) == 2
     assert _pricing_rows(doc)[0][-1] == "Cost Per Annexure"
     assert proposal_lint.lint_docx(doc).ok
 
@@ -514,7 +515,7 @@ def test_mixed_flow_with_an_ai_annexure(client, fixtures, fake_ai):
     draft_id = _full_draft_id(client, fixtures, "04_mixed_known_and_custom", **AI_FIELDS)
     r = client.post(f"/draft/{draft_id}/generate/")
     doc = _doc(r)
-    headings = [p.text.strip() for p in doc.paragraphs if re.match(r"^Annexure \d+:", p.text.strip())]
+    headings = [p.text.strip() for p in doc.paragraphs if re.match(r"^Annexure \d+:[^\t]*$", p.text.strip())]
     nums = [int(re.match(r"Annexure (\d+)", h).group(1)) for h in headings]
     assert nums == list(range(1, len(headings) + 1))                       # AI heading number (77) corrected
     seg = next(h for h in headings if "Network Segmentation" in h)
@@ -531,7 +532,7 @@ def test_mixed_flow_with_an_ai_annexure(client, fixtures, fake_ai):
 def test_custom_only_flow(client, fixtures, fake_ai):
     draft_id = _full_draft_id(client, fixtures, "03_custom_only", **AI_FIELDS)
     doc = _doc(client.post(f"/draft/{draft_id}/generate/"))
-    headings = [p.text.strip() for p in doc.paragraphs if re.match(r"^Annexure \d+:", p.text.strip())]
+    headings = [p.text.strip() for p in doc.paragraphs if re.match(r"^Annexure \d+:[^\t]*$", p.text.strip())]
     assert len(headings) == 5 and len(fake_ai.calls) == 5
     assert len(_pricing_rows(doc)) == 5 + 2
     assert proposal_lint.lint_docx(doc).ok
@@ -599,7 +600,7 @@ def test_build_without_a_pdf_engine_still_gives_an_editable_word_file(client, fi
     with zipfile.ZipFile(io.BytesIO(docx.content)) as z:
         settings = z.read("word/settings.xml").decode("utf8")
     assert "documentProtection" not in settings and "readOnlyRecommended" not in settings and "writeProtection" not in settings
-    assert len([p for p in doc.paragraphs if re.match(r"^Annexure \d+:", p.text.strip())]) == 5
+    assert len([p for p in doc.paragraphs if re.match(r"^Annexure \d+:[^\t]*$", p.text.strip())]) == 5
     assert client.get(f"/draft/{draft_id}/download/pdf").status_code == 404      # no engine: nothing to preview
 
 

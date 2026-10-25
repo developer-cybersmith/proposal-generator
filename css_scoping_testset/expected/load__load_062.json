@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "External Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 5,
       "quantity": 1474,
       "count_label": "External Infrastructure categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 10,
       "quantity": 2750,
       "count_label": "Internal Infrastructure categories",
@@ -18,7 +18,7 @@
     },
     {
       "type": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "count": 6,
       "quantity": 773,
       "count_label": "Web Application categories",
@@ -26,7 +26,7 @@
     },
     {
       "type": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "count": 3,
       "quantity": 489,
       "count_label": "Mobile Application categories",
@@ -34,7 +34,7 @@
     },
     {
       "type": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "count": 5,
       "quantity": 1697,
       "count_label": "Active Directory categories",
@@ -42,7 +42,7 @@
     },
     {
       "type": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "count": 8,
       "quantity": 1353,
       "count_label": "Cloud Infrastructure categories",
@@ -50,7 +50,7 @@
     },
     {
       "type": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "count": 0,
       "quantity": 0,
       "count_label": "API categories",
@@ -58,7 +58,7 @@
     },
     {
       "type": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "count": 3,
       "quantity": 678,
       "count_label": "Source Code categories",
@@ -100,49 +100,49 @@
   "pricing_lines": [
     {
       "label": "External Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 1474,
       "frequency": "One Time"
     },
     {
       "label": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 2750,
       "frequency": "One Time"
     },
     {
       "label": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "quantity": 773,
       "frequency": "One Time"
     },
     {
       "label": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "quantity": 489,
       "frequency": "One Time"
     },
     {
       "label": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "quantity": 1697,
       "frequency": "One Time"
     },
     {
       "label": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "quantity": 1353,
       "frequency": "One Time"
     },
     {
       "label": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "quantity": 0,
       "frequency": "One Time"
     },
     {
       "label": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "quantity": 678,
       "frequency": "One Time"
     },
@@ -172,13 +172,13 @@
     }
   ],
   "distinct_annexures": [
-    3,
-    4,
-    7,
+    1,
+    2,
+    5,
+    6,
     8,
-    10,
+    9,
     11,
-    13,
     "custom"
   ],
   "warnings": [

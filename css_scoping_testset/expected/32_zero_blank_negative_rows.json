@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "count": 2,
       "quantity": 14,
       "count_label": "Mobile Application categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "count": 2,
       "quantity": 5,
       "count_label": "Cloud Infrastructure categories",
@@ -18,7 +18,7 @@
     },
     {
       "type": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "count": 0,
       "quantity": 0,
       "count_label": "Source Code categories",
@@ -28,27 +28,27 @@
   "pricing_lines": [
     {
       "label": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "quantity": 14,
       "frequency": "One Time"
     },
     {
       "label": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "quantity": 5,
       "frequency": "One Time"
     },
     {
       "label": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "quantity": 0,
       "frequency": "One Time"
     }
   ],
   "distinct_annexures": [
-    7,
-    10,
-    13
+    5,
+    8,
+    11
   ],
   "warnings": [
     "non_numeric_quantity_skipped: Data Stored Locally (Y/N) (Overall Scoping Matrix!D65)='Y'",

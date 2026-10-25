@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 12,
       "quantity": 2451,
       "count_label": "Internal Infrastructure categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "count": 4,
       "quantity": 713,
       "count_label": "Mobile Application categories",
@@ -20,20 +20,20 @@
   "pricing_lines": [
     {
       "label": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 2451,
       "frequency": "One Time"
     },
     {
       "label": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "quantity": 713,
       "frequency": "One Time"
     }
   ],
   "distinct_annexures": [
-    3,
-    7
+    1,
+    5
   ],
   "warnings": [],
   "client": {

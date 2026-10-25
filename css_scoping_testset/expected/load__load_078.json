@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "count": 6,
       "quantity": 1042,
       "count_label": "Active Directory categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "count": 7,
       "quantity": 1323,
       "count_label": "Cloud Infrastructure categories",
@@ -18,7 +18,7 @@
     },
     {
       "type": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "count": 2,
       "quantity": 366,
       "count_label": "API categories",
@@ -44,19 +44,19 @@
   "pricing_lines": [
     {
       "label": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "quantity": 1042,
       "frequency": "One Time"
     },
     {
       "label": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "quantity": 1323,
       "frequency": "One Time"
     },
     {
       "label": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "quantity": 366,
       "frequency": "One Time"
     },
@@ -74,9 +74,9 @@
     }
   ],
   "distinct_annexures": [
+    6,
     8,
-    10,
-    11,
+    9,
     "custom"
   ],
   "warnings": [

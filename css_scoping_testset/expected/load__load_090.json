@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 9,
       "quantity": 1744,
       "count_label": "Internal Infrastructure categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "count": 4,
       "quantity": 835,
       "count_label": "Device & Server categories",
@@ -18,7 +18,7 @@
     },
     {
       "type": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "count": 4,
       "quantity": 1170,
       "count_label": "Mobile Application categories",
@@ -26,7 +26,7 @@
     },
     {
       "type": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "count": 2,
       "quantity": 189,
       "count_label": "API categories",
@@ -34,7 +34,7 @@
     },
     {
       "type": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "count": 4,
       "quantity": 1074,
       "count_label": "Source Code categories",
@@ -60,31 +60,31 @@
   "pricing_lines": [
     {
       "label": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 1744,
       "frequency": "One Time"
     },
     {
       "label": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "quantity": 835,
       "frequency": "One Time"
     },
     {
       "label": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "quantity": 1170,
       "frequency": "One Time"
     },
     {
       "label": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "quantity": 189,
       "frequency": "One Time"
     },
     {
       "label": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "quantity": 1074,
       "frequency": "One Time"
     },
@@ -102,11 +102,11 @@
     }
   ],
   "distinct_annexures": [
+    1,
     3,
     5,
-    7,
+    9,
     11,
-    13,
     "custom"
   ],
   "warnings": [

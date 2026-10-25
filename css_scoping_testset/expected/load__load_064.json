@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 9,
       "quantity": 1422,
       "count_label": "Internal Infrastructure categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "count": 5,
       "quantity": 1147,
       "count_label": "Web Application categories",
@@ -18,7 +18,7 @@
     },
     {
       "type": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "count": 6,
       "quantity": 1326,
       "count_label": "Device & Server categories",
@@ -26,7 +26,7 @@
     },
     {
       "type": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "count": 2,
       "quantity": 300,
       "count_label": "Source Code categories",
@@ -68,25 +68,25 @@
   "pricing_lines": [
     {
       "label": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 1422,
       "frequency": "One Time"
     },
     {
       "label": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "quantity": 1147,
       "frequency": "One Time"
     },
     {
       "label": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "quantity": 1326,
       "frequency": "One Time"
     },
     {
       "label": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "quantity": 300,
       "frequency": "One Time"
     },
@@ -116,10 +116,10 @@
     }
   ],
   "distinct_annexures": [
+    1,
+    2,
     3,
-    4,
-    5,
-    13,
+    11,
     "custom"
   ],
   "warnings": [

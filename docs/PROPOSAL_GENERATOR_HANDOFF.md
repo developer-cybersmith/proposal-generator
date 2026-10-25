@@ -336,7 +336,7 @@ python -m pytest tests/test_css_proposal_ai.py -v
 A second way in: upload the filled **`CSS Pre-Engagement Scoping v2.xlsx`** at `/proposal-generator/excel/` (link on the manual form).
 
 1. **Upload** (`POST /upload-excel/`, `.xlsx` ≤ 5 MB, rate-limited, never stored) is parsed by `proposal_excel.py`.
-2. **Preview 1 – Annexures:** client name, editable reference number, include/exclude, **Count**, **Frequency**, order, manual toggles for the five annexures that have no Excel row (1, 2, 6, 9, 12), amber confirmation for a block that adds up to 0, AI context (sector, summary, duration, payment model) when an annexure has no template.
+2. **Preview 1 – Annexures:** client name, editable reference number, include/exclude, **Count**, **Frequency**, order, manual toggles for the five annexures that have no Excel row (Insider Threat, SOC Simulation, Offensive & Defensive Training, Post Breach, Active Directory Assessment), an editable **proposal date** (printed on the cover), amber confirmation for a block that adds up to 0, AI context (sector, summary, duration, payment model) when an annexure has no template.
 3. **Preview 2 – Conclusion & Pricing:** the exact table that goes into the Word file (Sr. No., Assessment Type, **Quantity**, Frequency, Cost Per Annexure). Prices are optional; rows can be removed or added.
 4. **Build final document** (`POST /draft/{id}/build/`): builds the real file once (AI annexures, layout check, Contents numbers measured).
 5. **Preview 3 – Final preview:** the PDF is shown in the page before anything is downloaded (summary: pages, layout engine, blank-page check). Then **Download Word (.docx, editable)** (`GET /draft/{id}/download/docx`) and **Download PDF** (`GET /draft/{id}/download/pdf`; `?inline=1` is what the preview frame uses). "Back to edit" returns to Preview 2; rebuilding reuses the stored AI text, so it costs nothing extra. Without a PDF engine the preview is replaced by a note and the Word download still works.
@@ -364,7 +364,7 @@ For each annexure's block of matrix rows: **Count** = rows holding a number abov
 
 ### 14.4 Behaviour worth knowing
 - **Frequency is one shared field.** While it still holds the default `One Time`, each annexure keeps its own template wording (e.g. "One time with Revalidation"); once edited, the edited text is used in both the annexure and the pricing table.
-- **External + Internal Network PT** appear as two pricing lines under one Annexure 3, with one combined Count line.
+- **External + Internal Network PT** appear as two pricing lines under one Annexure (1 in the master's numbering), with one combined Count line.
 - **OpenAI key for the custom annexures:** set `PROPOSAL_OPENAI_API_KEY` (and optionally `PROPOSAL_OPENAI_MODEL`) in `Automation/backend/.env`. If empty, the shared `OPENAI_API_KEY` / `OPENAI_MODEL` are used.
 - **AI annexures** receive the Excel context, one automatic retry if the structure check fails, and then a clear error (HTTP 502). The heading number and the Count line are always set by the system, never trusted from the model. The "Total cost" field is optional in this flow only (derived from the pricing table when every row is priced); the manual form still requires it.
 - **Total row:** `₹ /- * + 18% GST` until *every* row is priced, then the sum (`₹ 1,75,000 /- * + 18% GST`). A partial sum is never shown.
@@ -421,4 +421,36 @@ Found by rendering real output in Microsoft Word; all are covered by tests.
 | **Deployment to Railway** | **Not performed.** Set `PROPOSAL_ACCESS_PASSWORD`, `SESSION_SECRET_KEY`, `OPENAI_API_KEY` and `TEST_MODE=false`; see `.env.example`. |
 | A real filled client Excel | **Still needed.** Everything above was proven with generated dummy workbooks. |
 
-*Last updated: handoff aligned to codebase v1.4.0.*
+---
+
+## 17. v1.5.0 — the organisation's master document is the template
+
+The template is now built from **`CyberSmithSECURE Annexures 2.docx`** (the document the organisation sends today). Sections 3, 14.5 and 15 describe the older template; where they disagree, this section wins.
+
+### 17.1 What a generated proposal looks like
+| Pages | Content | Source |
+|---|---|---|
+| 1 | Cover: date (top right), illustration, "Statement of Work & Proposal / For / client name" | master, fixed |
+| 2 | "For", optional client logo, client name, **Contents** | master; Contents written by the generator |
+| 3-8 | Introduction; Understanding + Team Overview; Methodology Overview; Vulnerability Assessment Methodology; the four phases; report contents + tools | master, **fixed** (same in every proposal) |
+| 9 on | Annexures chosen by the Excel (numbered 1..N in the order shown on Preview 1), Terms & Conditions, Conclusion & Pricing + signatures | master annexure text; custom annexures written by AI |
+
+Header (logo, "Statement of Work" tag) and footer (website, phone, email, purple band) are the master's, in **one section**, so every page has them. There is no "Proposed Timelines & Project Management" section any more.
+
+### 17.2 How it is built
+- **`build_source_template.py`** turns the master into `CSS_Proposal_Source.docx`: it appends the two annexures the master leaves out (**Post Breach Scenario Assessment** and **Active Directory Assessment**, taken from the previous source, as template annexures 12 and 13), unwraps the Contents control to a marker, ends the cover with a real page break, merges the split cover date, pins every fixed page start with `pageBreakBefore`, and puts a `{{ client_logo }}` slot on page 2. Inputs are the master and the previous source (`git show 104c35c:Automation/backend/CSS_Proposal_Source.docx`). Then `python css_proposal_generator.py --build-template` rewrites `CSS_Proposal_Base_Template.docx` (the file the app uses; it is tracked, commit it with the source).
+- **Template annexure numbers** (`annexure_number` in `ASSESSMENT_CATALOG`, `annexure` in `annexure_map.json`, `TYPE_RULES` in the test-set generator) follow the master: Network PT 1, Web 2, Config Review 3, Insider Threat 4, Mobile 5, AD Security 6, SOC 7, Cloud 8, API 9, Training 10, Source Code Review 11, then Post Breach 12 and AD Assessment 13. A test checks the catalog against the Source template.
+- **`proposal_contents.py`** writes the Contents as the master has it: a real `TOC` field, one hyperlinked line per heading with a `PAGEREF` and a `_Toc` bookmark on the heading. It lists exactly the headings in the body ("Annexure N: Title" in italics, then Terms & Conditions and Conclusion & Pricing). Page numbers are an estimate first and then the numbers measured from a real render. The old line-by-line Contents helpers are gone.
+- **Pages 3-8 are frozen**: `proposal_style.apply_specification` leaves their text, fonts and diagram spacing as the master has them (the master *is* the source of the specification). Only their table (Team Overview) is brought to the table standard, compactly so it stays on page 4. Blank-line spacing inside those pages is not linted.
+- **Cover**: `{{ proposal_date }}` (DD-MM-YYYY) replaces the master's date; the client name is centred as in the master. The reference number is still collected (Excel cell F16) but **not printed**; the date is. Manual form: its "reference" field is the cover date.
+- **Client logo**: only an uploaded logo is placed between "For" and the client name. With none, the master's empty slot stays (no CyberSmithSECURE logo is substituted).
+- Page 6 keeps the "involves the following phases as identified below:" line on page 6 (the master pushed it to the page bottom with a dozen empty paragraphs, which only fits with its exact metrics).
+- The Conclusion table's first column has a minimum width so "Total" and "Sr. No." never break mid-word; "In witness whereof" is kept with the signature table.
+
+### 17.3 Verified here (Windows, Microsoft Word as the layout engine)
+- 231 tests pass (the original 55 regression tests were kept; the ones that pinned the old template were updated).
+- A rendered proposal has eight fixed pages, the Introduction on page 3 and Annexure 1 on page 9; no blank pages; Contents numbers equal the measured pages; Word's own TOC update and an edit in the pricing table work.
+- Acceptance run over the dummy workbooks and the jsdom UI test (known-only build, Word + PDF downloads) pass.
+- **Not verified:** LibreOffice on Railway (no Corbel font there: the fixed pages may paginate differently from Word), a real filled client Excel, and the brand-owner items in section 15.
+
+*Last updated: handoff aligned to codebase v1.5.0.*

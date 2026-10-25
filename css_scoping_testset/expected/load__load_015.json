@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "count": 6,
       "quantity": 1549,
       "count_label": "Web Application categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "count": 8,
       "quantity": 1971,
       "count_label": "Cloud Infrastructure categories",
@@ -18,7 +18,7 @@
     },
     {
       "type": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "count": 3,
       "quantity": 557,
       "count_label": "Source Code categories",
@@ -60,19 +60,19 @@
   "pricing_lines": [
     {
       "label": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "quantity": 1549,
       "frequency": "One Time"
     },
     {
       "label": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "quantity": 1971,
       "frequency": "One Time"
     },
     {
       "label": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "quantity": 557,
       "frequency": "One Time"
     },
@@ -102,9 +102,9 @@
     }
   ],
   "distinct_annexures": [
-    4,
-    10,
-    13,
+    2,
+    8,
+    11,
     "custom"
   ],
   "warnings": [

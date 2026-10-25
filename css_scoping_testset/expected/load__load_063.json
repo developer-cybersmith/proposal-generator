@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "count": 6,
       "quantity": 1670,
       "count_label": "Web Application categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "count": 7,
       "quantity": 1933,
       "count_label": "Active Directory categories",
@@ -18,7 +18,7 @@
     },
     {
       "type": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "count": 2,
       "quantity": 600,
       "count_label": "API categories",
@@ -44,19 +44,19 @@
   "pricing_lines": [
     {
       "label": "Web Application VAPT",
-      "annexure_no_or_custom": 4,
+      "annexure_no_or_custom": 2,
       "quantity": 1670,
       "frequency": "One Time"
     },
     {
       "label": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "quantity": 1933,
       "frequency": "One Time"
     },
     {
       "label": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "quantity": 600,
       "frequency": "One Time"
     },
@@ -74,9 +74,9 @@
     }
   ],
   "distinct_annexures": [
-    4,
-    8,
-    11,
+    2,
+    6,
+    9,
     "custom"
   ],
   "warnings": [],

@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "count": 6,
       "quantity": 1832,
       "count_label": "Device & Server categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "count": 9,
       "quantity": 1651,
       "count_label": "Cloud Infrastructure categories",
@@ -36,13 +36,13 @@
   "pricing_lines": [
     {
       "label": "Configuration / Hardening Review",
-      "annexure_no_or_custom": 5,
+      "annexure_no_or_custom": 3,
       "quantity": 1832,
       "frequency": "One Time"
     },
     {
       "label": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "quantity": 1651,
       "frequency": "One Time"
     },
@@ -60,8 +60,8 @@
     }
   ],
   "distinct_annexures": [
-    5,
-    10,
+    3,
+    8,
     "custom"
   ],
   "warnings": [

@@ -22,6 +22,7 @@ import proposal_tokens as tokens
 from proposal_fields import make_run
 
 TWIPS_PER_INCH = 1440
+MIN_SERIAL_COLUMN_TWIPS = 1050        # the first column holds "Sr. No." and the Total label
 RUPEE = "₹"
 
 
@@ -150,6 +151,11 @@ def _row(cells: Iterable, *, header: bool = False, height: int | None = None):
 def column_widths(text_width_twips: int) -> list[int]:
     widths = [int(text_width_twips * pct / 100) for pct in tokens.PRICING_COLUMN_WIDTH_PCT]
     widths[-1] += text_width_twips - sum(widths)      # absorb rounding so the table fits exactly
+    if widths[0] < MIN_SERIAL_COLUMN_TWIPS:           # "Total" / "Sr. No." must not break mid-word on a narrow page
+        give = MIN_SERIAL_COLUMN_TWIPS - widths[0]
+        donor = max(range(1, len(widths)), key=lambda i: widths[i])
+        widths[0] += give
+        widths[donor] -= give
     return widths
 
 

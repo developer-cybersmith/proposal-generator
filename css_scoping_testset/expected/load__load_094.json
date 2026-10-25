@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "count": 3,
       "quantity": 1136,
       "count_label": "Mobile Application categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "count": 1,
       "quantity": 272,
       "count_label": "API categories",
@@ -20,20 +20,20 @@
   "pricing_lines": [
     {
       "label": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "quantity": 1136,
       "frequency": "One Time"
     },
     {
       "label": "API Security Testing",
-      "annexure_no_or_custom": 11,
+      "annexure_no_or_custom": 9,
       "quantity": 272,
       "frequency": "One Time"
     }
   ],
   "distinct_annexures": [
-    7,
-    11
+    5,
+    9
   ],
   "warnings": [
     "non_numeric_quantity_skipped: Public APIs (Overall Scoping Matrix!D19)='many'"

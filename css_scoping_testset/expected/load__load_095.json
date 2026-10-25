@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "count": 8,
       "quantity": 1796,
       "count_label": "Cloud Infrastructure categories",
@@ -20,7 +20,7 @@
   "pricing_lines": [
     {
       "label": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "quantity": 1796,
       "frequency": "One Time"
     },
@@ -32,7 +32,7 @@
     }
   ],
   "distinct_annexures": [
-    10,
+    8,
     "custom"
   ],
   "warnings": [],

@@ -36,7 +36,9 @@ LINE_SPACING = 264            # 1.1 lines (spec: 1.08-1.15)
 TWIPS_PER_INCH = 1440
 
 ANNEXURE_TITLE_RE = re.compile(r"^\s*Annexure\s+\d+\s*:", re.IGNORECASE)
-HEADING2_TEXTS = {"introduction", "proposed timelines & project management", "team overview", "terms & conditions"}
+HEADING2_TEXTS = {"introduction", "our understanding of your requirement", "team overview", "methodology overview",
+                  "vulnerability assessment methodology", "proposed timelines & project management",
+                  "terms & conditions"}
 HEADING1_TEXTS = {"conclusion & pricing"}
 PURPLES = {"7030a0", "6f2f9f", "6f2f9e"}
 
@@ -77,7 +79,7 @@ def define_styles(doc) -> None:
     """Create or replace the named styles from the tokens (spec section 5)."""
     styles_el = doc.styles.element
     text_width = _text_width_twips(doc)
-    toc_tabs = f'<w:tabs><w:tab w:val="right" w:leader="dot" w:pos="{CONTENTS_TAB_POS_TWIPS}"/></w:tabs>'
+    toc_tabs = f'<w:tabs><w:tab w:val="right" w:leader="dot" w:pos="{text_width}"/></w:tabs>'   # right edge of the text
     # "Normal" is deliberately NOT redefined: the cover page and Contents (left as the template
     # designed them) inherit from it, and changing its spacing/colour moves the cover layout.
     # Body paragraphs get their Corbel 11 pt / colour / spacing directly instead.
@@ -93,7 +95,7 @@ def define_styles(doc) -> None:
                    keep_next=True, outline=1),
         _style_xml("TOC1", "toc 1", next_style="Normal", bold=True, color=tokens.BODY_TEXT, size_pt=10.5,
                    before_pt=2, after_pt=0, tabs=toc_tabs, line=240, ui_priority=39),
-        _style_xml("TOC2", "toc 2", next_style="Normal", color=tokens.BODY_TEXT, size_pt=10.5,
+        _style_xml("TOC2", "toc 2", next_style="Normal", bold=True, italic=True, color=tokens.BODY_TEXT, size_pt=10.5,   # annexure lines
                    before_pt=2, after_pt=0, tabs=toc_tabs, line=240, ui_priority=39),
     ]
     existing = {s.get(_w("w:styleId")): s for s in styles_el.findall(_w("w:style"))}
@@ -356,6 +358,16 @@ def _body_start(body) -> int:
     return 0
 
 
+def _front_end(body, start: int) -> int:
+    """Index of the first annexure title after *start* (end of the fixed front pages), else *start*."""
+    children = list(body)
+    for i in range(start, len(children)):
+        el = children[i]
+        if el.tag == _w("w:p") and ANNEXURE_TITLE_RE.match(_text(el)):
+            return i
+    return start
+
+
 # =============================================================================== tables
 def _cell_borders():
     b = OxmlElement("w:tcBorders")
@@ -422,11 +434,21 @@ def _widen_serial_column(grid, rows, text_width_twips: int) -> None:
             idx += span
 
 
-def restyle_table(tbl, text_width_twips: int) -> None:
-    """Spec section 9: purple header row, light body rows, grey borders, padding, header repeat."""
+def restyle_table(tbl, text_width_twips: int, *, compact: bool = False) -> None:
+    """Spec section 9: purple header row, light body rows, grey borders, padding, header repeat.
+
+    *compact* (the Team Overview table on the fixed front page) drops the template's fixed row
+    heights and uses less vertical padding, so the table stays on its one page.
+    """
     rows = tbl.findall(_w("w:tr"))
     if not rows:
         return
+    if compact:
+        for tr in rows:
+            trpr = tr.find(_w("w:trPr"))
+            if trpr is not None:
+                for node in trpr.findall(_w("w:trHeight")):
+                    trpr.remove(node)
     grid = tbl.find(_w("w:tblGrid"))
     cols = [int(g.get(_w("w:w")) or 0) for g in grid.findall(_w("w:gridCol"))] if grid is not None else []
     total = sum(cols)
@@ -458,8 +480,9 @@ def restyle_table(tbl, text_width_twips: int) -> None:
     layout = OxmlElement("w:tblLayout")
     layout.set(_w("w:type"), "fixed")
     mar = OxmlElement("w:tblCellMar")
-    for side, inches in (("w:top", tokens.TABLE_CELL_PAD_V_IN), ("w:left", tokens.TABLE_CELL_PAD_H_IN),
-                         ("w:bottom", tokens.TABLE_CELL_PAD_V_IN), ("w:right", tokens.TABLE_CELL_PAD_H_IN)):
+    pad_v = tokens.TABLE_CELL_PAD_V_IN / 2 if compact else tokens.TABLE_CELL_PAD_V_IN
+    for side, inches in (("w:top", pad_v), ("w:left", tokens.TABLE_CELL_PAD_H_IN),
+                         ("w:bottom", pad_v), ("w:right", tokens.TABLE_CELL_PAD_H_IN)):
         m = OxmlElement(side)
         m.set(_w("w:w"), str(int(inches * TWIPS_PER_INCH)))
         m.set(_w("w:type"), "dxa")
@@ -619,6 +642,12 @@ def convert_signature_block(doc, text_width_twips: int) -> bool:
     if not any(r[0].startswith("Date:") for r in rows):
         rows.append(("Date: ______________________", "Date: ______________________"))
     table = build_signature_table(rows, text_width_twips)
+    witness = children[start]                                  # "In witness whereof ..." moves with the signatures
+    wppr = _ppr(witness, create=True)
+    if wppr.find(_w("w:keepNext")) is None:
+        keep = OxmlElement("w:keepNext")
+        style_node = wppr.find(_w("w:pStyle"))
+        (style_node.addnext(keep) if style_node is not None else wppr.insert(0, keep))
     block[0].addprevious(table)
     for p in block:
         body.remove(p)
@@ -653,72 +682,6 @@ def make_tiny_paragraph(p) -> None:
 
 
 # =============================================================================== Contents as a real TOC field
-CONTENTS_TAB_POS_TWIPS = 9887        # right tab of the Contents page (its section has 1.0 / 0.75 cm side margins)
-TOC_INSTRUCTION = ' TOC \\t "Heading 1,1,Heading 2,1,Annexure Title,2" \\z '
-
-
-def _fld_run(kind: str):
-    r = OxmlElement("w:r")
-    fc = OxmlElement("w:fldChar")
-    fc.set(_w("w:fldCharType"), kind)
-    r.append(fc)
-    return r
-
-
-def _is_field_run(r) -> bool:
-    return r.find(_w("w:fldChar")) is not None or r.find(_w("w:instrText")) is not None
-
-
-def wrap_contents_in_toc_field(doc) -> bool:
-    """Make the Contents lines the cached result of a real Word TOC field.
-
-    The lines keep their (measured) text and page numbers, so the document reads correctly
-    everywhere; when Word updates fields it rebuilds the Contents from the Heading 1/2 and
-    Annexure Title styles, so titles and numbering always come from the headings themselves
-    (specification section 8: an automatic TOC, never typed). Returns True if it was added.
-    """
-    paragraphs = doc.paragraphs
-    start = next((i for i, p in enumerate(paragraphs) if p.text.strip() == "Contents"), None)
-    if start is None:
-        return False
-    entries = []
-    for p in paragraphs[start + 1:]:
-        if "\t" in (p.text or "") and p.text.strip():
-            entries.append(p)
-        else:
-            break
-    if not entries:
-        return False
-    if any(_is_field_run(r) for r in entries[0]._p.iter(_w("w:r"))):
-        return False                                           # already a field
-    labels = [p.text.split("\t")[0].strip().lower() for p in entries]
-    try:
-        first = next(i for i, l in enumerate(labels) if l.startswith("team overview"))
-        last = next(i for i, l in enumerate(labels) if l.startswith("terms"))
-    except StopIteration:
-        first = last = -1
-    for i, p in enumerate(entries):
-        level2 = first >= 0 and first < i < last                  # the annexure lines
-        el = p._p
-        old = el.find(_w("w:pPr"))
-        if old is not None:
-            el.remove(old)
-        ppr = OxmlElement("w:pPr")
-        ps = OxmlElement("w:pStyle")
-        ps.set(_w("w:val"), "TOC2" if level2 else "TOC1")
-        ppr.append(ps)
-        el.insert(0, ppr)
-    first_p, last_p = entries[0]._p, entries[-1]._p
-    begin, instr_run, sep = _fld_run("begin"), OxmlElement("w:r"), _fld_run("separate")
-    instr = OxmlElement("w:instrText")
-    instr.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-    instr.text = TOC_INSTRUCTION
-    instr_run.append(instr)
-    anchor = first_p.find(_w("w:pPr"))
-    for node in (sep, instr_run, begin):
-        anchor.addnext(node)
-    last_p.append(_fld_run("end"))
-    return True
 
 
 # =============================================================================== editability
@@ -754,11 +717,20 @@ def apply_specification(doc) -> dict[str, int]:
     body = doc.element.body
     width = _text_width_twips(doc)
     start = _body_start(body)
+    front_end = _front_end(body, start)               # pages 3-8 are the organisation's fixed pages
     children = list(body)
 
     for i, el in enumerate(children):
         if i < start:
             continue                                  # cover and Contents: left as designed
+        if start <= i < front_end:
+            # The fixed front pages (Introduction ... tools) are the organisation's own design: text,
+            # fonts and the spacing that places their diagrams stay exactly as in the master. Only
+            # their tables are brought to the table standard.
+            if el.tag == _w("w:tbl"):
+                restyle_table(el, width, compact=True)
+                stats["tables"] += 1
+            continue
         if el.tag == _w("w:p"):
             kind = _classify(el)
             if kind == "contents":

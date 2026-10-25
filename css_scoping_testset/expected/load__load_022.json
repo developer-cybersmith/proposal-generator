@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "count": 4,
       "quantity": 1138,
       "count_label": "Mobile Application categories",
@@ -20,7 +20,7 @@
   "pricing_lines": [
     {
       "label": "Mobile Application VAPT (Android/iOS)",
-      "annexure_no_or_custom": 7,
+      "annexure_no_or_custom": 5,
       "quantity": 1138,
       "frequency": "One Time"
     },
@@ -32,7 +32,7 @@
     }
   ],
   "distinct_annexures": [
-    7,
+    5,
     "custom"
   ],
   "warnings": [],

@@ -28,10 +28,6 @@ from css_proposal_generator import (
     _make_request_catalog,
     _register_custom_annexure,
     _toc_title_for_key,
-    _refresh_all_toc_pages,
-    _update_contents_toc_structure,
-    _compute_layout_pages,
-    _find_contents_region,
     _insert_logo_on_cover,
     _find_cover_logo_paragraph,
     build_custom_annexure_block,
@@ -592,21 +588,24 @@ class TestTocCustomAnnexureRegression(unittest.TestCase):
         if not BASE_TEMPLATE.is_file():
             self.skipTest("CSS_Proposal_Base_Template.docx not available")
 
+        import tempfile
+
         from docx import Document
 
+        import proposal_lint
+        from css_proposal_generator import generate_proposal
+
         catalog = self._build_custom_catalog()
-        ordered_keys = [self.CUSTOM_KEY]
-
-        doc = Document(str(BASE_TEMPLATE))
-        _update_contents_toc_structure(doc, ordered_keys, catalog=catalog)
-        pages = _compute_layout_pages(doc)
-        _refresh_all_toc_pages(doc, ordered_keys, pages, catalog=catalog)
-
-        _, first_assessment_idx, _, _ = _find_contents_region(doc)
-        self.assertIsNotNone(first_assessment_idx)
-        toc_line = (doc.paragraphs[first_assessment_idx].text or "").strip()
-        self.assertIn(self.CUSTOM_TITLE, toc_line)
-        self.assertNotIn("__other__", toc_line)
+        catalog[self.CUSTOM_KEY]["ai_elements"] = build_custom_annexure_block(
+            "Sub-Activity:\nRed team exercise against the cloud estate.", 1, self.CUSTOM_TITLE, "Acme")
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "custom.docx"
+            generate_proposal(company_name="Acme", proposal_ref="EN-1", logo_path=None, output_path=out,
+                              annexure_order=[self.CUSTOM_KEY], request_catalog=catalog)
+            entries = proposal_lint._contents_entries(Document(str(out)))
+        # the Contents is written from the headings, so the human title (never the internal key) is listed
+        self.assertIn(f"Annexure 1: {self.CUSTOM_TITLE}", entries)
+        self.assertFalse([e for e in entries if "__other__" in e])
 
 
 # ---------------------------------------------------------------------------

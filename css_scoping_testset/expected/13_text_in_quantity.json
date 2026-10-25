@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "External Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 2,
       "quantity": 8,
       "count_label": "External Infrastructure categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 4,
       "quantity": 28,
       "count_label": "Internal Infrastructure categories",
@@ -18,7 +18,7 @@
     },
     {
       "type": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "count": 2,
       "quantity": 11,
       "count_label": "Cloud Infrastructure categories",
@@ -28,26 +28,26 @@
   "pricing_lines": [
     {
       "label": "External Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 8,
       "frequency": "One Time"
     },
     {
       "label": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 28,
       "frequency": "One Time"
     },
     {
       "label": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "quantity": 11,
       "frequency": "One Time"
     }
   ],
   "distinct_annexures": [
-    3,
-    10
+    1,
+    8
   ],
   "warnings": [
     "non_numeric_quantity_skipped: Internet-Facing Web Applications (Overall Scoping Matrix!D18)='twelve'",

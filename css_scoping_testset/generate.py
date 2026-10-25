@@ -161,15 +161,15 @@ def is_yes(value):
 # (type key, template annexure or "custom", matrix rows used, Count label)
 DEFAULT_FREQUENCY = "One Time"
 TYPE_RULES = [
-    ("external_network_pt", 3, list(range(17, 23)), "External Infrastructure categories"),
-    ("internal_network_pt", 3, list(range(4, 16)), "Internal Infrastructure categories"),
-    ("web_app_vapt", 4, list(range(55, 61)), "Web Application categories"),
-    ("config_hardening", 5, [4, 5, 6, 9, 10, 11], "Device & Server categories"),
-    ("mobile_vapt", 7, list(range(62, 66)), "Mobile Application categories"),
-    ("ad_security", 8, list(range(35, 42)), "Active Directory categories"),
-    ("cloud_security", 10, list(range(24, 34)), "Cloud Infrastructure categories"),
-    ("api_security", 11, [19, 32], "API categories"),
-    ("source_code_review", 13, list(range(67, 71)), "Source Code categories"),
+    ("external_network_pt", 1, list(range(17, 23)), "External Infrastructure categories"),
+    ("internal_network_pt", 1, list(range(4, 16)), "Internal Infrastructure categories"),
+    ("web_app_vapt", 2, list(range(55, 61)), "Web Application categories"),
+    ("config_hardening", 3, [4, 5, 6, 9, 10, 11], "Device & Server categories"),
+    ("mobile_vapt", 5, list(range(62, 66)), "Mobile Application categories"),
+    ("ad_security", 6, list(range(35, 42)), "Active Directory categories"),
+    ("cloud_security", 8, list(range(24, 34)), "Cloud Infrastructure categories"),
+    ("api_security", 9, [19, 32], "API categories"),
+    ("source_code_review", 11, list(range(67, 71)), "Source Code categories"),
     ("network_segmentation", "custom", list(range(43, 48)), "Network Segmentation categories"),
     ("saas_security", "custom", list(range(49, 54)), "SaaS Application categories"),
 ]

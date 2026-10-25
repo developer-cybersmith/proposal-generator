@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "count": 10,
       "quantity": 1733,
       "count_label": "Internal Infrastructure categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "count": 9,
       "quantity": 2222,
       "count_label": "Cloud Infrastructure categories",
@@ -20,20 +20,20 @@
   "pricing_lines": [
     {
       "label": "Internal Network Penetration Testing",
-      "annexure_no_or_custom": 3,
+      "annexure_no_or_custom": 1,
       "quantity": 1733,
       "frequency": "One Time"
     },
     {
       "label": "Cloud Security Assessment",
-      "annexure_no_or_custom": 10,
+      "annexure_no_or_custom": 8,
       "quantity": 2222,
       "frequency": "One Time"
     }
   ],
   "distinct_annexures": [
-    3,
-    10
+    1,
+    8
   ],
   "warnings": [
     "non_numeric_quantity_skipped: Linux / Unix Servers (Overall Scoping Matrix!D10)='10.0.0.0/24'",

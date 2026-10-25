@@ -2,7 +2,7 @@
   "included_annexures": [
     {
       "type": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "count": 5,
       "quantity": 1330,
       "count_label": "Active Directory categories",
@@ -10,7 +10,7 @@
     },
     {
       "type": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "count": 4,
       "quantity": 957,
       "count_label": "Source Code categories",
@@ -36,13 +36,13 @@
   "pricing_lines": [
     {
       "label": "Active Directory (AD) Security Assessment",
-      "annexure_no_or_custom": 8,
+      "annexure_no_or_custom": 6,
       "quantity": 1330,
       "frequency": "One Time"
     },
     {
       "label": "Source Code Review / SAST",
-      "annexure_no_or_custom": 13,
+      "annexure_no_or_custom": 11,
       "quantity": 957,
       "frequency": "One Time"
     },
@@ -60,8 +60,8 @@
     }
   ],
   "distinct_annexures": [
-    8,
-    13,
+    6,
+    11,
     "custom"
   ],
   "warnings": [

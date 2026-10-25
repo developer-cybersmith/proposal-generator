@@ -84,7 +84,9 @@
     <div class="row">
       <div><label for="clientName">Client name *</label><input type="text" id="clientName" maxlength="150" /></div>
       <div><label for="refNo">Reference number *</label><input type="text" id="refNo" maxlength="60" />
-           <div class="hint">From the Excel's Engagement Reference No.; edit if needed.</div></div>
+           <div class="hint">From the Excel's Engagement Reference No.; edit if needed. Kept for your records; the cover shows the date.</div></div>
+      <div><label for="propDate">Proposal date * (printed on the cover)</label><input type="text" id="propDate" maxlength="20" placeholder="DD-MM-YYYY" />
+           <div class="hint">Today's date by default; edit if needed.</div></div>
     </div>
     <div><label for="logo">Client logo (optional, PNG/JPG)</label><input type="file" id="logo" accept=".png,.jpg,.jpeg" /></div>
     <ul id="warnList" class="warn"></ul>
@@ -214,7 +216,7 @@
                      cost: tr.querySelector('.p-cost').value });
     });
     return {
-      client: { name: $('clientName').value, reference_no: $('refNo').value }, entries,
+      client: { name: $('clientName').value, reference_no: $('refNo').value, proposal_date: $('propDate').value }, entries,
       ai: { sector: $('aiSector').value, engagement_summary: $('aiSummary').value, primary_tier: $('aiTier').value,
             payment_model: $('aiPayment').value, special_constraints: $('aiConstraints').value, duration: $('aiDuration').value },
       pricing: $('screen-p2').classList.contains('hidden') ? undefined : pricing,
@@ -272,6 +274,7 @@
   function renderP1() {
     $('clientName').value = draft.client.name || '';
     $('refNo').value = draft.client.reference_no || '';
+    $('propDate').value = draft.client.proposal_date || '';
     $('warnList').replaceChildren(...draft.warnings.filter((w) => !w.startsWith('reference_required')).map((w) => h('li', { text: friendly(w) })));
     const main = draft.entries.filter((e) => e.origin === 'excel'), manual = draft.entries.filter((e) => e.origin === 'manual');
     $('p1Table').tBodies[0].replaceChildren(...main.map((e, i) => entryRow(e, i, main)));

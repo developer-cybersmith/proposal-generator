@@ -72,6 +72,24 @@ def test_styles_come_from_the_tokens_and_normal_is_left_alone(proposal):
     assert "TOC1" in styles and "TOC2" in styles
 
 
+def test_no_table_floats_and_short_tables_move_as_one_block(proposal):
+    doc = Document(str(proposal))
+    body = doc.element.body
+    assert not list(body.iter(qn("w:tblpPr")))                       # a floating table is placed differently by Word and LibreOffice
+    dev = next(t for t in body.iter(qn("w:tbl")) if "Deviation Charges" in _text(t))
+    rows = dev.findall(qn("w:tr"))
+    for tr in rows[:-1]:
+        assert all(p.find(f"{qn('w:pPr')}/{qn('w:keepNext')}") is not None for p in tr.iter(qn("w:p")))
+    assert all(p.find(f"{qn('w:pPr')}/{qn('w:keepNext')}") is None for p in rows[-1].iter(qn("w:p")))
+    lead = dev.getprevious()
+    ppr = lead.find(qn("w:pPr"))
+    # the sentence that introduces it stays with it, and it always starts the second Terms page
+    assert all(ppr.find(qn(t)) is not None for t in ("w:keepNext", "w:keepLines", "w:pageBreakBefore"))
+    assert "deviation" in _text(lead).lower()
+    names = [c.tag.split("}")[1] for c in ppr]
+    assert names.index("keepNext") < names.index("keepLines") < names.index("pageBreakBefore")   # schema order
+
+
 def test_bullet_numbering_is_defined_once_in_schema_order(proposal):
     doc = Document(str(proposal))
     numbering = doc.part.numbering_part.element

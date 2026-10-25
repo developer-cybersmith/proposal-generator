@@ -256,6 +256,26 @@ def test_heading_pages_are_measured_after_the_contents_page(tmp_path):
                      "annexure 1": 7, "annexure 2": 9, "terms & conditions": 10, "conclusion & pricing": 11}
 
 
+def test_corbel_is_drawn_with_a_closest_free_font_on_a_linux_server(tmp_path, monkeypatch):
+    monkeypatch.setattr(pdfmod.sys, "platform", "linux")
+    monkeypatch.delenv("PROPOSAL_CORBEL_SUBSTITUTE", raising=False)
+    assert pdfmod.corbel_substitute({"liberation sans", "carlito"}) == "Carlito"          # default substitute
+    assert pdfmod.corbel_substitute({"liberation sans"}) is None                           # not installed: nothing to map to
+    assert pdfmod.corbel_substitute({"corbel", "carlito"}) is None                         # the real font wins
+    monkeypatch.setenv("PROPOSAL_CORBEL_SUBSTITUTE", "none")
+    assert pdfmod.corbel_substitute({"carlito"}) is None
+    monkeypatch.setenv("PROPOSAL_CORBEL_SUBSTITUTE", "Lato")
+    assert pdfmod.corbel_substitute({"carlito", "lato"}) == "Lato"
+    monkeypatch.setattr(pdfmod, "_installed_families", lambda: {"carlito"})
+    monkeypatch.setenv("PROPOSAL_CORBEL_SUBSTITUTE", "Carlito")
+    env = pdfmod._font_environment(tmp_path)
+    conf = Path(env["FONTCONFIG_FILE"]).read_text(encoding="utf-8")
+    assert "<string>Corbel</string>" in conf and "<string>Carlito</string>" in conf
+    assert pdfmod._font_note("libreoffice") == "Corbel drawn as Carlito" and pdfmod._font_note("word") == ""
+    monkeypatch.setattr(pdfmod.sys, "platform", "win32")
+    assert pdfmod.corbel_substitute({"carlito"}) is None and "FONTCONFIG_FILE" not in pdfmod._font_environment(tmp_path)
+
+
 def test_no_engine_means_unverified_but_never_an_error(tmp_path, monkeypatch):
     monkeypatch.setenv("PROPOSAL_PDF_ENGINE", "off")
     check = pdfmod.check_document(tmp_path / "missing.docx", 3)

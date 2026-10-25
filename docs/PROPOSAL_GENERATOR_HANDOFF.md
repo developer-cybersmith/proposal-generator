@@ -453,4 +453,10 @@ Header (logo, "Statement of Work" tag) and footer (website, phone, email, purple
 - Acceptance run over the dummy workbooks and the jsdom UI test (known-only build, Word + PDF downloads) pass.
 - **Not verified:** LibreOffice on Railway (no Corbel font there: the fixed pages may paginate differently from Word), a real filled client Excel, and the brand-owner items in section 15.
 
+### 17.4 Railway: making the server match Word
+Railway builds with **Railpack** (not nixpacks), so `nixpacks.toml` is ignored there. The service needs these variables: `RAILPACK_PYTHON_VERSION=3.12`, `RAILPACK_DEPLOY_APT_PACKAGES=libreoffice-writer fontconfig fonts-liberation fonts-crosextra-carlito`, `PROPOSAL_PDF_ENGINE=auto`, `SESSION_SECRET_KEY`, `PROPOSAL_ACCESS_PASSWORD`, `PROPOSAL_OPENAI_API_KEY`, `TEST_MODE=false`.
+- **Fonts.** A Linux server has no Corbel, so LibreOffice used a wider Helvetica clone with another line height and paginated differently from Word. `proposal_pdf.corbel_substitute()` now maps Corbel to **Carlito** (Calibri metrics, the closest free font) through a fontconfig file given to `soffice`; `PROPOSAL_CORBEL_SUBSTITUTE` picks another installed family or `none`. The build summary says which font was used. Measured against Word on 7 proposals this made every annexure's Contents number identical.
+- **Tables.** The Terms deviation table was a *floating* table (`w:tblpPr`); Word and LibreOffice anchor those differently, so the page break before "Conclusion & Pricing" was honoured by one and not the other. All tables are now ordinary tables; short tables (6 rows or fewer) and the sentence above them are kept together, and the deviation table always starts a second Terms page (whether it still fits on the first is a matter of a few points that the two engines decide differently).
+- **Limit.** Pagination near a page boundary can still differ between engines, mostly in AI-written annexures. Word remains the authority; the file refreshes its fields when opened in Word.
+
 *Last updated: handoff aligned to codebase v1.5.0.*

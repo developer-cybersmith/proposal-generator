@@ -33,6 +33,8 @@ BULLET_NUM_ID = 9100          # numbering definition owned by this module (AI an
 SPACING_AFTER_BODY = int(tokens.BODY_SPACE_AFTER_PT * 20)
 SPACING_AFTER_LIST = int(tokens.LIST_SPACE_AFTER_PT * 20)
 LINE_SPACING = 264            # 1.1 lines (spec: 1.08-1.15)
+TABLE_GAP_ABOVE_TWIPS = 160   # 8 pt between the text above a table and the table
+SHORT_TABLE_ROWS = 6          # tables up to this many rows are kept on one page
 TWIPS_PER_INCH = 1440
 
 ANNEXURE_TITLE_RE = re.compile(r"^\s*Annexure\s+\d+\s*:", re.IGNORECASE)
@@ -271,6 +273,32 @@ def _normalize_runs(p, *, size_pt: float = tokens.SIZE_BODY) -> None:
         sz.addnext(szcs)
 
 
+def _keep_with_next(p, *, keep_lines: bool = False) -> None:
+    """Add <w:keepNext/> (and optionally <w:keepLines/>) in schema order: after the style, else first."""
+    ppr = _ppr(p, create=True)
+    anchor = ppr.find(_w("w:pStyle"))
+    for tag in ("w:keepNext", "w:keepLines") if keep_lines else ("w:keepNext",):
+        node = ppr.find(_w(tag))
+        if node is None:
+            node = OxmlElement(tag)
+            (anchor.addnext(node) if anchor is not None else ppr.insert(0, node))
+        anchor = node
+
+
+def _page_break_before(p) -> None:
+    """Add <w:pageBreakBefore/> in schema order (after pStyle / keepNext / keepLines)."""
+    ppr = _ppr(p, create=True)
+    if ppr.find(_w("w:pageBreakBefore")) is not None:
+        return
+    anchor = None
+    for tag in ("w:pStyle", "w:keepNext", "w:keepLines"):
+        found = ppr.find(_w(tag))
+        if found is not None:
+            anchor = found
+    node = OxmlElement("w:pageBreakBefore")
+    (anchor.addnext(node) if anchor is not None else ppr.insert(0, node))
+
+
 def _set_spacing(p, *, before: int = 0, after: int, line: int = LINE_SPACING) -> None:
     ppr = _ppr(p, create=True)
     for node in ppr.findall(_w("w:spacing")):
@@ -469,7 +497,11 @@ def restyle_table(tbl, text_width_twips: int, *, compact: bool = False) -> None:
                         pass
     _widen_serial_column(grid, rows, text_width_twips)
     tblpr = tbl.find(_w("w:tblPr"))
-    for tag in ("w:tblW", "w:jc", "w:tblLayout", "w:tblCellMar"):
+    # "w:tblpPr" makes a table float (text wraps around it, it is anchored to the next paragraph). The
+    # Terms deviation table came that way from the template; Word and LibreOffice place a floating
+    # table differently, so the page break before Conclusion & Pricing was honoured by one and not
+    # the other. Every table of the proposal is an ordinary table in the text flow.
+    for tag in ("w:tblpPr", "w:tblOverlap", "w:tblW", "w:jc", "w:tblLayout", "w:tblCellMar"):
         for node in tblpr.findall(_w(tag)):
             tblpr.remove(node)
     tblw = OxmlElement("w:tblW")
@@ -517,6 +549,8 @@ def restyle_table(tbl, text_width_twips: int, *, compact: bool = False) -> None:
                 jc_node.set(_w("w:val"), align)
                 ppr.append(jc_node)
                 _set_spacing(p, after=0, line=240)
+                if ri < len(rows) - 1 and len(rows) <= SHORT_TABLE_ROWS:
+                    _keep_with_next(p)                 # a short table moves as one block: no orphan last row
                 _normalize_runs(p, size_pt=tokens.SIZE_TABLE_HEADER if header else tokens.SIZE_TABLE_BODY)
                 for r in p.iter(_w("w:r")):
                     rpr = r.find(_w("w:rPr"))
@@ -775,6 +809,19 @@ def apply_specification(doc) -> dict[str, int]:
                     continue                          # the signature table is borderless by design
                 restyle_table(tbl, width)
                 stats["tables"] += 1
+                above = tbl.getprevious()                  # a floating table used to carry its own offset
+                if above is not None and above.tag == _w("w:p") and _text(above).strip():
+                    sp = _ppr(above, create=True).find(_w("w:spacing"))
+                    if sp is not None and int(sp.get(_w("w:after")) or 0) < TABLE_GAP_ABOVE_TWIPS:
+                        sp.set(_w("w:after"), str(TABLE_GAP_ABOVE_TWIPS))
+                    if len(tbl.findall(_w("w:tr"))) <= SHORT_TABLE_ROWS:
+                        _keep_with_next(above, keep_lines=True)   # the sentence that introduces a short table stays with it, whole
+                        if "deviation charges" in _text(tbl).lower():
+                            # The Terms text is the same in every proposal and the deviation table closes it. Whether
+                            # the last bullet and the table still fit on the Terms page is a matter of a few points,
+                            # and Word and LibreOffice decide it differently, which moved "Conclusion & Pricing" by a
+                            # page. A fixed break puts them on a second Terms page in both, always.
+                            _page_break_before(above)
     if convert_signature_block(doc, width):
         stats["signature"] = 1
     return stats

@@ -76,6 +76,52 @@ def available_engine() -> str | None:
     return "word" if word_available() else None
 
 
+def _installed_families() -> set[str]:
+    """Font families fontconfig knows about (empty when fc-list is unavailable)."""
+    try:
+        out = subprocess.run(["fc-list", ":", "family"], capture_output=True, text=True, timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {name.strip().lower() for line in out.splitlines() for name in line.split(",") if name.strip()}
+
+
+def corbel_substitute(families: set[str] | None = None) -> str | None:
+    """The installed family LibreOffice should draw "Corbel" with, or None.
+
+    The proposal is set in Corbel, a Microsoft font that a Linux server does not have. Without a
+    rule LibreOffice falls back to a Helvetica clone, which is wider and has a different line
+    height, so its pagination (the PDF preview and the Contents numbers) drifts from Word's.
+    Carlito (metric-compatible with Calibri) is the closest free design, in width and in line
+    height. PROPOSAL_CORBEL_SUBSTITUTE picks another installed family; "none" turns the rule off.
+    """
+    if sys.platform == "win32":
+        return None
+    wanted = os.getenv("PROPOSAL_CORBEL_SUBSTITUTE", "Carlito").strip()
+    if not wanted or wanted.lower() == "none":
+        return None
+    installed = _installed_families() if families is None else families
+    if "corbel" in installed or wanted.lower() not in installed:
+        return None                       # the real font is there, or the substitute is not installed
+    return wanted
+
+
+def _font_environment(work: Path) -> dict[str, str]:
+    """Environment for soffice: a fontconfig file that maps Corbel to the substitute family."""
+    env = dict(os.environ)
+    family = corbel_substitute()
+    if family:
+        conf = work / "fonts.conf"
+        conf.write_text(
+            '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig>\n'
+            '  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>\n'
+            '  <match target="pattern">\n'
+            '    <test qual="any" name="family"><string>Corbel</string></test>\n'
+            f'    <edit name="family" mode="assign" binding="strong"><string>{family}</string></edit>\n'
+            '  </match>\n</fontconfig>\n', encoding="utf-8")
+        env["FONTCONFIG_FILE"] = str(conf)
+    return env
+
+
 def _render_libreoffice(docx: Path, pdf: Path, timeout: int) -> None:
     soffice = find_soffice()
     if not soffice:
@@ -85,7 +131,7 @@ def _render_libreoffice(docx: Path, pdf: Path, timeout: int) -> None:
         profile = (work / "profile").as_uri()
         cmd = [soffice, "--headless", "--norestore", f"-env:UserInstallation={profile}",
                "--convert-to", "pdf", "--outdir", str(work), str(docx)]
-        subprocess.run(cmd, check=True, capture_output=True, timeout=timeout)
+        subprocess.run(cmd, check=True, capture_output=True, timeout=timeout, env=_font_environment(work))
         produced = work / (docx.stem + ".pdf")
         if not produced.is_file():
             raise RenderError("LibreOffice produced no PDF")
@@ -266,6 +312,7 @@ class PdfCheck:
     blank_pages: list[int] = field(default_factory=list)
     headings: dict[str, int] = field(default_factory=dict)
     note: str = ""
+    font: str = ""            # LibreOffice only: how the Corbel text was drawn
 
     @property
     def verified(self) -> bool:
@@ -275,7 +322,16 @@ class PdfCheck:
         if not self.verified:
             return f"not verified ({self.note or 'no PDF engine'})"
         blanks = f", blank pages {self.blank_pages}" if self.blank_pages else ", no blank pages"
-        return f"{self.engine}: {self.page_count} pages{blanks}"
+        return f"{self.engine}: {self.page_count} pages{blanks}{', ' + self.font if self.font else ''}"
+
+
+def _font_note(engine: str) -> str:
+    if engine != "libreoffice":
+        return ""
+    family = corbel_substitute()
+    if family:
+        return f"Corbel drawn as {family}"
+    return "Corbel not installed, default fallback font"
 
 
 def check_document(docx_path: str | Path, annexure_count: int, *, pdf_path: str | Path | None = None,
@@ -290,5 +346,5 @@ def check_document(docx_path: str | Path, annexure_count: int, *, pdf_path: str 
     except Exception as exc:  # RenderError, PyMuPDF errors, ...
         return PdfCheck(engine=None, note=f"render failed: {exc}"[:200])
     return PdfCheck(engine=engine, pdf_path=pdf, page_count=analysis.page_count,
-                    blank_pages=analysis.blank_pages,
+                    blank_pages=analysis.blank_pages, font=_font_note(engine),
                     headings=measure_heading_pages(analysis, annexure_count))

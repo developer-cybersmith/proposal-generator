@@ -6,6 +6,7 @@ Entry point for the CSS Proposal Generator.
 Run locally:   uvicorn app:app --reload --port 8000
 Run on Railway: see Procfile / railway.toml (gunicorn app:app).
 """
+import mimetypes
 import os
 import sys
 
@@ -15,6 +16,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+mimetypes.add_type("font/woff2", ".woff2")      # the interface fonts are self-hosted (static/fonts)
 
 # Make "Automation.backend..." importable regardless of where the process is started.
 _root_dir = os.path.dirname(os.path.abspath(__file__))

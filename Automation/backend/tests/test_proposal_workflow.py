@@ -666,7 +666,8 @@ def test_a_rebuild_reuses_the_ai_text_and_a_scope_change_regenerates_it(client, 
 
 def test_the_page_has_the_final_preview_step_and_both_download_buttons(client):
     html = client.get("/excel/").text
-    for needle in ("4 Final preview", 'id="screen-p3"', 'id="dlDocx"', 'id="dlPdf"', "Build final document", "/build/", "?inline=1"):
+    # step 4 of the progress rail (was the pill "4 Final preview"; the number now comes from the rail) and its screen heading
+    for needle in ('id="st3"', "Review &amp; download", "Final preview &mdash;", 'id="screen-p3"', 'id="dlDocx"', 'id="dlPdf"', "Build final document", "/build/", "?inline=1"):
         assert needle in html, needle
 
 

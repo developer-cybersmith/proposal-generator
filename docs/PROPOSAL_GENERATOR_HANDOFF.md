@@ -459,4 +459,22 @@ Railway builds with **Railpack** (not nixpacks), so `nixpacks.toml` is ignored t
 - **Tables.** The Terms deviation table was a *floating* table (`w:tblpPr`); Word and LibreOffice anchor those differently, so the page break before "Conclusion & Pricing" was honoured by one and not the other. All tables are now ordinary tables; short tables (6 rows or fewer) and the sentence above them are kept together, and the deviation table always starts a second Terms page (whether it still fits on the first is a matter of a few points that the two engines decide differently).
 - **Limit.** Pagination near a page boundary can still differ between engines, mostly in AI-written annexures. Word remains the authority; the file refreshes its fields when opened in Word.
 
-*Last updated: handoff aligned to codebase v1.5.0.*
+---
+
+## 18. The Proposal Studio look (styling only)
+
+The interface was restyled without touching behaviour (plan and reasoning: `docs/UI_REDESIGN_PLAN.md`). Direction "Clean Studio": a light, calm workspace in the brand purple `#7030A0`, with an optional dark theme.
+
+| Piece | Where | Notes |
+|---|---|---|
+| Design system | `static/css/studio.css` | Tokens (colours, type scale, spacing, radius, shadow, motion) for light and dark, then components. **Change colours/fonts here**, in the `:root` blocks at the top. |
+| Presentation script | `static/js/studio.js` | Theme toggle (remembered in this browser), drop zones that show the file name, progress-rail ticks, the live summary card, the "building" panel, show/hide password. It never calls the server, submits, validates or changes a field (a test enforces that). |
+| Fonts | `static/fonts/*.woff2` + `LICENSE-*.txt` | Bricolage Grotesque (headings), Hanken Grotesk (interface), JetBrains Mono (numbers, IDs), self-hosted under the SIL Open Font License: no third-party font request. |
+| Pages | `auth.py` (sign-in), `proposal_excel_ui.html`, the manual form inside `css_proposal_generator.py` | Markup changed around the existing controls; every id, field name and button label is kept. Each page's own `<script>` is byte-for-byte what it was. |
+| Serving | `app.py` mounts `/static` (and registers `font/woff2`); the generator app mounts the same folder for stand-alone runs | The pages link `/static/css/studio.css` and `/static/js/studio.js`. |
+
+What a first-time user gets: a left progress rail with plain names and a live "Your proposal" summary; "?" explanations for Items in scope, Frequency, Source, Order, Quantity, Reference number, Proposal date and Primary tier; file drop zones; errors shown as a clear alert; an honest elapsed-time panel while a document builds; and a layout that works from 360 px phones to wide screens (tables become cards below 900 px; no horizontal page scroll at 360, 390, 430, 768, 1000, 1100, 1210, 1280, 1440 px).
+
+Checks that guard it: `tests/test_ui_design_system.py` (every id the page scripts look up still exists; assets are served with the right types; the fonts the CSS declares are in the repo; WCAG AA contrast for text and 3:1 for control outlines in both themes), the jsdom UI test and the real-Chrome click-through unchanged, and the generated Word file byte-identical before and after.
+
+*Last updated: handoff aligned to codebase v1.5.0 plus the Studio look.*

@@ -62,27 +62,46 @@ def is_authorized(request: Request) -> bool:
 
 
 def _login_page(error: str = "", next_url: str = "") -> str:
-    err = f'<p class="err">{escape(error)}</p>' if error else ""
+    err = f'<p class="err" role="alert">{escape(error)}</p>' if error else ""
     return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CyberSmithSECURE - Proposal Generator</title>
-<style>
-  body{{font-family:Corbel,Segoe UI,Arial,sans-serif;background:#f4f1f8;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}
-  .card{{background:#fff;padding:2rem 2.25rem;border-radius:12px;box-shadow:0 4px 20px rgba(112,48,160,.15);width:100%;max-width:360px;text-align:center}}
-  img{{max-width:160px;margin-bottom:1rem}}
-  h1{{font-size:1.2rem;color:#7030A0;margin:0 0 1.25rem}}
-  input{{width:100%;box-sizing:border-box;padding:.7rem;border:1px solid #cfc6da;border-radius:8px;font-size:1rem}}
-  button{{margin-top:1rem;width:100%;padding:.7rem;border:0;border-radius:8px;background:#7030A0;color:#fff;font-size:1rem;cursor:pointer}}
-  .err{{color:#b00020;font-size:.9rem;margin:0 0 .75rem}}
-</style></head><body>
-<form class="card" method="post" action="/login">
-  <img src="/static/logo.png" alt="" onerror="this.style.display='none'">
-  <h1>Proposal Generator</h1>
-  {err}
-  <input type="hidden" name="next" value="{escape(next_url, quote=True)}">
-  <input type="password" name="password" placeholder="Access password" autofocus required>
-  <button type="submit">Sign in</button>
-</form></body></html>"""
+<script>(function(){{try{{var t=window.localStorage.getItem('css_theme');if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';document.documentElement.setAttribute('data-theme',t||'light');}}catch(e){{document.documentElement.setAttribute('data-theme','light');}}}})();</script>
+<link rel="stylesheet" href="/static/css/studio.css">
+</head><body>
+<div class="login-wrap">
+  <section class="login-hero" aria-hidden="false">
+    <img src="/static/logo.png" alt="CyberSmithSECURE" onerror="this.style.display='none'">
+    <div>
+      <h2>Client-ready proposals, without the busywork.</h2>
+      <p>Proposal Studio builds the full Statement of Work in the CyberSmithSECURE format, from the scoping sheet to a Word file you can edit.</p>
+      <ul>
+        <li>Reads the filled scoping Excel</li>
+        <li>Writes custom annexures with AI when no template exists</li>
+        <li>Checks every page before you download</li>
+      </ul>
+    </div>
+    <small>CyberSmithSECURE Pvt. Ltd. &middot; internal tool</small>
+  </section>
+  <main class="login-main">
+    <button type="button" class="icon-btn theme-toggle" aria-label="Switch to dark theme"><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+    <form class="login-card" method="post" action="/login">
+      <h1>Sign in</h1>
+      <p class="lead">Enter the access password your team shares. You will stay signed in while you work.</p>
+      {err}
+      <input type="hidden" name="next" value="{escape(next_url, quote=True)}">
+      <label for="pwField">Access password</label>
+      <div class="pw">
+        <input type="password" id="pwField" name="password" placeholder="Access password" autocomplete="current-password" autofocus required>
+        <button type="button" id="pwToggle" aria-pressed="false">Show</button>
+      </div>
+      <button type="submit" class="submit">Sign in</button>
+      <p class="foot">Trouble signing in? Ask the person who set up this tool.</p>
+    </form>
+  </main>
+</div>
+<script src="/static/js/studio.js"></script>
+</body></html>"""
 
 
 @router.get("/login", response_class=HTMLResponse)

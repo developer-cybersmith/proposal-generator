@@ -41,6 +41,7 @@ from docxtpl import DocxTemplate, InlineImage
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 try:
     from PIL import Image
@@ -2095,6 +2096,11 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Proposal-Lint", "X-Proposal-Lint-Errors", "X-Proposal-Pdf"],
 )
+# The pages' stylesheet, script, fonts and logo live in <repo>/static. The root app (app.py) serves them at /static;
+# this mount makes the same URL work when the generator is run on its own (python css_proposal_generator.py).
+_STATIC_DIR = HERE.parents[1] / "static"
+if _STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -2113,76 +2119,32 @@ async def proposal_form() -> HTMLResponse:
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CSS Proposal Generator</title>
-  <style>
-    body {{ font-family: Arial, sans-serif; background: #1a1a2e; color: #fff; margin: 0; padding: 20px; }}
-    .container {{ max-width: 860px; margin: 0 auto; background: #16213e; border-radius: 8px; padding: 24px; }}
-    h1 {{ color: #8a2be2; text-align: center; margin-top: 0; }}
-    h2 {{ color: #b388ff; font-size: 1.05rem; margin: 24px 0 12px; }}
-    h3 {{ color: #b388ff; font-size: 0.95rem; margin: 16px 0 8px; }}
-    .form-group {{ margin-bottom: 16px; }}
-    label {{ display: block; margin-bottom: 6px; font-weight: bold; }}
-    input[type="text"], input[type="file"], select, textarea {{ width: 100%; box-sizing: border-box; }}
-    input[type="text"], select, textarea {{
-      padding: 10px; border: 1px solid #444; border-radius: 4px; background: #0f3460; color: #fff;
-    }}
-    textarea {{ resize: vertical; min-height: 70px; }}
-    select option {{ background: #0f3460; color: #fff; }}
-    button {{
-      background: #8a2be2; color: #fff; border: none; padding: 10px 16px; border-radius: 4px;
-      cursor: pointer; font-size: 15px;
-    }}
-    button:hover {{ background: #7a1fd2; }}
-    button.secondary {{ background: #394867; }}
-    button.secondary:hover {{ background: #4b5875; }}
-    button.danger {{ background: #7a2230; padding: 6px 10px; font-size: 13px; }}
-    button.danger:hover {{ background: #922635; }}
-    .submit-btn {{ width: 100%; padding: 12px 24px; font-size: 16px; margin-top: 8px; }}
-    .hint {{ color: #aaa; font-size: 0.9em; margin-top: 4px; }}
-    #status {{ margin-top: 16px; min-height: 1.2em; font-weight: bold; }}
-    .error {{ color: #ff6b6b; }}
-    .success {{ color: #69db7c; }}
-    .info {{ color: #74b9ff; }}
-    .annexure-panel {{
-      border: 1px solid #394867; border-radius: 6px; padding: 16px; background: #0f2744;
-    }}
-    .annexure-row {{
-      display: grid; grid-template-columns: 120px 1fr auto; gap: 10px; align-items: start;
-      margin-bottom: 14px;
-    }}
-    .annexure-row > label {{ margin: 0; font-weight: 600; padding-top: 10px; }}
-    .annexure-slot-body {{ display: flex; flex-direction: column; gap: 6px; }}
-    .annexure-actions {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }}
-    .checkbox-row {{ display: flex; align-items: center; gap: 10px; }}
-    .checkbox-row input {{ width: auto; }}
-    .checkbox-row label {{ margin: 0; font-weight: normal; }}
-    .hidden {{ display: none; }}
-    .ai-panel {{
-      border: 1px solid #5e35b1; border-radius: 6px; padding: 18px; background: #130f30;
-      margin-top: 20px;
-    }}
-    .ai-panel h2 {{ color: #ce93d8; margin-top: 0; }}
-    .counts-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
-    .radio-group {{ display: flex; flex-wrap: wrap; gap: 14px; margin-top: 4px; }}
-    .radio-group label {{ font-weight: normal; display: flex; align-items: center; gap: 6px; }}
-    .radio-group input {{ width: auto; }}
-    .custom-slot-fields {{
-      background: #1a1060; border: 1px solid #7b1fa2; border-radius: 5px;
-      padding: 12px; margin-top: 8px;
-    }}
-    .custom-slot-fields label {{ color: #ce93d8; font-size: 0.92em; }}
-    .step-progress {{ color: #74b9ff; font-style: italic; }}
-    .char-count {{ color: #888; font-size: 0.8em; text-align: right; }}
-  </style>
+  <script>(function(){{try{{var t=window.localStorage.getItem('css_theme');if(!t&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)t='dark';document.documentElement.setAttribute('data-theme',t||'light');}}catch(e){{document.documentElement.setAttribute('data-theme','light');}}}})();</script>
+  <link rel="stylesheet" href="/static/css/studio.css" />
 </head>
 <body>
-  <div class="container">
+  <a class="skip-link" href="#main">Skip to the form</a>
+  <header class="app-bar">
+    <a class="brand" href="./"><img src="/static/logo.png" alt="" onerror="this.style.display='none'" /><span class="brand-name"><b>Proposal Studio</b><small>CyberSmithSECURE</small></span></a>
+    <nav class="app-nav" aria-label="Ways to build a proposal"><a href="./" aria-current="page">Manual form</a><a href="excel/">From Excel</a></nav>
+    <span class="spacer"></span>
+    <button type="button" class="icon-btn theme-toggle" aria-label="Switch to dark theme"><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
+    <a class="signout" href="/logout">Sign out</a>
+  </header>
+  <div class="page-head">
+    <div class="eyebrow">Build by hand</div>
     <h1>CSS Proposal Generator</h1>
-    <p class="hint">CyberSmithSECURE &mdash; generates polished client proposals with annexure ordering and AI custom services.</p>
-    <p class="hint"><a href="excel/" style="color:#b388ff">Have the filled scoping Excel? Upload it instead &rarr;</a></p>
+    <p>CyberSmithSECURE &mdash; generates polished client proposals with annexure ordering and AI custom services.</p>
+  </div>
+  <div class="shell single">
+  <main class="stage" id="main">
+    <a class="hint-link" href="excel/">Have the filled scoping Excel? Upload it instead &rarr;</a>
+    <div class="card">
     <form id="proposalForm">
       <!-- Basic fields -->
+      <h2 class="form-section-title">Client details</h2>
       <div class="form-group">
-        <label for="company_name">Company name *</label>
+        <label for="company_name">Company name <span class="req" aria-hidden="true">*</span></label>
         <input type="text" id="company_name" name="company_name" required placeholder="Acme Corp" />
       </div>
       <div class="form-group">
@@ -2192,12 +2154,18 @@ async def proposal_form() -> HTMLResponse:
       </div>
       <div class="form-group">
         <label for="client_logo">Client logo (cover page)</label>
-        <input type="file" id="client_logo" name="client_logo" accept="image/png,image/jpeg,image/jpg,image/webp" />
+        <div class="dropzone compact">
+          <input type="file" id="client_logo" name="client_logo" accept="image/png,image/jpeg,image/jpg,image/webp" />
+          <svg class="dz-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+          <div class="dz-title">Drop the client's logo here or <u>browse</u></div>
+          <div class="dz-sub">PNG, JPG or WebP</div>
+          <div class="dz-file"></div>
+        </div>
         <p class="hint">Upload your company logo. It will appear on the cover page.</p>
       </div>
 
       <!-- Annexure builder -->
-      <h2>Annexures (optional)</h2>
+      <h2 class="form-section-title">Annexures (optional)</h2>
       <div class="annexure-panel">
         <div class="checkbox-row form-group">
           <input type="checkbox" id="customize_annexures" />
@@ -2217,22 +2185,22 @@ async def proposal_form() -> HTMLResponse:
 
       <!-- AI Context Panel (shown when any slot is __other__) -->
       <div id="aiContextPanel" class="ai-panel hidden">
-        <h2>&#128161; AI Context &mdash; Custom Service Generation</h2>
+        <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.8 4.6L18.5 9l-4.7 1.4L12 15l-1.8-4.6L5.5 9l4.7-1.4z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg> AI Context &mdash; Custom Service Generation</h2>
         <p class="hint">This information feeds the Master BD Prompt to generate the custom annexure.</p>
 
-        <div class="form-group">
-          <label for="ai_sector">Sector / Industry *</label>
+        <div class="form-group" style="margin-top:16px">
+          <label for="ai_sector">Sector / Industry <span class="req" aria-hidden="true">*</span></label>
           <input type="text" id="ai_sector" placeholder="e.g. Banking, Insurance, Healthcare, Fintech" />
         </div>
 
         <div class="form-group">
-          <label for="ai_engagement_summary">Overall Engagement Summary * <span class="hint">(1&ndash;2 lines)</span></label>
+          <label for="ai_engagement_summary">Overall Engagement Summary <span class="req" aria-hidden="true">*</span> <span class="hint">(1&ndash;2 lines)</span></label>
           <textarea id="ai_engagement_summary" rows="3"
             placeholder="e.g. Comprehensive cloud security and identity assessment for Acme Corp&rsquo;s hybrid infrastructure."></textarea>
         </div>
 
         <div class="form-group">
-          <label>Primary Tier *</label>
+          <label>Primary Tier <span class="req" aria-hidden="true">*</span><span class="tip-wrap"><button type="button" class="tip" aria-label="What is this?">?</button><span role="tooltip" class="tip-text">How deep the testing goes for the custom service, from Tier 1 (essential) to Tier 4 (offensive).</span></span></label>
           <div class="radio-group" id="ai_tier_group">
             <label><input type="radio" name="ai_primary_tier" value="Tier 1 \u2013 Essential" /> Tier 1 &ndash; Essential</label>
             <label><input type="radio" name="ai_primary_tier" value="Tier 2 \u2013 Enhanced" /> Tier 2 &ndash; Enhanced</label>
@@ -2269,7 +2237,7 @@ async def proposal_form() -> HTMLResponse:
             <input type="text" id="ai_counts_users" placeholder="e.g. 200 employees" />
           </div>
           <div class="form-group">
-            <label for="ai_counts_duration">Duration *</label>
+            <label for="ai_counts_duration">Duration <span class="req" aria-hidden="true">*</span></label>
             <input type="text" id="ai_counts_duration" placeholder="e.g. 4 weeks" />
           </div>
         </div>
@@ -2277,7 +2245,7 @@ async def proposal_form() -> HTMLResponse:
         <h3>Commercials</h3>
         <div class="counts-grid">
           <div class="form-group">
-            <label for="ai_total_cost">Total Cost (before tax) *</label>
+            <label for="ai_total_cost">Total Cost (before tax) <span class="req" aria-hidden="true">*</span></label>
             <input type="text" id="ai_total_cost" placeholder="e.g. 4,33,000 INR" />
           </div>
           <div class="form-group">
@@ -2287,7 +2255,7 @@ async def proposal_form() -> HTMLResponse:
         </div>
 
         <div class="form-group">
-          <label>Payment Model *</label>
+          <label>Payment Model <span class="req" aria-hidden="true">*</span></label>
           <div class="radio-group" id="ai_payment_group">
             <label><input type="radio" name="ai_payment_model" value="milestone_v1" checked /> Milestone v1</label>
             <label><input type="radio" name="ai_payment_model" value="hybrid_v2" /> Hybrid v2</label>
@@ -2306,7 +2274,16 @@ async def proposal_form() -> HTMLResponse:
 
       <button type="submit" class="submit-btn" id="generateBtn">Generate Proposal</button>
     </form>
-    <div id="status"></div>
+    <div id="status" role="status"></div>
+    <div id="buildPanel" class="build-panel hidden" aria-live="polite">
+      <span class="elapsed" aria-hidden="true">0 s</span>
+      <b>Building your document&hellip;</b>
+      <div class="bar" aria-hidden="true"></div>
+      <ol><li>Writing any AI annexures</li><li>Laying out every page in the CyberSmithSECURE format</li><li>Checking the pages and fixing the Contents numbers</li></ol>
+      <p class="hint" style="margin-top:10px">Please keep this page open; the Word file downloads by itself when it is ready.</p>
+    </div>
+    </div>
+  </main>
   </div>
 
   <script>
@@ -2637,6 +2614,7 @@ async def proposal_form() -> HTMLResponse:
       }}
     }});
   </script>
+<script src="/static/js/studio.js"></script>
 </body>
 </html>"""
     return HTMLResponse(content=html)

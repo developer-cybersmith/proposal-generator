@@ -178,7 +178,15 @@ def analyze_pdf(pdf_path: str | Path, *, min_chars: int = MIN_PAGE_CHARS) -> Pdf
     doc = _open_pdf(pdf_path)
     try:
         texts = [page.get_text() for page in doc]
-        image_sets = [{img[0] for img in page.get_images(full=True)} for page in doc]
+        def drawn_images(page) -> set:
+            # get_images() lists every image in the page's resource dictionary; LibreOffice shares one
+            # dictionary across all pages, so an image-only page would look empty. get_image_info()
+            # reports only the images actually drawn on the page.
+            try:
+                return {info["xref"] for info in page.get_image_info(xrefs=True) if info.get("xref")}
+            except Exception:
+                return {img[0] for img in page.get_images(full=True)}
+        image_sets = [drawn_images(page) for page in doc]
     finally:
         doc.close()
     n = len(texts)
